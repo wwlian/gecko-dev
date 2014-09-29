@@ -26,6 +26,7 @@
 #include "vm/TraceLogging.h"
 
 #include "jsscriptinlines.h"
+#include "jsprf.h"
 
 #include "jit/BaselineFrameInfo-inl.h"
 #include "jit/MacroAssembler-inl.h"
@@ -225,7 +226,7 @@ BaselineCompiler::compile()
     // This will reduce deviations due to the state of the machine at link-time, making it easier
     // to isolate the impact of changes to the input source code.
     char *buf = js_pod_malloc<char>(code->instructionsSize() * 4 + 1);
-    for (int i = 0; i < code->instructionsSize(); i++) {
+    for (size_t i = 0; i < code->instructionsSize(); i++) {
     	JS_snprintf(buf + 4 * i, 4, "\\x%02x", *(code->raw() + i));
     }
     buf[code->instructionsSize() * 4] = '\0';
