@@ -6991,6 +6991,16 @@ CodeGenerator::link(JSContext *cx, types::CompilerConstraintList *constraints)
 
     JitSpew(JitSpew_Codegen, "Created IonScript %p (raw %p)",
             (void *) ionScript, (void *) code->raw());
+    // Log code here rather than at end of function.
+    // This will reduce deviations due to the state of the machine at link-time, making it easier
+    // to isolate the impact of changes to the input source code.
+    char *buf = js_pod_malloc<char>(code->instructionsSize() * 4 + 1);
+    for (int i = 0; i < code->instructionsSize(); i++) {
+    	JS_snprintf(buf + 4 * i, 4, "\\x%02x", *(code->raw() + i));
+    }
+    buf[code->instructionsSize() * 4] = '\0';
+    JitSpew(JitSpew_Codegen, "Raw Ion bytes (%d):%s", code->instructionsSize(), buf);
+    js_free(buf);
 
     ionScript->setInvalidationEpilogueDataOffset(invalidateEpilogueData_.offset());
     ionScript->setOsrPc(gen->info().osrPc());
