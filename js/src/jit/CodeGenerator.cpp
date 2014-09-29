@@ -6999,7 +6999,7 @@ CodeGenerator::link(JSContext *cx, types::CompilerConstraintList *constraints)
     	JS_snprintf(buf + 4 * i, 5, "\\x%02x", *(code->raw() + i));
     }
     buf[code->instructionsSize() * 4] = '\0';
-    JitSpew(JitSpew_Codegen, "Raw Ion bytes (%d):%s", code->instructionsSize(), buf);
+    JitSpew(JitSpew_Codegen, "Raw Ion bytes (%d) for %s:%d:%s", code->instructionsSize(), script->filename(), script->lineno(), buf);
     js_free(buf);
 
     ionScript->setInvalidationEpilogueDataOffset(invalidateEpilogueData_.offset());
