@@ -199,12 +199,12 @@ BaselineCompiler::compile()
             (void *) baselineScript, (void *) code->raw(),
             script->filename(), script->lineno());
 
-    // Log code here rather than at end of function.
+    // wwl: Log code here rather than at end of function.
     // This will reduce deviations due to the state of the machine at link-time, making it easier
     // to isolate the impact of changes to the input source code.
     char *buf = js_pod_malloc<char>(code->instructionsSize() * 4 + 1);
     for (size_t i = 0; i < code->instructionsSize(); i++) {
-    	JS_snprintf(buf + 4 * i, 4, "\\x%02x", *(code->raw() + i));
+    	JS_snprintf(buf + 4 * i, 5, "\\x%02x", *(code->raw() + i));
     }
     buf[code->instructionsSize() * 4] = '\0';
     JitSpew(JitSpew_Codegen, "Raw Baseline bytes (%d):%s", code->instructionsSize(), buf);
