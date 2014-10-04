@@ -58,7 +58,7 @@ class XULInfo:
 
         if path == None:
             print ("Can't find config/autoconf.mk on a directory containing the JS shell"
-                   " (searched from %s)") % jsdir
+                   " (searched from %s)" % jsdir)
             sys.exit(1)
 
         # Read the values.
@@ -89,8 +89,11 @@ class XULInfoTester:
         ans = self.cache.get(cond, None)
         if ans is None:
             cmd = [ self.js_bin, '-e', self.js_prolog, '-e', 'print(!!(%s))'%cond ]
+            print (cmd)
             p = Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
             out, err = p.communicate()
+            print (out)
+            print (err)
             if out in ('true\n', 'true\r\n'):
                 ans = True
             elif out in ('false\n', 'false\r\n'):
