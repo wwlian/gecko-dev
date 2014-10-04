@@ -96,6 +96,8 @@ class XULInfoTester:
             ]
             p = Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
             out, err = p.communicate()
+            print (out)
+            print (err)
             if out in ('true\n', 'true\r\n'):
                 ans = True
             elif out in ('false\n', 'false\r\n'):
