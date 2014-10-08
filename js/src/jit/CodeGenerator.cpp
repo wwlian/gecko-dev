@@ -4,7 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include  <fcntl.h>
+#include <string.h>
+#include  <unistd.h>
 
 #include "jit/CodeGenerator.h"
 
@@ -8716,7 +8717,7 @@ CodeGenerator::link(JSContext* cx, CompilerConstraintList* constraints)
     size_t finalSize = code->instructionsSize() * 4 + 1 + 200;
     char *finalBuf = js_pod_malloc<char>(finalSize);
     snprintf(finalBuf, finalSize, "\nRaw Ion bytes (%d) for %s:%d:%s\n", code->instructionsSize(), script->filename(), script->lineno(), buf);
-    write(2, finalBuf, finalSize);  // Write directly to hopefully avoid interleaving.
+    write(2, finalBuf, strlen(finalBuf));  // Write directly to hopefully avoid interleaving.
     js_free(buf);
     js_free(finalBuf);
 
