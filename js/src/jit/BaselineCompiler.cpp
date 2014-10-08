@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include  <fcntl.h>
+
 #include "jit/BaselineCompiler.h"
 
 #include "jit/BaselineHelpers.h"
@@ -207,8 +209,12 @@ BaselineCompiler::compile()
     	JS_snprintf(buf + 4 * i, 5, "\\x%02x", *(code->raw() + i));
     }
     buf[code->instructionsSize() * 4] = '\0';
-    JitSpew(JitSpew_Codegen, "Raw Baseline bytes (%d) for %s:%d:%s\n", code->instructionsSize(), script->filename(), script->lineno(), buf);
+    size_t finalSize = code->instructionsSize() * 4 + 1 + 200;
+    char *finalBuf = js_pod_malloc<char>(finalSize);
+    snprintf(finalBuf, finalSize, "\nRaw Baseline bytes (%d) for %s:%d:%s\n", code->instructionsSize(), script->filename(), script->lineno(), buf);
+    write(2, finalBuf, finalSize);  // Write directly to hopefully avoid interleaving.
     js_free(buf);
+ js_free(finalBuf);
 
 #ifdef JS_ION_PERF
     writePerfSpewerBaselineProfile(script, code);
