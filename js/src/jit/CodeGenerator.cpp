@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include  <fcntl.h>
+
 #include "jit/CodeGenerator.h"
 
 #include "mozilla/Assertions.h"
@@ -8711,8 +8713,12 @@ CodeGenerator::link(JSContext* cx, CompilerConstraintList* constraints)
     	JS_snprintf(buf + 4 * i, 5, "\\x%02x", *(code->raw() + i));
     }
     buf[code->instructionsSize() * 4] = '\0';
-    JitSpew(JitSpew_Codegen, "Raw Ion bytes (%d) for %s:%d:%s\n", code->instructionsSize(), script->filename(), script->lineno(), buf);
+    size_t finalSize = code->instructionsSize() * 4 + 1 + 200;
+    char *finalBuf = js_pod_malloc<char>(finalSize);
+    snprintf(finalBuf, finalSize, "\nRaw Ion bytes (%d) for %s:%d:%s\n", code->instructionsSize(), script->filename(), script->lineno(), buf);
+    write(2, finalBuf, finalSize);  // Write directly to hopefully avoid interleaving.
     js_free(buf);
+    js_free(finalBuf);
 
     ionScript->setInvalidationEpilogueDataOffset(invalidateEpilogueData_.offset());
     ionScript->setOsrPc(gen->info().osrPc());
