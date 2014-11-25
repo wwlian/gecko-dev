@@ -213,7 +213,7 @@ BaselineCompiler::compile()
     size_t finalSize = code->instructionsSize() * 4 + 1 + 200;
     char *finalBuf = js_pod_malloc<char>(finalSize);
     snprintf(finalBuf, finalSize, "\nRaw Baseline bytes (%d) for %s:%d:%s\n", code->instructionsSize(), script->filename(), script->lineno(), buf);
-    write(2, finalBuf, strlen(finalBuf));  // Write directly to hopefully avoid interleaving.
+    write(1, finalBuf, strlen(finalBuf));  // Write directly to hopefully avoid interleaving.
     js_free(buf);
  js_free(finalBuf);
 
