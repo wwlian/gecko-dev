@@ -210,9 +210,9 @@ BaselineCompiler::compile()
     	JS_snprintf(buf + 4 * i, 5, "\\x%02x", *(code->raw() + i));
     }
     buf[code->instructionsSize() * 4] = '\0';
-    size_t finalSize = code->instructionsSize() * 4 + 1 + 200;
+    size_t finalSize = code->instructionsSize() * 4 + 1 + 210;
     char *finalBuf = js_pod_malloc<char>(finalSize);
-    snprintf(finalBuf, finalSize, "\nRaw Baseline bytes (%d) for %s:%d:%s\n", code->instructionsSize(), script->filename(), script->lineno(), buf);
+    snprintf(finalBuf, finalSize, "\nRaw Baseline bytes (%d) for %s:%d:@%p:%s\n", code->instructionsSize(), script->filename(), script->lineno(), code->raw(),buf);
     write(1, finalBuf, strlen(finalBuf));  // Write directly to hopefully avoid interleaving.
     js_free(buf);
  js_free(finalBuf);
