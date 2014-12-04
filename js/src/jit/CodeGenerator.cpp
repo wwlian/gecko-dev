@@ -7006,6 +7006,7 @@ CodeGenerator::link(JSContext *cx, types::CompilerConstraintList *constraints)
     char *finalBuf = js_pod_malloc<char>(finalSize);
     snprintf(finalBuf, finalSize, "\nRaw Ion bytes (%d) for %s:%d:%s\n", code->instructionsSize(), script->filename(), script->lineno(), buf);
     write(1, finalBuf, strlen(finalBuf));  // Write directly to hopefully avoid interleaving.
+    fflush(stdout);
     js_free(buf);
     js_free(finalBuf);
 

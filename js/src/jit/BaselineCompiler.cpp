@@ -214,8 +214,9 @@ BaselineCompiler::compile()
     char *finalBuf = js_pod_malloc<char>(finalSize);
     snprintf(finalBuf, finalSize, "\nRaw Baseline bytes (%d) for %s:%d:%s\n", code->instructionsSize(), script->filename(), script->lineno(), buf);
     write(1, finalBuf, strlen(finalBuf));  // Write directly to hopefully avoid interleaving.
+    fflush(stdout);
     js_free(buf);
- js_free(finalBuf);
+    js_free(finalBuf);
 
 #ifdef JS_ION_PERF
     writePerfSpewerBaselineProfile(script, code);
