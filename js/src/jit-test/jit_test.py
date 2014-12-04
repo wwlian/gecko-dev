@@ -195,6 +195,7 @@ def main(argv):
         # Running all bits would take forever. Instead, we test a few interesting combinations.
         for test in test_list:
             for variant in TBPL_FLAGS:
+              for i in xrange(2):  # wwl: add each test twice.
                 new_test = test.copy()
                 new_test.jitflags.extend(variant)
                 job_list.append(new_test)
@@ -202,6 +203,7 @@ def main(argv):
         flags = [['--baseline-eager'], ['--ion-eager', '--ion-offthread-compile=off']]
         for test in test_list:
             for variant in flags:
+              for i in xrange(2):  # wwl: add each test twice.
                 new_test = test.copy()
                 new_test.jitflags.extend(variant)
                 job_list.append(new_test)
@@ -209,6 +211,7 @@ def main(argv):
         jitflags_list = jittests.parse_jitflags(options)
         for test in test_list:
             for jitflags in jitflags_list:
+              for i in xrange(2):  # wwl: add each test twice.
                 new_test = test.copy()
                 new_test.jitflags.extend(jitflags)
                 job_list.append(new_test)
