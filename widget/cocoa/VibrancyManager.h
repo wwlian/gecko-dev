@@ -8,23 +8,26 @@
 #define VibrancyManager_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/TypedEnum.h"
 #include "nsClassHashtable.h"
 #include "nsRegion.h"
 #include "nsTArray.h"
 
 #import <Foundation/NSGeometry.h>
 
+@class NSColor;
 @class NSView;
 class nsChildView;
-class nsIntRegion;
 
 namespace mozilla {
 
-MOZ_BEGIN_ENUM_CLASS(VibrancyType)
+enum class VibrancyType {
   LIGHT,
-  DARK
-MOZ_END_ENUM_CLASS(VibrancyType)
+  DARK,
+  TOOLTIP,
+  MENU,
+  HIGHLIGHTED_MENUITEM,
+  SHEET
+};
 
 /**
  * VibrancyManager takes care of updating the vibrant regions of a window.
@@ -65,7 +68,8 @@ public:
    * @param aType   The vibrancy type to use in the region.
    * @param aRegion The vibrant area, in device pixels.
    */
-  void UpdateVibrantRegion(VibrancyType aType, const nsIntRegion& aRegion);
+  void UpdateVibrantRegion(VibrancyType aType,
+                           const LayoutDeviceIntRegion& aRegion);
 
   /**
    * Clear the vibrant areas that we know about.
@@ -74,6 +78,20 @@ public:
    * NSGraphicsContext is already correctly set to the window drawing context.
    */
   void ClearVibrantAreas() const;
+
+  /**
+   * Return the fill color that should be drawn on top of the cleared window
+   * parts. Usually this would be drawn by -[NSVisualEffectView drawRect:].
+   * The returned color is opaque if the system-wide "Reduce transparency"
+   * preference is set.
+   */
+  NSColor* VibrancyFillColorForType(VibrancyType aType);
+
+  /**
+   * Return the font smoothing background color that should be used for text
+   * drawn on top of the vibrant window parts.
+   */
+  NSColor* VibrancyFontSmoothingBackgroundColorForType(VibrancyType aType);
 
   /**
    * Check whether the operating system supports vibrancy at all.
@@ -85,7 +103,7 @@ public:
   // The following are only public because otherwise ClearVibrantRegionFunc
   // can't see them.
   struct VibrantRegion {
-    nsIntRegion region;
+    LayoutDeviceIntRegion region;
     nsTArray<NSView*> effectViews;
   };
   void ClearVibrantRegion(const VibrantRegion& aVibrantRegion) const;
@@ -98,6 +116,6 @@ protected:
   nsClassHashtable<nsUint32HashKey, VibrantRegion> mVibrantRegions;
 };
 
-}
+} // namespace mozilla
 
 #endif // VibrancyManager_h

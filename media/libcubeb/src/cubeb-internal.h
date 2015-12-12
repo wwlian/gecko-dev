@@ -8,6 +8,8 @@
 #define CUBEB_INTERNAL_0eb56756_4e20_4404_a76d_42bf88cd15a5
 
 #include "cubeb/cubeb.h"
+#include <stdio.h>
+#include <string.h>
 
 struct cubeb_ops {
   int (* init)(cubeb ** context, char const * context_name);
@@ -17,6 +19,8 @@ struct cubeb_ops {
                           cubeb_stream_params params,
                           uint32_t * latency_ms);
   int (* get_preferred_sample_rate)(cubeb * context, uint32_t * rate);
+  int (* enumerate_devices)(cubeb * context, cubeb_device_type type,
+                            cubeb_device_collection ** collection);
   void (* destroy)(cubeb * context);
   int (* stream_init)(cubeb * context, cubeb_stream ** stream, char const * stream_name,
                       cubeb_stream_params stream_params, unsigned int latency,
@@ -34,10 +38,16 @@ struct cubeb_ops {
                                     cubeb_device ** const device);
   int (* stream_device_destroy)(cubeb_stream * stream,
                                 cubeb_device * device);
-  int (*stream_register_device_changed_callback)(cubeb_stream * stream,
-                                                 cubeb_device_changed_callback device_changed_callback);
-
+  int (* stream_register_device_changed_callback)(cubeb_stream * stream,
+                                                  cubeb_device_changed_callback device_changed_callback);
 };
 
-#endif /* CUBEB_INTERNAL_0eb56756_4e20_4404_a76d_42bf88cd15a5 */
+#define XASSERT(expr) do {                                              \
+    if (!(expr)) {                                                      \
+      fprintf(stderr, "%s:%d - fatal error: %s\n", __FILE__, __LINE__, #expr); \
+      *((volatile int *) NULL) = 0;                                     \
+      abort();                                                          \
+    }                                                                   \
+  } while (0)
 
+#endif /* CUBEB_INTERNAL_0eb56756_4e20_4404_a76d_42bf88cd15a5 */

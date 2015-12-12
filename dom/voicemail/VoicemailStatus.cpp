@@ -31,14 +31,12 @@ VoicemailStatus::VoicemailStatus(nsISupports* aParent,
 {
   MOZ_ASSERT(mParent);
   MOZ_ASSERT(mProvider);
-
-  SetIsDOMBinding();
 }
 
 JSObject*
-VoicemailStatus::WrapObject(JSContext* aCx)
+VoicemailStatus::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return MozVoicemailStatusBinding::Wrap(aCx, this);
+  return MozVoicemailStatusBinding::Wrap(aCx, this, aGivenProto);
 }
 
 uint32_t

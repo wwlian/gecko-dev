@@ -4,11 +4,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GLContext.h"                  // for GLContext, etc
-#include "SurfaceStream.h"
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/layers/ISurfaceAllocator.h"
 #include "mozilla/layers/TextureClientOGL.h"
-#include "nsSize.h"                     // for nsIntSize
+#include "mozilla/gfx/Point.h"          // for IntSize
+#include "GLLibraryEGL.h"
 
 using namespace mozilla::gl;
 
@@ -18,121 +18,100 @@ namespace layers {
 class CompositableForwarder;
 
 ////////////////////////////////////////////////////////////////////////
-// EGLImageTextureClient
+// EGLImage
 
-EGLImageTextureClient::EGLImageTextureClient(TextureFlags aFlags,
-                                             EGLImage aImage,
-                                             gfx::IntSize aSize,
-                                             bool aInverted)
-  : TextureClient(aFlags)
-  , mImage(aImage)
-  , mSize(aSize)
-  , mIsLocked(false)
+EGLImageTextureData::EGLImageTextureData(EGLImageImage* aImage, gfx::IntSize aSize)
+: mImage(aImage)
+, mSize(aSize)
 {
-  MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default,
-             "Can't pass an `EGLImage` between processes.");
-  
-  // Our data is always owned externally.
-  AddFlags(TextureFlags::DEALLOCATE_CLIENT);
-  
-  if (aInverted) {
-    AddFlags(TextureFlags::NEEDS_Y_FLIP);
-  }
+  MOZ_ASSERT(aImage);
 }
-  
-EGLImageTextureClient::~EGLImageTextureClient()
+
+already_AddRefed<TextureClient>
+EGLImageTextureData::CreateTextureClient(EGLImageImage* aImage, gfx::IntSize aSize,
+                                         ISurfaceAllocator* aAllocator, TextureFlags aFlags)
 {
-  // Our data is always owned externally.
+  MOZ_ASSERT(XRE_IsParentProcess(),
+             "Can't pass an `EGLImage` between processes.");
+
+  if (!aImage || !XRE_IsParentProcess()) {
+    return nullptr;
+  }
+
+  // XXX - This is quite sad and slow.
+  aFlags |= TextureFlags::DEALLOCATE_CLIENT;
+
+  if (aImage->GetOriginPos() == gl::OriginPos::BottomLeft) {
+    aFlags |= TextureFlags::ORIGIN_BOTTOM_LEFT;
+  }
+
+  return TextureClient::CreateWithData(
+    new EGLImageTextureData(aImage, aSize),
+    aFlags, aAllocator
+  );
 }
 
 bool
-EGLImageTextureClient::ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor)
+EGLImageTextureData::Serialize(SurfaceDescriptor& aOutDescriptor)
 {
-  MOZ_ASSERT(IsValid());
-  MOZ_ASSERT(IsAllocated());
-
-  aOutDescriptor = EGLImageDescriptor((uintptr_t)mImage, mSize);
+  const bool hasAlpha = true;
+  aOutDescriptor =
+    EGLImageDescriptor((uintptr_t)mImage->GetImage(),
+                       (uintptr_t)mImage->GetSync(),
+                       mImage->GetSize(), hasAlpha);
   return true;
 }
 
-bool
-EGLImageTextureClient::Lock(OpenMode mode)
-  {
-    MOZ_ASSERT(!mIsLocked);
-    if (!IsValid() || !IsAllocated()) {
-      return false;
-    }
-    mIsLocked = true;
-    return true;
-  }
-  
-void
-EGLImageTextureClient::Unlock()
-{
-  MOZ_ASSERT(mIsLocked);
-  mIsLocked = false;
-}
-  
 ////////////////////////////////////////////////////////////////////////
-// SurfaceTextureClient
+// AndroidSurface
 
 #ifdef MOZ_WIDGET_ANDROID
 
-SurfaceTextureClient::SurfaceTextureClient(TextureFlags aFlags,
-                                           nsSurfaceTexture* aSurfTex,
-                                           gfx::IntSize aSize,
-                                           bool aInverted)
-  : TextureClient(aFlags)
-  , mSurfTex(aSurfTex)
-  , mSize(aSize)
-  , mIsLocked(false)
+already_AddRefed<TextureClient>
+AndroidSurfaceTextureData::CreateTextureClient(AndroidSurfaceTexture* aSurfTex,
+                                               gfx::IntSize aSize,
+                                               gl::OriginPos aOriginPos,
+                                               ISurfaceAllocator* aAllocator,
+                                               TextureFlags aFlags)
 {
-  MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default,
-             "Can't pass pointers between processes.");
+  MOZ_ASSERT(XRE_IsParentProcess(),
+             "Can't pass an android surfaces between processes.");
 
-  // Our data is always owned externally.
-  AddFlags(TextureFlags::DEALLOCATE_CLIENT);
-
-  if (aInverted) {
-    AddFlags(TextureFlags::NEEDS_Y_FLIP);
+  if (!aSurfTex || !XRE_IsParentProcess()) {
+    return nullptr;
   }
+
+  // XXX - This is quite sad and slow.
+  aFlags |= TextureFlags::DEALLOCATE_CLIENT;
+
+  if (aOriginPos == gl::OriginPos::BottomLeft) {
+    aFlags |= TextureFlags::ORIGIN_BOTTOM_LEFT;
+  }
+
+  return TextureClient::CreateWithData(
+    new AndroidSurfaceTextureData(aSurfTex, aSize),
+    aFlags, aAllocator
+  );
 }
-  
-SurfaceTextureClient::~SurfaceTextureClient()
-{
-  // Our data is always owned externally.
-}
+
+AndroidSurfaceTextureData::AndroidSurfaceTextureData(AndroidSurfaceTexture* aSurfTex,
+                                                     gfx::IntSize aSize)
+  : mSurfTex(aSurfTex)
+  , mSize(aSize)
+{}
+
+AndroidSurfaceTextureData::~AndroidSurfaceTextureData()
+{}
 
 bool
-SurfaceTextureClient::ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor)
+AndroidSurfaceTextureData::Serialize(SurfaceDescriptor& aOutDescriptor)
 {
-  MOZ_ASSERT(IsValid());
-  MOZ_ASSERT(IsAllocated());
-
   aOutDescriptor = SurfaceTextureDescriptor((uintptr_t)mSurfTex.get(),
                                             mSize);
   return true;
 }
 
-bool
-SurfaceTextureClient::Lock(OpenMode mode)
-{
-  MOZ_ASSERT(!mIsLocked);
-  if (!IsValid() || !IsAllocated()) {
-    return false;
-  }
-  mIsLocked = true;
-  return true;
-}
-
-void
-SurfaceTextureClient::Unlock()
-{
-  MOZ_ASSERT(mIsLocked);
-  mIsLocked = false;
-}
-
 #endif // MOZ_WIDGET_ANDROID
 
-} // namespace
-} // namespace
+} // namespace layers
+} // namespace mozilla

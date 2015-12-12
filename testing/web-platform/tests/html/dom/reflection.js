@@ -139,10 +139,9 @@ var maxUnsigned = 4294967295;
  *
  * Note that all tests/expected values are only baselines, and can be expanded
  * with additional tests hardcoded into the function for particular types if
- * necessary (e.g., enum).  null means "default" as a DOM expected value, and
- * "throw an INDEX_SIZE_ERR exception" as an IDL expected value.  (This is a
- * kind of stupid and fragile convention, but it's simple and works for now.)
- * Expected DOM values are cast to strings by adding "".
+ * necessary. For example, a special codepath is used for enums, and for
+ * IDL setters which throw an exception. null means "defaultVal" is the
+ * expected value. Expected DOM values are cast to strings by adding "".
  *
  * TODO: Test strings that aren't valid UTF-16.  Desired behavior is not clear
  * here at the time of writing, see
@@ -152,12 +151,6 @@ var maxUnsigned = 4294967295;
  *
  * TODO: Test IDL sets of integer types to out-of-range or other weird values.
  * WebIDL says to wrap, but I'm not sure offhand if that's what we want.
- *
- * TODO: Check the parsing of leading whitespace of all sorts for numeric
- * types.  The spec is currently wrong, so I've commented all those tests out:
- * http://www.w3.org/Bugs/Public/show_bug.cgi?id=12296
- * http://www.w3.org/Bugs/Public/show_bug.cgi?id=12220
- * Will fix and uncomment once the bugs are resolved.
  *
  * TODO: tokenlist, settable tokenlist, limited
  */
@@ -328,23 +321,19 @@ ReflectionTests.typeMap = {
         "domTests": [-36, -1, 0, 1, maxInt, minInt, maxInt + 1, minInt - 1,
                      maxUnsigned, maxUnsigned + 1, "", "-1", "-0", "0", "1",
                      " " + binaryString + " foo ",
-                     // Test various different whitespace.  The spec currently says only
-                     // 20, 9, A, C, and D are whitespace.  JavaScript includes many
-                     // more, including all Zs characters in Unicode 3.0.0.  All the
-                     // following should parse as 0 if the character is recognized as
-                     // whitespace, 7 otherwise.  But the spec is wrong (see TODO
-                     // above), so these are commented out for now.
-                     //"\u00097", "\u000B7", "\u000C7", "\u00207", "\u00A07", "\uFEFF7",
-                     //"\u000A7", "\u000D7", "\u20287", "\u20297", "\u16807", "\u180E7",
-                     //"\u20007", "\u20017", "\u20027", "\u20037", "\u20047", "\u20057",
-                     //"\u20067", "\u20077", "\u20087", "\u20097", "\u200A7", "\u202F7",
-                     //"\u30007",
+                     // Test various different whitespace. Only 20, 9, A, C,
+                     // and D are whitespace.
+                     "\u00097", "\u000B7", "\u000C7", "\u00207", "\u00A07", "\uFEFF7",
+                     "\u000A7", "\u000D7", "\u20287", "\u20297", "\u16807", "\u180E7",
+                     "\u20007", "\u20017", "\u20027", "\u20037", "\u20047", "\u20057",
+                     "\u20067", "\u20077", "\u20087", "\u20097", "\u200A7", "\u202F7",
+                     "\u30007",
                      undefined, 1.5, true, false, {"test": 6}, NaN, +Infinity,
                      -Infinity, "\0",
                      {toString:function() {return 2;}, valueOf: null},
                      {valueOf:function() {return 3;}}],
         "domExpected": function(val) {
-            var parsed = ReflectionTests.parseInt(val + "");
+            var parsed = ReflectionTests.parseInt(String(val));
             if (parsed === false || parsed > maxInt || parsed < minInt) {
                 return null;
             }
@@ -373,24 +362,24 @@ ReflectionTests.typeMap = {
         "domTests": [minInt - 1, minInt, -36, -1, -0, 0, 1, maxInt, maxInt + 1,
                      maxUnsigned, maxUnsigned + 1, "", "-1", "-0", "0", "1",
                      " " + binaryString + " foo ",
-                     //"\u00097", "\u000B7", "\u000C7", "\u00207", "\u00A07", "\uFEFF7",
-                     //"\u000A7", "\u000D7", "\u20287", "\u20297", "\u16807", "\u180E7",
-                     //"\u20007", "\u20017", "\u20027", "\u20037", "\u20047", "\u20057",
-                     //"\u20067", "\u20077", "\u20087", "\u20097", "\u200A7", "\u202F7",
-                     //"\u30007",
+                     "\u00097", "\u000B7", "\u000C7", "\u00207", "\u00A07", "\uFEFF7",
+                     "\u000A7", "\u000D7", "\u20287", "\u20297", "\u16807", "\u180E7",
+                     "\u20007", "\u20017", "\u20027", "\u20037", "\u20047", "\u20057",
+                     "\u20067", "\u20077", "\u20087", "\u20097", "\u200A7", "\u202F7",
+                     "\u30007",
                      undefined, 1.5, true, false, {"test": 6}, NaN, +Infinity,
                      -Infinity, "\0",
                      {toString:function() {return 2;}, valueOf: null},
                      {valueOf:function() {return 3;}}],
         "domExpected": function(val) {
-            var parsed = ReflectionTests.parseNonneg(val + "");
+            var parsed = ReflectionTests.parseNonneg(String(val));
             if (parsed === false || parsed > maxInt || parsed < minInt) {
                 return null;
             }
             return parsed;
         },
-        "idlTests":       [minInt, -36,  -1,   0, 1, maxInt],
-        "idlDomExpected": [null,   null, null, 0, 1, maxInt]
+        "idlTests":       [minInt, -36,  -1, 0, 1, maxInt],
+        "idlDomExpected": [null/*exception*/, null/*exception*/, null/*exception*/, 0, 1, maxInt]
     },
     /**
      * "If a reflecting IDL attribute is an unsigned integer type (unsigned
@@ -409,25 +398,26 @@ ReflectionTests.typeMap = {
         "defaultVal": 0,
         "domTests": [minInt - 1, minInt, -36,  -1,   0, 1, 257, maxInt,
                      maxInt + 1, maxUnsigned, maxUnsigned + 1, "", "-1", "-0", "0", "1",
-                     //"\u00097", "\u000B7", "\u000C7", "\u00207", "\u00A07", "\uFEFF7",
-                     //"\u000A7", "\u000D7", "\u20287", "\u20297", "\u16807", "\u180E7",
-                     //"\u20007", "\u20017", "\u20027", "\u20037", "\u20047", "\u20057",
-                     //"\u20067", "\u20077", "\u20087", "\u20097", "\u200A7", "\u202F7",
-                     //"\u30007",
+                     "\u00097", "\u000B7", "\u000C7", "\u00207", "\u00A07", "\uFEFF7",
+                     "\u000A7", "\u000D7", "\u20287", "\u20297", "\u16807", "\u180E7",
+                     "\u20007", "\u20017", "\u20027", "\u20037", "\u20047", "\u20057",
+                     "\u20067", "\u20077", "\u20087", "\u20097", "\u200A7", "\u202F7",
+                     "\u30007",
                      " " + binaryString + " foo ", undefined, 1.5, true, false,
                      {"test": 6}, NaN, +Infinity, -Infinity, "\0",
                      {toString:function() {return 2;}, valueOf: null},
                      {valueOf:function() {return 3;}}],
         "domExpected": function(val) {
-            var parsed = ReflectionTests.parseNonneg(val + "");
+            var parsed = ReflectionTests.parseNonneg(String(val));
             // Note maxInt, not maxUnsigned.
             if (parsed === false || parsed < 0 || parsed > maxInt) {
                 return null;
             }
             return parsed;
         },
-        "idlTests": [0, 1, 257, 2147483647, "-0"],
-        "idlIdlExpected": [0, 1, 257, 2147483647, 0]
+        "idlTests": [0, 1, 257, maxInt, "-0", maxInt + 1, maxUnsigned],
+        "idlIdlExpected": [0, 1, 257, maxInt, 0, null, null],
+        "idlDomExpected": [0, 1, 257, maxInt, 0, null, null],
     },
     /**
      * "If a reflecting IDL attribute is an unsigned integer type (unsigned
@@ -450,25 +440,25 @@ ReflectionTests.typeMap = {
         "defaultVal": 1,
         "domTests": [minInt - 1, minInt, -36,  -1,   0,    1, maxInt,
                      maxInt + 1, maxUnsigned, maxUnsigned + 1, "", "-1", "-0", "0", "1",
-                     //"\u00097", "\u000B7", "\u000C7", "\u00207", "\u00A07", "\uFEFF7",
-                     //"\u000A7", "\u000D7", "\u20287", "\u20297", "\u16807", "\u180E7",
-                     //"\u20007", "\u20017", "\u20027", "\u20037", "\u20047", "\u20057",
-                     //"\u20067", "\u20077", "\u20087", "\u20097", "\u200A7", "\u202F7",
-                     //"\u30007",
+                     "\u00097", "\u000B7", "\u000C7", "\u00207", "\u00A07", "\uFEFF7",
+                     "\u000A7", "\u000D7", "\u20287", "\u20297", "\u16807", "\u180E7",
+                     "\u20007", "\u20017", "\u20027", "\u20037", "\u20047", "\u20057",
+                     "\u20067", "\u20077", "\u20087", "\u20097", "\u200A7", "\u202F7",
+                     "\u30007",
                      " " + binaryString + " foo ", undefined, 1.5, true, false,
                      {"test": 6}, NaN, +Infinity, -Infinity, "\0",
                      {toString:function() {return 2;}, valueOf: null},
                      {valueOf:function() {return 3;}}],
         "domExpected": function(val) {
-            var parsed = ReflectionTests.parseNonneg(val + "");
+            var parsed = ReflectionTests.parseNonneg(String(val));
             // Note maxInt, not maxUnsigned.
             if (parsed === false || parsed < 1 || parsed > maxInt) {
                 return null;
             }
             return parsed;
         },
-        "idlTests":       [0,    1, 2147483647],
-        "idlDomExpected": [null, 1, 2147483647]
+        "idlTests":       [0, 1, maxInt, maxInt + 1, maxUnsigned],
+        "idlDomExpected": [null/*exception*/, 1, maxInt, null, null]
     },
     /**
      * "If a reflecting IDL attribute is a floating point number type (double),
@@ -499,11 +489,11 @@ ReflectionTests.typeMap = {
         "defaultVal": 0.0,
         "domTests": [minInt - 1, minInt, -36, -1, 0, 1, maxInt,
             maxInt + 1, maxUnsigned, maxUnsigned + 1, "",
-            //"\u00097", "\u000B7", "\u000C7", "\u00207", "\u00A07", "\uFEFF7",
-            //"\u000A7", "\u000D7", "\u20287", "\u20297", "\u16807", "\u180E7",
-            //"\u20007", "\u20017", "\u20027", "\u20037", "\u20047", "\u20057",
-            //"\u20067", "\u20077", "\u20087", "\u20097", "\u200A7", "\u202F7",
-            //"\u30007",
+            "\u00097", "\u000B7", "\u000C7", "\u00207", "\u00A07", "\uFEFF7",
+            "\u000A7", "\u000D7", "\u20287", "\u20297", "\u16807", "\u180E7",
+            "\u20007", "\u20017", "\u20027", "\u20037", "\u20047", "\u20057",
+            "\u20067", "\u20077", "\u20087", "\u20097", "\u200A7", "\u202F7",
+            "\u30007",
             " " + binaryString + " foo ", undefined, 1.5, true, false,
             {"test": 6}, NaN, +Infinity, -Infinity, "\0",
             {toString:function() {return 2;}, valueOf: null},
@@ -511,11 +501,11 @@ ReflectionTests.typeMap = {
         "domExpected": [minInt - 1, minInt, -36, -1, 0, 1, maxInt,
                         maxInt + 1, maxUnsigned, maxUnsigned + 1, null,
                         // Leading whitespace tests
-                        //7, null, 7, 7, null, null,
-                        //7, 7, null, null, null, null,
-                        //null, null, null, null, null, null,
-                        //null, null, null, null, null, null,
-                        //null,
+                        7, null, 7, 7, null, null,
+                        7, 7, null, null, null, null,
+                        null, null, null, null, null, null,
+                        null, null, null, null, null, null,
+                        null,
                         // End leading whitespace tests
                         null, null, 1.5, null, null,
                         null, null, null, null, null,
@@ -620,8 +610,8 @@ ReflectionTests.doReflects = function(data, idlName, idlObj, domName, domObj) {
     var domTests = typeInfo.domTests.slice(0);
     var domExpected = typeInfo.domExpected.map(function(val) { return val === null ? defaultVal : val; });
     var idlTests = typeInfo.idlTests.slice(0);
-    var idlDomExpected = typeInfo.idlDomExpected.slice(0);
-    var idlIdlExpected = typeInfo.idlIdlExpected.slice(0);
+    var idlDomExpected = typeInfo.idlDomExpected.map(function(val) { return val === null ? defaultVal : val; });
+    var idlIdlExpected = typeInfo.idlIdlExpected.map(function(val) { return val === null ? defaultVal : val; });
     switch (data.type) {
         // Extra tests and other special-casing
         case "boolean":
@@ -695,37 +685,35 @@ ReflectionTests.doReflects = function(data, idlName, idlObj, domName, domObj) {
         idlIdlExpected = idlIdlExpected.filter(function(element, index, array) { return idlIdlExpected[index] < 1000; });
     }
 
-    for (var i = 0; i < domTests.length; i++) {
-        if (domExpected[i] === null) {
-            // If you follow all the complicated logic here, you'll find that
-            // this will only happen if there's no expected value at all (like
-            // for tabIndex, where the default is too complicated).  So skip
-            // the test.
-            continue;
-        }
-        try {
-            domObj.setAttribute(domName, domTests[i]);
-            // setAttribute() followed by getAttribute() should always return
-            // the same thing.  TODO: Except that null should be cast to "" not
-            // "null", but that's not specced, so let's just not test it.
-            if (domTests[i] !== null) {
-                ReflectionHarness.test(domObj.getAttribute(domName), domTests[i] + "", "setAttribute() to " + ReflectionHarness.stringRep(domTests[i]) + " followed by getAttribute()");
+    if (!data.customGetter) {
+        for (var i = 0; i < domTests.length; i++) {
+            if (domExpected[i] === null) {
+                // If you follow all the complicated logic here, you'll find that
+                // this will only happen if there's no expected value at all (like
+                // for tabIndex, where the default is too complicated).  So skip
+                // the test.
+                continue;
             }
-            ReflectionHarness.test(idlObj[idlName], domExpected[i], "setAttribute() to " + ReflectionHarness.stringRep(domTests[i]) + " followed by IDL get");
-            if (ReflectionHarness.catchUnexpectedExceptions) {
-                ReflectionHarness.success();
-            }
-        } catch (err) {
-            if (ReflectionHarness.catchUnexpectedExceptions) {
-                ReflectionHarness.failure("Exception thrown during tests with setAttribute() to " + ReflectionHarness.stringRep(domTests[i]));
-            } else {
-                throw err;
+            try {
+                domObj.setAttribute(domName, domTests[i]);
+                ReflectionHarness.test(domObj.getAttribute(domName), String(domTests[i]), "setAttribute() to " + ReflectionHarness.stringRep(domTests[i]) + " followed by getAttribute()");
+                ReflectionHarness.test(idlObj[idlName], domExpected[i], "setAttribute() to " + ReflectionHarness.stringRep(domTests[i]) + " followed by IDL get");
+                if (ReflectionHarness.catchUnexpectedExceptions) {
+                    ReflectionHarness.success();
+                }
+            } catch (err) {
+                if (ReflectionHarness.catchUnexpectedExceptions) {
+                    ReflectionHarness.failure("Exception thrown during tests with setAttribute() to " + ReflectionHarness.stringRep(domTests[i]));
+                } else {
+                    throw err;
+                }
             }
         }
     }
 
     for (var i = 0; i < idlTests.length; i++) {
-        if (idlDomExpected[i] === null && data.type != "enum") {
+        if ((data.type == "limited long" && idlTests[i] < 0) ||
+            (data.type == "limited unsigned long" && idlTests[i] == 0)) {
             ReflectionHarness.testException("INDEX_SIZE_ERR", function() {
                 idlObj[idlName] = idlTests[i];
             }, "IDL set to " + ReflectionHarness.stringRep(idlTests[i]) + " must throw INDEX_SIZE_ERR");

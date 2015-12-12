@@ -93,7 +93,7 @@ public:
     static nsresult getXSLTId(const txXPathNode& aNode,
                               const txXPathNode& aBase, nsAString& aResult);
     static void release(txXPathNode* aNode);
-    static void getBaseURI(const txXPathNode& aNode, nsAString& aURI);
+    static void getBaseURI(const txXPathNode& aNode, nsIURI** aURI);
     static int comparePosition(const txXPathNode& aNode,
                                const txXPathNode& aOtherNode);
     static bool localNameEquals(const txXPathNode& aNode,
@@ -110,7 +110,7 @@ public:
         return false;
       }
       nsIContent* content = aNode.Content();
-      return content->IsHTML() && content->IsInHTMLDocument();
+      return content->IsHTMLElement() && content->IsInHTMLDocument();
     }
 };
 

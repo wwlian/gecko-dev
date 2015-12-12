@@ -1,7 +1,6 @@
 import base64
 import cgi
 import Cookie
-import logging
 import os
 import StringIO
 import tempfile
@@ -10,7 +9,6 @@ import urlparse
 import stash
 from utils import HTTPException
 
-logger = logging.getLogger("wptserve")
 missing = object()
 
 
@@ -30,7 +28,15 @@ class Server(object):
     config = None
 
     def __init__(self, request):
-        self.stash = stash.Stash(request.url_parts.path)
+        self._stash = None
+        self._request = request
+
+    @property
+    def stash(self):
+        if self._stash is None:
+            address, authkey = stash.load_env_config()
+            self._stash = stash.Stash(self._request.url_parts.path, address, authkey)
+        return self._stash
 
 
 class InputFile(object):
@@ -173,9 +179,9 @@ class Request(object):
 
     Request path as it appears in the HTTP request.
 
-    .. attribute:: filesystem_path
+    .. attribute:: url_base
 
-    Request path resolved relative to the document root.
+    The prefix part of the path; typically / unless the handler has a url_base set
 
     .. attribute:: url
 
@@ -251,6 +257,7 @@ class Request(object):
                 host, port = host.split(":", 1)
 
         self.request_path = request_handler.path
+        self.url_base = "/"
 
         if self.request_path.startswith(scheme + "://"):
             self.url = request_handler.path
@@ -275,7 +282,6 @@ class Request(object):
         self._POST = None
         self._cookies = None
         self._auth = None
-        self._filesystem_path = None
 
         self.server = Server(self)
 
@@ -338,20 +344,6 @@ class Request(object):
             self._auth = Authentication(self.headers)
         return self._auth
 
-    @property
-    def filesystem_path(self):
-        if self._filesystem_path is None:
-            path = self.url_parts.path
-            if path.startswith("/"):
-                path = path[1:]
-
-            if ".." in path:
-                raise HTTPException(500)
-
-            self._filesystem_path = os.path.join(self.doc_root, path)
-        logger.debug(self._filesystem_path)
-        return self._filesystem_path
-
 
 class RequestHeaders(dict):
     """Dictionary-like API for accessing request headers."""
@@ -393,7 +385,7 @@ class RequestHeaders(dict):
         a list"""
         try:
             return dict.__getitem__(self, key.lower())
-        except:
+        except KeyError:
             if default is not missing:
                 return default
             else:

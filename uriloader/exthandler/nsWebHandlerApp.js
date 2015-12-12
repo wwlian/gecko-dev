@@ -2,14 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-
 ////////////////////////////////////////////////////////////////////////////////
 //// Constants
 
 const Ci = Components.interfaces;
 const Cr = Components.results;
 const Cc = Components.classes;
+const Cu = Components.utils;
+
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource://gre/modules/Services.jsm");
 
 ////////////////////////////////////////////////////////////////////////////////
 //// nsWebHandler class
@@ -78,9 +80,27 @@ nsWebHandlerApp.prototype = {
     
     // if we have a window context, use the URI loader to load there
     if (aWindowContext) {
+      try {
+        // getInterface throws if the object doesn't implement the given
+        // interface, so this try/catch statement is more of an if.
+        // If aWindowContext refers to a remote docshell, send the load
+        // request to the correct process.
+        aWindowContext.getInterface(Ci.nsIRemoteWindowContext)
+                      .openURI(uriToSend, Ci.nsIURILoader.IS_CONTENT_PREFERRED);
+        return;
+      } catch (e) {
+        if (e.result != Cr.NS_NOINTERFACE) {
+          throw e;
+        }
+      }
 
       // create a channel from this URI
-      var channel = ioService.newChannelFromURI(uriToSend);
+      var channel = ioService.newChannelFromURI2(uriToSend,
+                                                 null,      // aLoadingNode
+                                                 Services.scriptSecurityManager.getSystemPrincipal(),
+                                                 null,      // aTriggeringPrincipal
+                                                 Ci.nsILoadInfo.SEC_NORMAL,
+                                                 Ci.nsIContentPolicy.TYPE_OTHER);
       channel.loadFlags = Ci.nsIChannel.LOAD_DOCUMENT_URI;
 
       // load the channel

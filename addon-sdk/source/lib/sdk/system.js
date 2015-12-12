@@ -9,7 +9,6 @@ module.metadata = {
 
 const { Cc, Ci, CC } = require('chrome');
 const options = require('@loader/options');
-const file = require('./io/file');
 const runtime = require("./system/runtime");
 const { when: unload } = require("./system/unload");
 
@@ -53,7 +52,7 @@ exports.env = require('./system/environment').env;
  * 'success' code 0. To exit with failure use `1`.
  * TODO: Improve platform to actually quit with an exit code.
  */
-let forcedExit = false;
+var forcedExit = false;
 exports.exit = function exit(code) {
   if (forcedExit) {
     // a forced exit was already tried
@@ -63,6 +62,10 @@ exports.exit = function exit(code) {
 
   let resultsFile = 'resultFile' in options && options.resultFile;
   function unloader() {
+    if (!options.resultFile) {
+      return;
+    }
+
     // This is used by 'cfx' to find out exit code.
     let mode = PR_WRONLY | PR_CREATE_FILE | PR_TRUNCATE;
     let stream = openFile(options.resultFile, mode);
@@ -70,6 +73,7 @@ exports.exit = function exit(code) {
     stream.write(status, status.length);
     stream.flush();
     stream.close();
+    return;
   }
 
   if (code == 0) {
@@ -78,10 +82,7 @@ exports.exit = function exit(code) {
 
   // Bug 856999: Prevent automatic kill of Firefox when running tests
   if (options.noQuit) {
-    if (resultsFile) {
-      unload(unloader);
-    }
-    return;
+    return unload(unloader);
   }
 
   unloader();
@@ -90,7 +91,7 @@ exports.exit = function exit(code) {
 
 // Adapter for nodejs's stdout & stderr:
 // http://nodejs.org/api/process.html#process_process_stdout
-let stdout = Object.freeze({ write: dump, end: dump });
+var stdout = Object.freeze({ write: dump, end: dump });
 exports.stdout = stdout;
 exports.stderr = stdout;
 

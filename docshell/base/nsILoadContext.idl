@@ -9,12 +9,18 @@
 interface nsIDOMWindow;
 interface nsIDOMElement;
 
+%{C++
+#ifdef MOZILLA_INTERNAL_API
+#include "mozilla/BasePrincipal.h" // for DocShellOriginAttributes
+#endif
+%}
+
 /**
  * An nsILoadContext represents the context of a load.  This interface
  * can be queried for various information about where the load is
  * happening.
  */
-[scriptable, uuid(6ec837fa-af93-4350-bbb8-0985d54c74ca)]
+[scriptable, uuid(c71ef717-8fb9-425e-98ef-aef5894890f8)]
 interface nsILoadContext : nsISupports
 {
   /**
@@ -35,11 +41,14 @@ interface nsILoadContext : nsISupports
   readonly attribute nsIDOMWindow topWindow;
 
   /**
-   * topFrameElement is the <iframe> or <frame> element which contains the
-   * topWindow with which the load is associated.
+   * topFrameElement is the <iframe>, <frame>, or <browser> element which
+   * contains the topWindow with which the load is associated.
    *
    * Note that we may have a topFrameElement even when we don't have an
    * associatedWindow, if the topFrameElement's content lives out of process.
+   * topFrameElement is available in single-process and multiprocess contexts.
+   * Note that topFrameElement may be in chrome even when the nsILoadContext is
+   * associated with content.
    */
   readonly attribute nsIDOMElement topFrameElement;
 
@@ -117,4 +126,20 @@ interface nsILoadContext : nsISupports
    */
   readonly attribute unsigned long appId;
 
+  /**
+   * A dictionary of the non-default origin attributes associated with this
+   * nsILoadContext.
+   */
+  readonly attribute jsval originAttributes;
+
+%{C++
+#ifdef MOZILLA_INTERNAL_API
+  /**
+   * The C++ getter for origin attributes.
+   *
+   * Defined in LoadContext.cpp
+   */
+  bool GetOriginAttributes(mozilla::DocShellOriginAttributes& aAttrs);
+#endif
+%}
 };

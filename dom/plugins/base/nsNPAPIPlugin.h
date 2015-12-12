@@ -52,7 +52,7 @@ public:
   // minidump was written.
   void PluginCrashed(const nsAString& pluginDumpID,
                      const nsAString& browserDumpID);
-  
+
   static bool RunPluginOOP(const nsPluginTag *aPluginTag);
 
   nsresult Shutdown();
@@ -126,10 +126,10 @@ IntToNPIdentifier(int i)
 JSContext* GetJSContext(NPP npp);
 
 inline bool
-NPStringIdentifierIsPermanent(NPP npp, NPIdentifier id)
+NPStringIdentifierIsPermanent(NPIdentifier id)
 {
   AutoSafeJSContext cx;
-  return JS_StringHasBeenInterned(cx, NPIdentifierToString(id));
+  return JS_StringHasBeenPinned(cx, NPIdentifierToString(id));
 }
 
 #define NPIdentifier_VOID (JSIdToNPIdentifier(JSID_VOID))
@@ -247,15 +247,6 @@ _unscheduletimer(NPP instance, uint32_t timerID);
 NPError
 _popupcontextmenu(NPP instance, NPMenu* menu);
 
-NPError
-_initasyncsurface(NPP instance, NPSize *size, NPImageFormat format, void *initData, NPAsyncSurface *surface);
-
-NPError
-_finalizeasyncsurface(NPP instance, NPAsyncSurface *surface);
-
-void
-_setcurrentasyncsurface(NPP instance, NPAsyncSurface *surface, NPRect *changed);
-
 NPBool
 _convertpoint(NPP instance, double sourceX, double sourceY, NPCoordinateSpace sourceSpace, double *destX, double *destY, NPCoordinateSpace destSpace);
 
@@ -328,6 +319,15 @@ _getJavaPeer(NPP npp);
 
 void
 _urlredirectresponse(NPP instance, void* notifyData, NPBool allow);
+
+NPError
+_initasyncsurface(NPP instance, NPSize *size, NPImageFormat format, void *initData, NPAsyncSurface *surface);
+
+NPError
+_finalizeasyncsurface(NPP instance, NPAsyncSurface *surface);
+
+void
+_setcurrentasyncsurface(NPP instance, NPAsyncSurface *surface, NPRect *changed);
 
 } /* namespace parent */
 } /* namespace plugins */

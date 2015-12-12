@@ -6,25 +6,17 @@
 /**
  * Test with sessionCheckpoints.json containing invalid data
  */
-add_task(function test_invalid_file() {
+add_task(function* test_invalid_file() {
   // Write bogus data to checkpoint file
   let data = "1234";
   yield OS.File.writeAtomic(sessionCheckpointsPath, data,
                             {tmpPath: sessionCheckpointsPath + ".tmp"});
 
-  // An invalid file will cause |init| to throw an exception
-  try {
-    let status = yield CrashMonitor.init();
-    do_check_true(false);
-  } catch (ex) {
-    do_check_true(true);
-  }
+  // An invalid file will cause |init| to return null
+  let status = yield CrashMonitor.init();
+  do_check_true(status === null ? true : false);
 
-  // and |previousCheckpoints| will be rejected
-  try {
-    let checkpoints = yield CrashMonitor.previousCheckpoints;
-    do_check_true(false);
-  } catch (ex) {
-    do_check_true(true);
-  }
+  // and |previousCheckpoints| will be null
+  let checkpoints = yield CrashMonitor.previousCheckpoints;
+  do_check_true(checkpoints === null ? true : false);
 });

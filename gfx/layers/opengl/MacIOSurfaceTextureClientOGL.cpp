@@ -4,66 +4,58 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MacIOSurfaceTextureClientOGL.h"
-#include "mozilla/gfx/MacIOSurface.h"
+#include "mozilla/gfx/MacIOSurface.h" 
 
 namespace mozilla {
 namespace layers {
 
-MacIOSurfaceTextureClientOGL::MacIOSurfaceTextureClientOGL(TextureFlags aFlags)
-  : TextureClient(aFlags)
-  , mIsLocked(false)
+MacIOSurfaceTextureData::MacIOSurfaceTextureData(MacIOSurface* aSurface)
+: mSurface(aSurface)
+{
+  MOZ_ASSERT(mSurface);
+}
+
+MacIOSurfaceTextureData::~MacIOSurfaceTextureData()
 {}
 
-MacIOSurfaceTextureClientOGL::~MacIOSurfaceTextureClientOGL()
-{}
-
-void
-MacIOSurfaceTextureClientOGL::InitWith(MacIOSurface* aSurface)
+// static
+MacIOSurfaceTextureData*
+MacIOSurfaceTextureData::Create(MacIOSurface* aSurface)
 {
-  MOZ_ASSERT(IsValid());
-  MOZ_ASSERT(!IsAllocated());
-  mSurface = aSurface;
-}
-
-bool
-MacIOSurfaceTextureClientOGL::Lock(OpenMode aMode)
-{
-  MOZ_ASSERT(!mIsLocked);
-  mIsLocked = true;
-  return IsValid() && IsAllocated();
-}
-
-void
-MacIOSurfaceTextureClientOGL::Unlock()
-{
-  MOZ_ASSERT(mIsLocked);
-  mIsLocked = false;
-}
-
-bool
-MacIOSurfaceTextureClientOGL::IsLocked() const
-{
-  return mIsLocked;
-}
-
-bool
-MacIOSurfaceTextureClientOGL::ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor)
-{
-  MOZ_ASSERT(IsValid());
-  if (!IsAllocated()) {
-    return false;
+  MOZ_ASSERT(aSurface);
+  if (!aSurface) {
+    return nullptr;
   }
+  return new MacIOSurfaceTextureData(aSurface);
+}
+
+bool
+MacIOSurfaceTextureData::Serialize(SurfaceDescriptor& aOutDescriptor)
+{
   aOutDescriptor = SurfaceDescriptorMacIOSurface(mSurface->GetIOSurfaceID(),
                                                  mSurface->GetContentsScaleFactor(),
-                                                 mSurface->HasAlpha());
+                                                 !mSurface->HasAlpha());
   return true;
 }
 
 gfx::IntSize
-MacIOSurfaceTextureClientOGL::GetSize() const
+MacIOSurfaceTextureData::GetSize() const
 {
   return gfx::IntSize(mSurface->GetDevicePixelWidth(), mSurface->GetDevicePixelHeight());
 }
 
+gfx::SurfaceFormat
+MacIOSurfaceTextureData::GetFormat() const
+{
+  return mSurface->GetFormat();
 }
+
+already_AddRefed<gfx::DataSourceSurface>
+MacIOSurfaceTextureData::GetAsSurface()
+{
+  RefPtr<gfx::SourceSurface> surf = mSurface->GetAsSurface();
+  return surf->GetDataSurface();
 }
+
+} // namespace layers
+} // namespace mozilla

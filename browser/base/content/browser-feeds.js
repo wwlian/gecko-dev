@@ -1,7 +1,7 @@
-# -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
  * The Feed Handler object manages discovery of RSS/ATOM feeds in web pages
@@ -167,5 +167,17 @@ var FeedHandler = {
         clearTimeout(this._updateFeedTimeout);
       this._updateFeedTimeout = setTimeout(this.updateFeeds.bind(this), 100);
     }
-  }
+  },
+
+  init() {
+    window.messageManager.addMessageListener("FeedWriter:ShownFirstRun", this);
+  },
+
+  receiveMessage(msg) {
+    switch (msg.name) {
+      case "FeedWriter:ShownFirstRun":
+        Services.prefs.setBoolPref("browser.feeds.showFirstRunUI", false);
+        break;
+    }
+  },
 };

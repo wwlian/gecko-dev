@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +15,7 @@ namespace mozilla {
 namespace dom {
 namespace voicemail {
 
-class VoicemailIPCProvider MOZ_FINAL : public nsIVoicemailProvider
+class VoicemailIPCProvider final : public nsIVoicemailProvider
 {
   friend class VoicemailIPCService;
 
@@ -23,10 +23,10 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIVOICEMAILPROVIDER
 
-  VoicemailIPCProvider(uint32_t aServiceId);
+  explicit VoicemailIPCProvider(uint32_t aServiceId);
 
 private:
-  // MOZ_FINAL suppresses -Werror,-Wdelete-non-virtual-dtor
+  // final suppresses -Werror,-Wdelete-non-virtual-dtor
   ~VoicemailIPCProvider() {}
 
 private:
@@ -207,7 +207,7 @@ VoicemailIPCService::GetItemByServiceId(uint32_t aServiceId,
   NS_ENSURE_ARG_POINTER(aProvider);
 
   if (!mProviders[aServiceId]) {
-    nsRefPtr<VoicemailIPCProvider> provider =
+    RefPtr<VoicemailIPCProvider> provider =
       new VoicemailIPCProvider(aServiceId);
     if (!SendGetAttributes(aServiceId,
                            &(provider->mNumber),
@@ -222,7 +222,7 @@ VoicemailIPCService::GetItemByServiceId(uint32_t aServiceId,
     mProviders[aServiceId] = provider;
   }
 
-  nsRefPtr<nsIVoicemailProvider> provider(mProviders[aServiceId]);
+  RefPtr<nsIVoicemailProvider> provider(mProviders[aServiceId]);
   provider.forget(aProvider);
 
   return NS_OK;

@@ -33,21 +33,13 @@ HelperAppLauncherDialog.prototype = {
     aLauncher.saveToDisk(null, false);
   },
 
-  promptForSaveToFile: function(aLauncher,
-                                aContext,
-                                aDefaultFile,
-                                aSuggestedFileExt,
-                                aForcePrompt) {
-    throw Cr.NS_ERROR_NOT_AVAILABLE;
-  },
-
   promptForSaveToFileAsync: function(aLauncher,
                                      aContext,
                                      aDefaultFile,
                                      aSuggestedFileExt,
                                      aForcePrompt) {
     // Retrieve the user's default download directory.
-    Task.spawn(function() {
+    Task.spawn(function*() {
       let file = null;
       try {
         let defaultFolder = yield Downloads.getPreferredDownloadsDirectory();

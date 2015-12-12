@@ -3,7 +3,7 @@
 
 "use strict";
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
 do_get_profile();
 
@@ -13,6 +13,7 @@ Cu.import("resource://gre/modules/Sqlite.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/AsyncShutdown.jsm");
+Cu.import("resource://gre/modules/Promise.jsm");
 
 function getConnection(dbName, extraOptions={}) {
   let path = dbName + ".sqlite";
@@ -24,7 +25,7 @@ function getConnection(dbName, extraOptions={}) {
   return Sqlite.openConnection(options);
 }
 
-function getDummyDatabase(name, extraOptions={}) {
+function* getDummyDatabase(name, extraOptions={}) {
   const TABLES = {
     dirs: "id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT",
     files: "id INTEGER PRIMARY KEY AUTOINCREMENT, dir_id INTEGER, path TEXT",
@@ -38,7 +39,7 @@ function getDummyDatabase(name, extraOptions={}) {
     c._initialStatementCount++;
   }
 
-  throw new Task.Result(c);
+  return c;
 }
 
 function sleep(ms) {

@@ -14,6 +14,7 @@
 #include "nsAutoPtr.h"
 #include "txStylesheet.h"
 #include "nsTArray.h"
+#include "mozilla/net/ReferrerPolicy.h"
 
 extern bool
 TX_XSLTFunctionAvailable(nsIAtom* aName, int32_t aNameSpaceID);
@@ -31,13 +32,13 @@ class txInScopeVariable;
 class txElementContext : public txObject
 {
 public:
-    explicit txElementContext(const nsAString& aBaseURI);
+    explicit txElementContext();
     txElementContext(const txElementContext& aOther);
 
     bool mPreserveWhitespace;
     bool mForwardsCompatibleParsing;
-    nsString mBaseURI;
-    nsRefPtr<txNamespaceMap> mMappings;
+    nsCOMPtr<nsIURI> mBaseURI;
+    RefPtr<txNamespaceMap> mMappings;
     nsTArray<int32_t> mInstructionNamespaces;
     int32_t mDepth;
 };
@@ -48,8 +49,8 @@ public:
     NS_IMETHOD_(MozExternalRefCountType) AddRef() = 0;
     NS_IMETHOD_(MozExternalRefCountType) Release() = 0;
 
-    virtual nsresult loadURI(const nsAString& aUri,
-                             const nsAString& aReferrerUri,
+    virtual nsresult loadURI(nsIURI* aUri,
+                             nsIPrincipal* aReferrerPrincipal,
                              txStylesheetCompiler* aCompiler) = 0;
     virtual void onDoneCompiling(txStylesheetCompiler* aCompiler,
                                  nsresult aResult,
@@ -58,7 +59,8 @@ public:
 };
 
 #define TX_DECL_ACOMPILEOBSERVER \
-  nsresult loadURI(const nsAString& aUri, const nsAString& aReferrerUri, \
+  nsresult loadURI(nsIURI* aUri, \
+                   nsIPrincipal* aReferrerPrincipal, \
                    txStylesheetCompiler* aCompiler); \
   void onDoneCompiling(txStylesheetCompiler* aCompiler, nsresult aResult, \
                        const char16_t *aErrorText = nullptr, \
@@ -70,7 +72,7 @@ public:
     explicit txStylesheetCompilerState(txACompileObserver* aObserver);
     ~txStylesheetCompilerState();
     
-    nsresult init(const nsAString& aStylesheetURI, txStylesheet* aStylesheet,
+    nsresult init(const nsString& aFragment, txStylesheet* aStylesheet,
                   txListIterator* aInsertPosition);
 
     // Embedded stylesheets state
@@ -112,8 +114,8 @@ public:
     nsresult openInstructionContainer(txInstructionContainer* aContainer);
     void closeInstructionContainer();
     nsresult addInstruction(nsAutoPtr<txInstruction>&& aInstruction);
-    nsresult loadIncludedStylesheet(const nsAString& aURI);
-    nsresult loadImportedStylesheet(const nsAString& aURI,
+    nsresult loadIncludedStylesheet(nsIURI* aURI);
+    nsresult loadImportedStylesheet(nsIURI* aURI,
                                     txStylesheet::ImportFrame* aFrame);
     
     // misc
@@ -121,10 +123,10 @@ public:
     nsresult addVariable(const txExpandedName& aName);
 
     // txIParseContext
-    nsresult resolveNamespacePrefix(nsIAtom* aPrefix, int32_t& aID) MOZ_OVERRIDE;
+    nsresult resolveNamespacePrefix(nsIAtom* aPrefix, int32_t& aID) override;
     nsresult resolveFunctionCall(nsIAtom* aName, int32_t aID,
-                                 FunctionCall** aFunction) MOZ_OVERRIDE;
-    bool caseInsensitiveNameTests() MOZ_OVERRIDE;
+                                 FunctionCall** aFunction) override;
+    bool caseInsensitiveNameTests() override;
 
     /**
      * Should the stylesheet be parsed in forwards compatible parsing mode.
@@ -134,21 +136,36 @@ public:
         return mElementContext->mForwardsCompatibleParsing;
     }
 
-    void SetErrorOffset(uint32_t aOffset) MOZ_OVERRIDE;
+    void SetErrorOffset(uint32_t aOffset) override;
+
+    bool allowed(Allowed aAllowed) override
+    {
+        return !(mDisAllowed & aAllowed);
+    }
+
+    bool ignoreError(nsresult aResult)
+    {
+        // Some errors shouldn't be ignored even in forwards compatible parsing
+        // mode.
+        return aResult != NS_ERROR_XSLT_CALL_TO_KEY_NOT_ALLOWED &&
+               fcp();
+    }
 
     static void shutdown();
 
 
-    nsRefPtr<txStylesheet> mStylesheet;
+    RefPtr<txStylesheet> mStylesheet;
     txHandlerTable* mHandlerTable;
     nsAutoPtr<txElementContext> mElementContext;
     txPushNewContext* mSorter;
     nsAutoPtr<txList> mChooseGotoList;
     bool mDOE;
     bool mSearchingForFallback;
+    uint16_t mDisAllowed;
 
 protected:
-    nsRefPtr<txACompileObserver> mObserver;
+    nsCOMPtr<nsIPrincipal> mStylesheetPrincipal;
+    RefPtr<txACompileObserver> mObserver;
     nsTArray<txInScopeVariable*> mInScopeVariables;
     nsTArray<txStylesheetCompiler*> mChildCompilerList;
     // embed info, target information is the ID
@@ -160,7 +177,6 @@ protected:
         eInEmbed,
         eHasEmbed
     } mEmbedStatus;
-    nsString mStylesheetURI;
     bool mIsTopCompiler;
     bool mDoneWithThisStylesheet;
     txStack mObjectStack;
@@ -181,21 +197,22 @@ struct txStylesheetAttr
     nsString mValue;
 };
 
-class txStylesheetCompiler MOZ_FINAL : private txStylesheetCompilerState,
-                                       public txACompileObserver
+class txStylesheetCompiler final : private txStylesheetCompilerState,
+                                   public txACompileObserver
 {
 public:
     friend class txStylesheetCompilerState;
     friend bool TX_XSLTFunctionAvailable(nsIAtom* aName,
                                            int32_t aNameSpaceID);
-    txStylesheetCompiler(const nsAString& aStylesheetURI,
+    txStylesheetCompiler(const nsString& aFragment,
                          txACompileObserver* aObserver);
-    txStylesheetCompiler(const nsAString& aStylesheetURI,
+    txStylesheetCompiler(const nsString& aFragment,
                          txStylesheet* aStylesheet,
                          txListIterator* aInsertPosition,
                          txACompileObserver* aObserver);
 
-    void setBaseURI(const nsString& aBaseURI);
+    void setBaseURI(nsIURI* aBaseURI);
+    void setPrincipal(nsIPrincipal* aPrincipal);
 
     nsresult startElement(int32_t aNamespaceID, nsIAtom* aLocalName,
                           nsIAtom* aPrefix, txStylesheetAttr* aAttributes,

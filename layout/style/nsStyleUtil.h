@@ -10,6 +10,8 @@
 #include "nsString.h"
 #include "nsTArrayForwardDeclare.h"
 #include "gfxFontFamilyList.h"
+#include "nsStyleStruct.h"
+#include "nsCRT.h"
 
 class nsCSSValue;
 class nsStringComparator;
@@ -71,6 +73,17 @@ public:
     aResult.AppendFloat(aNumber);
   }
 
+  static void AppendStepsTimingFunction(nsTimingFunction::Type aType,
+                                        uint32_t aSteps,
+                                        nsTimingFunction::StepSyntax aSyntax,
+                                        nsAString& aResult);
+  static void AppendCubicBezierTimingFunction(float aX1, float aY1,
+                                              float aX2, float aY2,
+                                              nsAString& aResult);
+  static void AppendCubicBezierKeywordTimingFunction(
+      nsTimingFunction::Type aType,
+      nsAString& aResult);
+
   static void AppendSerializedFontSrc(const nsCSSValue& aValue,
                                       nsAString& aResult);
 
@@ -113,22 +126,22 @@ public:
   static bool IsSignificantChild(nsIContent* aChild,
                                    bool aTextIsSignificant,
                                    bool aWhitespaceIsSignificant);
-
-  /*
-   * Should we treat the given "flex-basis" value as "main-size"?
+  /**
+   * Returns true if our object-fit & object-position properties might cause
+   * a replaced element's contents to overflow its content-box (requiring
+   * clipping), or false if we can be sure that this won't happen.
    *
-   * In a horizontal flex container, this is merely a check for whether
-   * aFlexBasis has the enumerated value NS_STYLE_FLEX_BASIS_MAIN_SIZE.
+   * This lets us optimize by skipping clipping when we can tell it's
+   * unnecessary (particularly with the default values of these properties).
    *
-   * In a vertical flex container, we *also* treat other enumerated
-   * values (like "NS_STYLE_WIDTH_MAX_CONTENT") as if they were "main-size"
-   * (and return true from this function), because we don't currently support
-   * those other values for vertical/height-flavored properties. So, if we
-   * encounter them, we fall back to behaving as if we had flex-basis's initial
-   * value.
+   * @param aStylePos The nsStylePosition whose object-fit & object-position
+   *                  properties should be checked for potential overflow.
+   * @return false if we can be sure that the object-fit & object-position
+   *         properties on 'aStylePos' cannot cause a replaced element's
+   *         contents to overflow its content-box. Otherwise (if overflow is
+   *         is possible), returns true.
    */
-  static bool IsFlexBasisMainSize(const nsStyleCoord& aFlexBasis,
-                                  bool aIsMainAxisHorizontal);
+  static bool ObjectPropsMightCauseOverflow(const nsStylePosition* aStylePos);
 
   /*
    *  Does this principal have a CSP that blocks the application of
@@ -163,6 +176,29 @@ public:
                                    const nsSubstring& aStyleText,
                                    nsresult* aRv);
 
+  template<size_t N>
+  static bool MatchesLanguagePrefix(const char16_t* aLang, size_t aLen,
+                                    const char16_t (&aPrefix)[N])
+  {
+    return !nsCRT::strncmp(aLang, aPrefix, N - 1) &&
+           (aLen == N - 1 || aLang[N - 1] == '-');
+  }
+
+  template<size_t N>
+  static bool MatchesLanguagePrefix(const nsIAtom* aLang,
+                                    const char16_t (&aPrefix)[N])
+  {
+    MOZ_ASSERT(aLang);
+    return MatchesLanguagePrefix(aLang->GetUTF16String(),
+                                 aLang->GetLength(), aPrefix);
+  }
+
+  template<size_t N>
+  static bool MatchesLanguagePrefix(const nsAString& aLang,
+                                    const char16_t (&aPrefix)[N])
+  {
+    return MatchesLanguagePrefix(aLang.Data(), aLang.Length(), aPrefix);
+  }
 };
 
 

@@ -7,6 +7,7 @@
 #define MOZILLA_GFX_TOOLS_H_
 
 #include "mozilla/CheckedInt.h"
+#include "mozilla/Move.h"
 #include "mozilla/TypeTraits.h"
 #include "Types.h"
 #include "Point.h"
@@ -85,7 +86,7 @@ BytesPerPixel(SurfaceFormat aFormat)
   switch (aFormat) {
   case SurfaceFormat::A8:
     return 1;
-  case SurfaceFormat::R5G6B5:
+  case SurfaceFormat::R5G6B5_UINT16:
     return 2;
   default:
     return 4;
@@ -133,14 +134,14 @@ struct AlignedArray
     }
 #endif
 
-    moz_free(mStorage);
+    free(mStorage);
     mStorage = nullptr;
     mPtr = nullptr;
   }
 
   MOZ_ALWAYS_INLINE void Realloc(size_t aCount, bool aZero = false)
   {
-    moz_free(mStorage);
+    free(mStorage);
     CheckedInt32 storageByteCount =
       CheckedInt32(sizeof(T)) * aCount + (alignment - 1);
     if (!storageByteCount.isValid()) {
@@ -154,9 +155,9 @@ struct AlignedArray
     if (aZero) {
       // calloc can be more efficient than new[] for large chunks,
       // so we use calloc/malloc/free for everything.
-      mStorage = static_cast<uint8_t *>(moz_calloc(1, storageByteCount.value()));
+      mStorage = static_cast<uint8_t *>(calloc(1, storageByteCount.value()));
     } else {
-      mStorage = static_cast<uint8_t *>(moz_malloc(storageByteCount.value()));
+      mStorage = static_cast<uint8_t *>(malloc(storageByteCount.value()));
     }
     if (!mStorage) {
       mStorage = nullptr;
@@ -176,6 +177,13 @@ struct AlignedArray
     // elimination step should optimize this away.
     mPtr = new (mPtr) T[aCount];
     mCount = aCount;
+  }
+
+  void Swap(AlignedArray<T, alignment>& aOther)
+  {
+    mozilla::Swap(mPtr, aOther.mPtr);
+    mozilla::Swap(mStorage, aOther.mStorage);
+    mozilla::Swap(mCount, aOther.mCount);
   }
 
   MOZ_ALWAYS_INLINE operator T*()
@@ -207,7 +215,7 @@ int32_t GetAlignedStride(int32_t aStride)
   return (aStride + mask) & ~mask;
 }
 
-}
-}
+} // namespace gfx
+} // namespace mozilla
 
 #endif /* MOZILLA_GFX_TOOLS_H_ */

@@ -71,7 +71,7 @@ function* countEntries(name, value) {
 
 var searchBar;
 var searchButton;
-var searchEntries = ["test", "More Text", "Some Text"];
+var searchEntries = ["test"];
 function* promiseSetEngine() {
   let deferred = Promise.defer();
   var ss = Services.search;
@@ -99,8 +99,7 @@ function* promiseSetEngine() {
 
   Services.obs.addObserver(observer, "browser-search-engine-modified", false);
   ss.addEngine("http://mochi.test:8888/browser/browser/components/search/test/426329.xml",
-               Ci.nsISearchEngine.DATA_XML, "data:image/x-icon,%00",
-               false);
+               null, "data:image/x-icon,%00", false);
 
   return deferred.promise;
 }
@@ -141,6 +140,7 @@ function* prepareTest() {
       searchBar.removeEventListener("focus", onFocus);
       deferred.resolve();
     });
+    gURLBar.focus();
     searchBar.focus();
   } else {
     deferred.resolve();
@@ -148,11 +148,11 @@ function* prepareTest() {
   return deferred.promise;
 }
 
-add_task(function testSetupEngine() {
+add_task(function* testSetupEngine() {
   yield promiseSetEngine();
 });
 
-add_task(function testReturn() {
+add_task(function* testReturn() {
   yield prepareTest();
   EventUtils.synthesizeKey("VK_RETURN", {});
   let event = yield promiseOnLoad();
@@ -163,7 +163,7 @@ add_task(function testReturn() {
   is(event.originalTarget.URL, expectedURL(searchBar.value), "testReturn opened correct search page");
 });
 
-add_task(function testAltReturn() {
+add_task(function* testAltReturn() {
   yield prepareTest();
   EventUtils.synthesizeKey("VK_RETURN", { altKey: true });
   let event = yield promiseOnLoad();
@@ -177,7 +177,7 @@ add_task(function testAltReturn() {
 });
 
 //Shift key has no effect for now, so skip it
-add_task(function testShiftAltReturn() {
+add_task(function* testShiftAltReturn() {
   return;
 
   yield prepareTest();
@@ -192,7 +192,7 @@ add_task(function testShiftAltReturn() {
   is(event.originalTarget.URL, expectedURL(searchBar.value), "testShiftAltReturn opened correct search page");
 });
 
-add_task(function testLeftClick() {
+add_task(function* testLeftClick() {
   yield prepareTest();
   simulateClick({ button: 0 }, searchButton);
   let event = yield promiseOnLoad();
@@ -202,7 +202,7 @@ add_task(function testLeftClick() {
   is(event.originalTarget.URL, expectedURL(searchBar.value), "testLeftClick opened correct search page");
 });
 
-add_task(function testMiddleClick() {
+add_task(function* testMiddleClick() {
   yield prepareTest();
   simulateClick({ button: 1 }, searchButton);
   let event = yield promiseOnLoad();
@@ -214,7 +214,7 @@ add_task(function testMiddleClick() {
   is(event.originalTarget.URL, expectedURL(searchBar.value), "testMiddleClick opened correct search page");
 });
 
-add_task(function testShiftMiddleClick() {
+add_task(function* testShiftMiddleClick() {
   yield prepareTest();
   simulateClick({ button: 1, shiftKey: true }, searchButton);
   let event = yield promiseOnLoad();
@@ -226,38 +226,7 @@ add_task(function testShiftMiddleClick() {
   is(event.originalTarget.URL, expectedURL(searchBar.value), "testShiftMiddleClick opened correct search page");
 });
 
-add_task(function testDropText() {
-  yield prepareTest();
-  let promisePreventPopup = promiseEvent(searchBar, "popupshowing", true);
-  // drop on the search button so that we don't need to worry about the
-  // default handlers for textboxes.
-  ChromeUtils.synthesizeDrop(searchBar.searchButton, searchBar.searchButton, [[ {type: "text/plain", data: "Some Text" } ]], "copy", window);
-  yield promisePreventPopup;
-  let event = yield promiseOnLoad();
-  is(event.originalTarget.URL, expectedURL(searchBar.value), "testDropText opened correct search page");
-  is(searchBar.value, "Some Text", "drop text/plain on searchbar");
-});
-
-add_task(function testDropInternalText() {
-  yield prepareTest();
-  let promisePreventPopup = promiseEvent(searchBar, "popupshowing", true);
-  ChromeUtils.synthesizeDrop(searchBar.searchButton, searchBar.searchButton, [[ {type: "text/x-moz-text-internal", data: "More Text" } ]], "copy", window);
-  yield promisePreventPopup;
-  let event = yield promiseOnLoad();
-  is(event.originalTarget.URL, expectedURL(searchBar.value), "testDropInternalText opened correct search page");
-  is(searchBar.value, "More Text", "drop text/x-moz-text-internal on searchbar");
-
-  // testDropLink implicitly depended on testDropInternalText, so these two tests
-  // were merged so that if testDropInternalText failed it wouldn't cause testDropLink
-  // to fail unexplainably.
-  yield prepareTest();
-  promisePreventPopup = promiseEvent(searchBar, "popupshowing", true);
-  ChromeUtils.synthesizeDrop(searchBar.searchButton, searchBar.searchButton, [[ {type: "text/uri-list", data: "http://www.mozilla.org" } ]], "copy", window);
-  yield promisePreventPopup;
-  is(searchBar.value, "More Text", "drop text/uri-list on searchbar shouldn't change anything");
-});
-
-add_task(function testRightClick() {
+add_task(function* testRightClick() {
   preTabNo = gBrowser.tabs.length;
   content.location.href = "about:blank";
   simulateClick({ button: 2 }, searchButton);
@@ -268,9 +237,12 @@ add_task(function testRightClick() {
     deferred.resolve();
   }, 5000);
   yield deferred.promise;
+  // The click in the searchbox focuses it, which opens the suggestion
+  // panel. Clean up after ourselves.
+  searchBar.textbox.popup.hidePopup();
 });
 
-add_task(function testSearchHistory() {
+add_task(function* testSearchHistory() {
   var textbox = searchBar._textbox;
   for (var i = 0; i < searchEntries.length; i++) {
     let count = yield countEntries(textbox.getAttribute("autocompletesearchparam"), searchEntries[i]);
@@ -278,7 +250,7 @@ add_task(function testSearchHistory() {
   }
 });
 
-add_task(function testAutocomplete() {
+add_task(function* testAutocomplete() {
   var popup = searchBar.textbox.popup;
   let popupShownPromise = promiseEvent(popup, "popupshown");
   searchBar.textbox.showHistoryPopup();
@@ -286,7 +258,7 @@ add_task(function testAutocomplete() {
   checkMenuEntries(searchEntries);
 });
 
-add_task(function testClearHistory() {
+add_task(function* testClearHistory() {
   let controller = searchBar.textbox.controllers.getControllerForCommand("cmd_clearhistory")
   ok(controller.isCommandEnabled("cmd_clearhistory"), "Clear history command enabled");
   controller.doCommand("cmd_clearhistory");
@@ -294,7 +266,7 @@ add_task(function testClearHistory() {
   ok(count == 0, "History cleared");
 });
 
-add_task(function asyncCleanup() {
+add_task(function* asyncCleanup() {
   searchBar.value = "";
   while (gBrowser.tabs.length != 1) {
     gBrowser.removeTab(gBrowser.tabs[0], {animate: false});
@@ -302,4 +274,3 @@ add_task(function asyncCleanup() {
   content.location.href = "about:blank";
   yield promiseRemoveEngine();
 });
-

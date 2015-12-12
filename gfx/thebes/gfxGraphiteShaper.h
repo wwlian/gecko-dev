@@ -8,6 +8,8 @@
 
 #include "gfxFont.h"
 
+#include "mozilla/gfx/2D.h"
+
 struct gr_face;
 struct gr_font;
 struct gr_segment;
@@ -22,6 +24,7 @@ public:
                            uint32_t         aOffset,
                            uint32_t         aLength,
                            int32_t          aScript,
+                           bool             aVertical,
                            gfxShapedText   *aShapedText);
 
     static void Shutdown();
@@ -41,9 +44,8 @@ protected:
     gr_font *mGrFont; // owned by the shaper itself
 
     struct CallbackData {
-        gfxFont           *mFont;
-        gfxGraphiteShaper *mShaper;
-        gfxContext        *mContext;
+        gfxFont* mFont;
+        mozilla::gfx::DrawTarget* mDrawTarget;
     };
 
     CallbackData mCallbackData;

@@ -4,7 +4,10 @@
  * This program is made available under an ISC-style license.  See the
  * accompanying file LICENSE for details.
  */
+#undef NDEBUG
+#include <assert.h>
 #include <stddef.h>
+#include <stdlib.h>
 #if defined(HAVE_CONFIG_H)
 #include "config.h"
 #endif
@@ -54,6 +57,9 @@ int opensl_init(cubeb ** context, char const * context_name);
 #if defined(USE_AUDIOTRACK)
 int audiotrack_init(cubeb ** context, char const * context_name);
 #endif
+#if defined(USE_KAI)
+int kai_init(cubeb ** context, char const * context_name);
+#endif
 
 int
 validate_stream_params(cubeb_stream_params stream_params)
@@ -87,11 +93,11 @@ int
 cubeb_init(cubeb ** context, char const * context_name)
 {
   int (* init[])(cubeb **, char const *) = {
-#if defined(USE_PULSE)
-    pulse_init,
-#endif
 #if defined(USE_JACK)
     jack_init,
+#endif
+#if defined(USE_PULSE)
+    pulse_init,
 #endif
 #if defined(USE_ALSA)
     alsa_init,
@@ -120,6 +126,9 @@ cubeb_init(cubeb ** context, char const * context_name)
 #if defined(USE_AUDIOTRACK)
     audiotrack_init,
 #endif
+#if defined(USE_KAI)
+    kai_init,
+#endif
   };
   int i;
 
@@ -129,6 +138,15 @@ cubeb_init(cubeb ** context, char const * context_name)
 
   for (i = 0; i < NELEMS(init); ++i) {
     if (init[i](context, context_name) == CUBEB_OK) {
+      /* Assert that the minimal API is implemented. */
+#define OK(fn) assert((* context)->ops->fn)
+      OK(get_backend_id);
+      OK(destroy);
+      OK(stream_init);
+      OK(stream_destroy);
+      OK(stream_start);
+      OK(stream_stop);
+      OK(stream_get_position);
       return CUBEB_OK;
     }
   }
@@ -153,6 +171,10 @@ cubeb_get_max_channel_count(cubeb * context, uint32_t * max_channels)
     return CUBEB_ERROR_INVALID_PARAMETER;
   }
 
+  if (!context->ops->get_max_channel_count) {
+    return CUBEB_ERROR_NOT_SUPPORTED;
+  }
+
   return context->ops->get_max_channel_count(context, max_channels);
 }
 
@@ -162,6 +184,11 @@ cubeb_get_min_latency(cubeb * context, cubeb_stream_params params, uint32_t * la
   if (!context || !latency_ms) {
     return CUBEB_ERROR_INVALID_PARAMETER;
   }
+
+  if (!context->ops->get_min_latency) {
+    return CUBEB_ERROR_NOT_SUPPORTED;
+  }
+
   return context->ops->get_min_latency(context, params, latency_ms);
 }
 
@@ -171,6 +198,11 @@ cubeb_get_preferred_sample_rate(cubeb * context, uint32_t * rate)
   if (!context || !rate) {
     return CUBEB_ERROR_INVALID_PARAMETER;
   }
+
+  if (!context->ops->get_preferred_sample_rate) {
+    return CUBEB_ERROR_NOT_SUPPORTED;
+  }
+
   return context->ops->get_preferred_sample_rate(context, rate);
 }
 
@@ -256,6 +288,10 @@ cubeb_stream_get_latency(cubeb_stream * stream, uint32_t * latency)
     return CUBEB_ERROR_INVALID_PARAMETER;
   }
 
+  if (!stream->context->ops->stream_get_latency) {
+    return CUBEB_ERROR_NOT_SUPPORTED;
+  }
+
   return stream->context->ops->stream_get_latency(stream, latency);
 }
 
@@ -266,6 +302,10 @@ cubeb_stream_set_volume(cubeb_stream * stream, float volume)
     return CUBEB_ERROR_INVALID_PARAMETER;
   }
 
+  if (!stream->context->ops->stream_set_volume) {
+    return CUBEB_ERROR_NOT_SUPPORTED;
+  }
+
   return stream->context->ops->stream_set_volume(stream, volume);
 }
 
@@ -273,6 +313,10 @@ int cubeb_stream_set_panning(cubeb_stream * stream, float panning)
 {
   if (!stream || panning < -1.0 || panning > 1.0) {
     return CUBEB_ERROR_INVALID_PARAMETER;
+  }
+
+  if (!stream->context->ops->stream_set_panning) {
+    return CUBEB_ERROR_NOT_SUPPORTED;
   }
 
   return stream->context->ops->stream_set_panning(stream, panning);
@@ -285,14 +329,11 @@ int cubeb_stream_get_current_device(cubeb_stream * stream,
     return CUBEB_ERROR_INVALID_PARAMETER;
   }
 
-  // If we find an implementation, call the function, it might not be available
-  // on some platforms.
-  if (stream->context->ops->stream_get_current_device) {
-    return stream->context->ops->stream_get_current_device(stream,
-                                                           device);
+  if (!stream->context->ops->stream_get_current_device) {
+    return CUBEB_ERROR_NOT_SUPPORTED;
   }
 
-  return CUBEB_ERROR;
+  return stream->context->ops->stream_get_current_device(stream, device);
 }
 
 int cubeb_stream_device_destroy(cubeb_stream * stream,
@@ -302,13 +343,11 @@ int cubeb_stream_device_destroy(cubeb_stream * stream,
     return CUBEB_ERROR_INVALID_PARAMETER;
   }
 
-  // If we find an implementation, call the function, it might not be available
-  // on some platforms.
-  if (stream->context->ops->stream_device_destroy) {
-    return stream->context->ops->stream_device_destroy(stream, device);
+  if (!stream->context->ops->stream_device_destroy) {
+    return CUBEB_ERROR_NOT_SUPPORTED;
   }
 
-  return CUBEB_ERROR;
+  return stream->context->ops->stream_device_destroy(stream, device);
 }
 
 int cubeb_stream_register_device_changed_callback(cubeb_stream * stream,
@@ -318,11 +357,56 @@ int cubeb_stream_register_device_changed_callback(cubeb_stream * stream,
     return CUBEB_ERROR_INVALID_PARAMETER;
   }
 
-  if (stream->context->ops->stream_register_device_changed_callback) {
-    return stream->context->ops->
-      stream_register_device_changed_callback(stream,
-                                              device_changed_callback);
+  if (!stream->context->ops->stream_register_device_changed_callback) {
+    return CUBEB_ERROR_NOT_SUPPORTED;
   }
 
-  return CUBEB_ERROR;
+  return stream->context->ops->stream_register_device_changed_callback(stream, device_changed_callback);
 }
+
+int cubeb_enumerate_devices(cubeb * context,
+                            cubeb_device_type devtype,
+                            cubeb_device_collection ** collection)
+{
+  if ((devtype & (CUBEB_DEVICE_TYPE_INPUT | CUBEB_DEVICE_TYPE_OUTPUT)) == 0)
+    return CUBEB_ERROR_INVALID_PARAMETER;
+  if (collection == NULL)
+    return CUBEB_ERROR_INVALID_PARAMETER;
+  if (!context->ops->enumerate_devices)
+    return CUBEB_ERROR_NOT_SUPPORTED;
+
+  return context->ops->enumerate_devices(context, devtype, collection);
+}
+
+int cubeb_device_collection_destroy(cubeb_device_collection * collection)
+{
+  uint32_t i;
+
+  if (collection == NULL)
+    return CUBEB_ERROR_INVALID_PARAMETER;
+
+  for (i = 0; i < collection->count; i++)
+    cubeb_device_info_destroy(collection->device[i]);
+
+  free(collection);
+  return CUBEB_OK;
+}
+
+int cubeb_device_info_destroy(cubeb_device_info * info)
+{
+  free(info->device_id);
+  free(info->friendly_name);
+  free(info->group_id);
+  free(info->vendor_name);
+
+  free(info);
+  return CUBEB_OK;
+}
+
+int cubeb_register_device_collection_changed(cubeb * context,
+                                             cubeb_device_collection_changed_callback callback,
+                                             void * user_ptr)
+{
+  return CUBEB_ERROR_NOT_SUPPORTED;
+}
+

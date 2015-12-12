@@ -11,7 +11,7 @@ interface nsIFile;
 interface nsIInterfaceRequestor;
 interface nsIArray;
 
-[scriptable, uuid(4bde6754-406a-45d1-b18e-dc685adc1db4)]
+[scriptable, uuid(f35733bc-114b-49ce-a8dd-a423f19318bc)]
 interface nsIParentalControlsService : nsISupports
 {
   /**
@@ -20,17 +20,26 @@ interface nsIParentalControlsService : nsISupports
   const short DOWNLOAD = 1; // Downloading files
   const short INSTALL_EXTENSION = 2; // Installing extensions
   const short INSTALL_APP = 3; // Installing webapps
-  const short VISIT_FILE_URLS = 4; // Opening file:/// urls
+  const short BROWSE = 4; // Opening specific urls
   const short SHARE = 5; // Sharing
   const short BOOKMARK = 6; // Creating bookmarks
   const short ADD_CONTACT = 7; // Add contacts to the system database
   const short SET_IMAGE = 8; // Setting images as wall paper
   const short MODIFY_ACCOUNTS = 9; // Modifying system accounts
+  const short REMOTE_DEBUGGING = 10; // Remote debugging
+  const short IMPORT_SETTINGS = 11; // Importing settings from other apps
+  const short PRIVATE_BROWSING = 12; // Disallow usage of private browsing
+  const short DATA_CHOICES = 13; // Choose whether or not to send usage information
+  const short CLEAR_HISTORY = 14; // Clear browsing history
+  const short MASTER_PASSWORD = 15; // Setting master password for logins
+  const short GUEST_BROWSING = 16; // Disallow usage of guest browsing
+  const short ADVANCED_SETTINGS = 17; // Advanced settings
+  const short CAMERA_MICROPHONE = 18; // Camera and microphone (WebRTC)
 
   /**
    * @returns true if the current user account has parental controls
    * restrictions enabled.
-   */ 
+   */
   readonly attribute boolean parentalControlsEnabled;
 
   /**

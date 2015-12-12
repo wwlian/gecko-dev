@@ -17,7 +17,6 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Move.h"
-#include "mozilla/NullPtr.h"
 #include "mozilla/ReentrancyGuard.h"
 #include "mozilla/TemplateLib.h"
 #include "mozilla/TypeTraits.h"
@@ -32,8 +31,8 @@
 
 namespace mozilla {
 
-template<typename T, size_t N, class AllocPolicy, class ThisVector>
-class VectorBase;
+template<typename T, size_t N, class AllocPolicy>
+class Vector;
 
 namespace detail {
 
@@ -53,9 +52,28 @@ static bool CapacityHasExcessSpace(size_t aCapacity)
  * This template class provides a default implementation for vector operations
  * when the element type is not known to be a POD, as judged by IsPod.
  */
-template<typename T, size_t N, class AP, class ThisVector, bool IsPod>
+template<typename T, size_t N, class AP, bool IsPod>
 struct VectorImpl
 {
+  /*
+   * Constructs a default object in the uninitialized memory at *aDst.
+   */
+  MOZ_NONNULL(1)
+  static inline void new_(T* aDst)
+  {
+    new(aDst) T();
+  }
+
+  /*
+   * Constructs an object in the uninitialized memory at *aDst from aSrc.
+   */
+  template<typename U>
+  MOZ_NONNULL(1)
+  static inline void new_(T* aDst, U&& aU)
+  {
+    new(aDst) T(Forward<U>(aU));
+  }
+
   /* Destroys constructed objects in the range [aBegin, aEnd). */
   static inline void destroy(T* aBegin, T* aEnd)
   {
@@ -70,7 +88,7 @@ struct VectorImpl
   {
     MOZ_ASSERT(aBegin <= aEnd);
     for (T* p = aBegin; p < aEnd; ++p) {
-      new(p) T();
+      new_(p);
     }
   }
 
@@ -84,7 +102,7 @@ struct VectorImpl
   {
     MOZ_ASSERT(aSrcStart <= aSrcEnd);
     for (const U* p = aSrcStart; p < aSrcEnd; ++p, ++aDst) {
-      new(aDst) T(*p);
+      new_(aDst, *p);
     }
   }
 
@@ -97,7 +115,7 @@ struct VectorImpl
   {
     MOZ_ASSERT(aSrcStart <= aSrcEnd);
     for (U* p = aSrcStart; p < aSrcEnd; ++p, ++aDst) {
-      new(aDst) T(Move(*p));
+      new_(aDst, Move(*p));
     }
   }
 
@@ -109,7 +127,7 @@ struct VectorImpl
   static inline void copyConstructN(T* aDst, size_t aN, const U& aU)
   {
     for (T* end = aDst + aN; aDst < end; ++aDst) {
-      new(aDst) T(aU);
+      new_(aDst, aU);
     }
   }
 
@@ -120,18 +138,18 @@ struct VectorImpl
    * not overflow.
    */
   static inline bool
-  growTo(VectorBase<T, N, AP, ThisVector>& aV, size_t aNewCap)
+  growTo(Vector<T, N, AP>& aV, size_t aNewCap)
   {
     MOZ_ASSERT(!aV.usingInlineStorage());
     MOZ_ASSERT(!CapacityHasExcessSpace<T>(aNewCap));
     T* newbuf = aV.template pod_malloc<T>(aNewCap);
-    if (!newbuf) {
+    if (MOZ_UNLIKELY(!newbuf)) {
       return false;
     }
     T* dst = newbuf;
     T* src = aV.beginNoCheck();
     for (; src < aV.endNoCheck(); ++dst, ++src) {
-      new(dst) T(Move(*src));
+      new_(dst, Move(*src));
     }
     VectorImpl::destroy(aV.beginNoCheck(), aV.endNoCheck());
     aV.free_(aV.mBegin);
@@ -147,9 +165,20 @@ struct VectorImpl
  * vector operations when the element type is known to be a POD, as judged by
  * IsPod.
  */
-template<typename T, size_t N, class AP, class ThisVector>
-struct VectorImpl<T, N, AP, ThisVector, true>
+template<typename T, size_t N, class AP>
+struct VectorImpl<T, N, AP, true>
 {
+  static inline void new_(T* aDst)
+  {
+    *aDst = T();
+  }
+
+  template<typename U>
+  static inline void new_(T* aDst, U&& aU)
+  {
+    *aDst = Forward<U>(aU);
+  }
+
   static inline void destroy(T*, T*) {}
 
   static inline void initialize(T* aBegin, T* aEnd)
@@ -164,7 +193,7 @@ struct VectorImpl<T, N, AP, ThisVector, true>
      */
     MOZ_ASSERT(aBegin <= aEnd);
     for (T* p = aBegin; p < aEnd; ++p) {
-      new(p) T();
+      new_(p);
     }
   }
 
@@ -181,7 +210,7 @@ struct VectorImpl<T, N, AP, ThisVector, true>
      */
     MOZ_ASSERT(aSrcStart <= aSrcEnd);
     for (const U* p = aSrcStart; p < aSrcEnd; ++p, ++aDst) {
-      *aDst = *p;
+      new_(aDst, *p);
     }
   }
 
@@ -195,17 +224,17 @@ struct VectorImpl<T, N, AP, ThisVector, true>
   static inline void copyConstructN(T* aDst, size_t aN, const T& aT)
   {
     for (T* end = aDst + aN; aDst < end; ++aDst) {
-      *aDst = aT;
+      new_(aDst, aT);
     }
   }
 
   static inline bool
-  growTo(VectorBase<T, N, AP, ThisVector>& aV, size_t aNewCap)
+  growTo(Vector<T, N, AP>& aV, size_t aNewCap)
   {
     MOZ_ASSERT(!aV.usingInlineStorage());
     MOZ_ASSERT(!CapacityHasExcessSpace<T>(aNewCap));
     T* newbuf = aV.template pod_realloc<T>(aV.mBegin, aV.mCapacity, aNewCap);
-    if (!newbuf) {
+    if (MOZ_UNLIKELY(!newbuf)) {
       return false;
     }
     aV.mBegin = newbuf;
@@ -215,23 +244,42 @@ struct VectorImpl<T, N, AP, ThisVector, true>
   }
 };
 
+// A struct for TestVector.cpp to access private internal fields.
+// DO NOT DEFINE IN YOUR OWN CODE.
+struct VectorTesting;
+
 } // namespace detail
 
 /*
- * A CRTP base class for vector-like classes.  Unless you really really want
- * your own vector class -- and you almost certainly don't -- you should use
- * mozilla::Vector instead!
+ * STL-like container providing a short-lived, dynamic buffer.  Vector calls the
+ * constructors/destructors of all elements stored in its internal buffer, so
+ * non-PODs may be safely used.  Additionally, Vector will store the first N
+ * elements in-place before resorting to dynamic allocation.
  *
- * See mozilla::Vector for interface requirements.
+ * T requirements:
+ *  - default and copy constructible, assignable, destructible
+ *  - operations do not throw
+ * MinInlineCapacity requirements:
+ *  - any value, however, MinInlineCapacity is clamped to min/max values
+ * AllocPolicy:
+ *  - see "Allocation policies" in AllocPolicy.h (defaults to
+ *    mozilla::MallocAllocPolicy)
+ *
+ * Vector is not reentrant: T member functions called during Vector member
+ * functions must not call back into the same object!
  */
-template<typename T, size_t N, class AllocPolicy, class ThisVector>
-class VectorBase : private AllocPolicy
+template<typename T,
+         size_t MinInlineCapacity = 0,
+         class AllocPolicy = MallocAllocPolicy>
+class Vector final : private AllocPolicy
 {
   /* utilities */
 
   static const bool kElemIsPod = IsPod<T>::value;
-  typedef detail::VectorImpl<T, N, AllocPolicy, ThisVector, kElemIsPod> Impl;
-  friend struct detail::VectorImpl<T, N, AllocPolicy, ThisVector, kElemIsPod>;
+  typedef detail::VectorImpl<T, MinInlineCapacity, AllocPolicy, kElemIsPod> Impl;
+  friend struct detail::VectorImpl<T, MinInlineCapacity, AllocPolicy, kElemIsPod>;
+
+  friend struct detail::VectorTesting;
 
   bool growStorageBy(size_t aIncr);
   bool convertToHeapStorage(size_t aNewCap);
@@ -263,11 +311,11 @@ class VectorBase : private AllocPolicy
   };
 
   static const size_t kInlineCapacity =
-    tl::Min<N, kMaxInlineBytes / ElemSize<N, 0>::value>::value;
+    tl::Min<MinInlineCapacity, kMaxInlineBytes / ElemSize<MinInlineCapacity, 0>::value>::value;
 
   /* Calculate inline buffer size; avoid 0-sized array. */
   static const size_t kInlineBytes =
-    tl::Max<1, kInlineCapacity * ElemSize<N, 0>::value>::value;
+    tl::Max<1, kInlineCapacity * ElemSize<MinInlineCapacity, 0>::value>::value;
 
   /* member data */
 
@@ -303,7 +351,7 @@ class VectorBase : private AllocPolicy
 
   bool usingInlineStorage() const
   {
-    return mBegin == const_cast<VectorBase*>(this)->inlineStorage();
+    return mBegin == const_cast<Vector*>(this)->inlineStorage();
   }
 
   T* inlineStorage()
@@ -327,30 +375,37 @@ class VectorBase : private AllocPolicy
   }
 
 #ifdef DEBUG
+  /**
+   * The amount of explicitly allocated space in this vector that is immediately
+   * available to be filled by appending additional elements.  This value is
+   * always greater than or equal to |length()| -- the vector's actual elements
+   * are implicitly reserved.  This value is always less than or equal to
+   * |capacity()|.  It may be explicitly increased using the |reserve()| method.
+   */
   size_t reserved() const
   {
-    MOZ_ASSERT(mReserved <= mCapacity);
     MOZ_ASSERT(mLength <= mReserved);
+    MOZ_ASSERT(mReserved <= mCapacity);
     return mReserved;
   }
 #endif
 
   /* Append operations guaranteed to succeed due to pre-reserved space. */
   template<typename U> void internalAppend(U&& aU);
-  template<typename U, size_t O, class BP, class UV>
-  void internalAppendAll(const VectorBase<U, O, BP, UV>& aU);
+  template<typename U, size_t O, class BP>
+  void internalAppendAll(const Vector<U, O, BP>& aU);
   void internalAppendN(const T& aT, size_t aN);
   template<typename U> void internalAppend(const U* aBegin, size_t aLength);
 
 public:
-  static const size_t sMaxInlineStorage = N;
+  static const size_t sMaxInlineStorage = MinInlineCapacity;
 
   typedef T ElementType;
 
-  explicit VectorBase(AllocPolicy = AllocPolicy());
-  explicit VectorBase(ThisVector&&); /* Move constructor. */
-  ThisVector& operator=(ThisVector&&); /* Move assignment. */
-  ~VectorBase();
+  explicit Vector(AllocPolicy = AllocPolicy());
+  Vector(Vector&&); /* Move constructor. */
+  Vector& operator=(Vector&&); /* Move assignment. */
+  ~Vector();
 
   /* accessors */
 
@@ -358,7 +413,7 @@ public:
 
   AllocPolicy& allocPolicy() { return *this; }
 
-  enum { InlineLength = N };
+  enum { InlineLength = MinInlineCapacity };
 
   size_t length() const { return mLength; }
 
@@ -420,7 +475,7 @@ public:
 
   class Range
   {
-    friend class VectorBase;
+    friend class Vector;
     T* mCur;
     T* mEnd;
     Range(T* aCur, T* aEnd)
@@ -431,7 +486,6 @@ public:
     }
 
   public:
-    Range() {}
     bool empty() const { return mCur == mEnd; }
     size_t remain() const { return PointerRangeSize(mCur, mEnd); }
     T& front() const { MOZ_ASSERT(!empty()); return *mCur; }
@@ -439,7 +493,28 @@ public:
     T popCopyFront() { MOZ_ASSERT(!empty()); return *mCur++; }
   };
 
+  class ConstRange
+  {
+    friend class Vector;
+    const T* mCur;
+    const T* mEnd;
+    ConstRange(const T* aCur, const T* aEnd)
+      : mCur(aCur)
+      , mEnd(aEnd)
+    {
+      MOZ_ASSERT(aCur <= aEnd);
+    }
+
+  public:
+    bool empty() const { return mCur == mEnd; }
+    size_t remain() const { return PointerRangeSize(mCur, mEnd); }
+    const T& front() const { MOZ_ASSERT(!empty()); return *mCur; }
+    void popFront() { MOZ_ASSERT(!empty()); ++mCur; }
+    T popCopyFront() { MOZ_ASSERT(!empty()); return *mCur++; }
+  };
+
   Range all() { return Range(begin(), end()); }
+  ConstRange all() const { return ConstRange(begin(), end()); }
 
   /* mutators */
 
@@ -450,8 +525,12 @@ public:
   bool initCapacity(size_t aRequest);
 
   /**
-   * If reserve(length() + N) succeeds, the N next appends are guaranteed to
-   * succeed.
+   * If reserve(aRequest) succeeds and |aRequest >= length()|, then appending
+   * |aRequest - length()| elements, in any sequence of append/appendAll calls,
+   * is guaranteed to succeed.
+   *
+   * A request to reserve an amount less than the current length does not affect
+   * reserved space.
    */
   bool reserve(size_t aRequest);
 
@@ -472,6 +551,7 @@ public:
    * -- leave them as uninitialized memory.
    */
   bool growByUninitialized(size_t aIncr);
+  void infallibleGrowByUninitialized(size_t aIncr);
   bool resizeUninitialized(size_t aNewLength);
 
   /** Shorthand for shrinkBy(length()). */
@@ -497,8 +577,20 @@ public:
    */
   template<typename U> bool append(U&& aU);
 
-  template<typename U, size_t O, class BP, class UV>
-  bool appendAll(const VectorBase<U, O, BP, UV>& aU);
+  /**
+   * Construct a T in-place as a new entry at the end of this vector.
+   */
+  template<typename... Args>
+  bool emplaceBack(Args&&... aArgs)
+  {
+    if (!growByUninitialized(1))
+      return false;
+    new (&back()) T(Forward<Args>(aArgs)...);
+    return true;
+  }
+
+  template<typename U, size_t O, class BP>
+  bool appendAll(const Vector<U, O, BP>& aU);
   bool appendN(const T& aT, size_t aN);
   template<typename U> bool append(const U* aBegin, const U* aEnd);
   template<typename U> bool append(const U* aBegin, size_t aLength);
@@ -523,6 +615,12 @@ public:
   template<typename U> void infallibleAppend(const U* aBegin, size_t aLength)
   {
     internalAppend(aBegin, aLength);
+  }
+  template<typename... Args>
+  void infallibleEmplaceBack(Args&&... aArgs)
+  {
+    infallibleGrowByUninitialized(1);
+    new (&back()) T(Forward<Args>(aArgs)...);
   }
 
   void popBack();
@@ -593,15 +691,11 @@ public:
    */
   size_t sizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
 
-  void swap(ThisVector& aOther);
+  void swap(Vector& aOther);
 
 private:
-  VectorBase(const VectorBase&) MOZ_DELETE;
-  void operator=(const VectorBase&) MOZ_DELETE;
-
-  /* Move-construct/assign only from our derived class, ThisVector. */
-  VectorBase(VectorBase&&) MOZ_DELETE;
-  void operator=(VectorBase&&) MOZ_DELETE;
+  Vector(const Vector&) = delete;
+  void operator=(const Vector&) = delete;
 };
 
 /* This does the re-entrancy check plus several other sanity checks. */
@@ -614,14 +708,14 @@ private:
 
 /* Vector Implementation */
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 MOZ_ALWAYS_INLINE
-VectorBase<T, N, AP, TV>::VectorBase(AP aAP)
+Vector<T, N, AP>::Vector(AP aAP)
   : AP(aAP)
   , mLength(0)
   , mCapacity(kInlineCapacity)
 #ifdef DEBUG
-  , mReserved(kInlineCapacity)
+  , mReserved(0)
   , mEntered(false)
 #endif
 {
@@ -629,9 +723,9 @@ VectorBase<T, N, AP, TV>::VectorBase(AP aAP)
 }
 
 /* Move constructor. */
-template<typename T, size_t N, class AllocPolicy, class TV>
+template<typename T, size_t N, class AllocPolicy>
 MOZ_ALWAYS_INLINE
-VectorBase<T, N, AllocPolicy, TV>::VectorBase(TV&& aRhs)
+Vector<T, N, AllocPolicy>::Vector(Vector&& aRhs)
   : AllocPolicy(Move(aRhs))
 #ifdef DEBUG
   , mEntered(false)
@@ -661,26 +755,25 @@ VectorBase<T, N, AllocPolicy, TV>::VectorBase(TV&& aRhs)
     aRhs.mCapacity = kInlineCapacity;
     aRhs.mLength = 0;
 #ifdef DEBUG
-    aRhs.mReserved = kInlineCapacity;
+    aRhs.mReserved = 0;
 #endif
   }
 }
 
 /* Move assignment. */
-template<typename T, size_t N, class AP, class TV>
-MOZ_ALWAYS_INLINE TV&
-VectorBase<T, N, AP, TV>::operator=(TV&& aRhs)
+template<typename T, size_t N, class AP>
+MOZ_ALWAYS_INLINE Vector<T, N, AP>&
+Vector<T, N, AP>::operator=(Vector&& aRhs)
 {
   MOZ_ASSERT(this != &aRhs, "self-move assignment is prohibited");
-  TV* tv = static_cast<TV*>(this);
-  tv->~TV();
-  new(tv) TV(Move(aRhs));
-  return *tv;
+  this->~Vector();
+  new(this) Vector(Move(aRhs));
+  return *this;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 MOZ_ALWAYS_INLINE
-VectorBase<T, N, AP, TV>::~VectorBase()
+Vector<T, N, AP>::~Vector()
 {
   MOZ_REENTRANCY_GUARD_ET_AL;
   Impl::destroy(beginNoCheck(), endNoCheck());
@@ -694,16 +787,16 @@ VectorBase<T, N, AP, TV>::~VectorBase()
  * move all elements in the inline buffer to this new buffer,
  * and fail on OOM.
  */
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline bool
-VectorBase<T, N, AP, TV>::convertToHeapStorage(size_t aNewCap)
+Vector<T, N, AP>::convertToHeapStorage(size_t aNewCap)
 {
   MOZ_ASSERT(usingInlineStorage());
 
   /* Allocate buffer. */
   MOZ_ASSERT(!detail::CapacityHasExcessSpace<T>(aNewCap));
   T* newBuf = this->template pod_malloc<T>(aNewCap);
-  if (!newBuf) {
+  if (MOZ_UNLIKELY(!newBuf)) {
     return false;
   }
 
@@ -718,13 +811,11 @@ VectorBase<T, N, AP, TV>::convertToHeapStorage(size_t aNewCap)
   return true;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 MOZ_NEVER_INLINE bool
-VectorBase<T, N, AP, TV>::growStorageBy(size_t aIncr)
+Vector<T, N, AP>::growStorageBy(size_t aIncr)
 {
   MOZ_ASSERT(mLength + aIncr > mCapacity);
-  MOZ_ASSERT_IF(!usingInlineStorage(),
-                !detail::CapacityHasExcessSpace<T>(mCapacity));
 
   /*
    * When choosing a new capacity, its size should is as close to 2**N bytes
@@ -762,7 +853,7 @@ VectorBase<T, N, AP, TV>::growStorageBy(size_t aIncr)
      *
      * doesn't overflow ptrdiff_t (see bug 510319).
      */
-    if (mLength & tl::MulOverflowMask<4 * sizeof(T)>::value) {
+    if (MOZ_UNLIKELY(mLength & tl::MulOverflowMask<4 * sizeof(T)>::value)) {
       this->reportAllocOverflow();
       return false;
     }
@@ -781,8 +872,8 @@ VectorBase<T, N, AP, TV>::growStorageBy(size_t aIncr)
     size_t newMinCap = mLength + aIncr;
 
     /* Did mLength + aIncr overflow?  Will newCap * sizeof(T) overflow? */
-    if (newMinCap < mLength ||
-        newMinCap & tl::MulOverflowMask<2 * sizeof(T)>::value)
+    if (MOZ_UNLIKELY(newMinCap < mLength ||
+                     newMinCap & tl::MulOverflowMask<2 * sizeof(T)>::value))
     {
       this->reportAllocOverflow();
       return false;
@@ -802,9 +893,9 @@ grow:
   return Impl::growTo(*this, newCap);
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline bool
-VectorBase<T, N, AP, TV>::initCapacity(size_t aRequest)
+Vector<T, N, AP>::initCapacity(size_t aRequest)
 {
   MOZ_ASSERT(empty());
   MOZ_ASSERT(usingInlineStorage());
@@ -812,7 +903,7 @@ VectorBase<T, N, AP, TV>::initCapacity(size_t aRequest)
     return true;
   }
   T* newbuf = this->template pod_malloc<T>(aRequest);
-  if (!newbuf) {
+  if (MOZ_UNLIKELY(!newbuf)) {
     return false;
   }
   mBegin = newbuf;
@@ -823,13 +914,19 @@ VectorBase<T, N, AP, TV>::initCapacity(size_t aRequest)
   return true;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline bool
-VectorBase<T, N, AP, TV>::reserve(size_t aRequest)
+Vector<T, N, AP>::reserve(size_t aRequest)
 {
   MOZ_REENTRANCY_GUARD_ET_AL;
-  if (aRequest > mCapacity && !growStorageBy(aRequest - mLength)) {
-    return false;
+  if (aRequest > mCapacity) {
+    if (MOZ_UNLIKELY(!growStorageBy(aRequest - mLength))) {
+      return false;
+    }
+  } else if (aRequest > N) {
+    if (!allocPolicy().checkSimulatedOOM()) {
+      return false;
+    }
   }
 #ifdef DEBUG
   if (aRequest > mReserved) {
@@ -841,9 +938,9 @@ VectorBase<T, N, AP, TV>::reserve(size_t aRequest)
   return true;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline void
-VectorBase<T, N, AP, TV>::shrinkBy(size_t aIncr)
+Vector<T, N, AP>::shrinkBy(size_t aIncr)
 {
   MOZ_REENTRANCY_GUARD_ET_AL;
   MOZ_ASSERT(aIncr <= mLength);
@@ -851,13 +948,19 @@ VectorBase<T, N, AP, TV>::shrinkBy(size_t aIncr)
   mLength -= aIncr;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 MOZ_ALWAYS_INLINE bool
-VectorBase<T, N, AP, TV>::growBy(size_t aIncr)
+Vector<T, N, AP>::growBy(size_t aIncr)
 {
   MOZ_REENTRANCY_GUARD_ET_AL;
-  if (aIncr > mCapacity - mLength && !growStorageBy(aIncr)) {
-    return false;
+  if (aIncr > mCapacity - mLength) {
+    if (MOZ_UNLIKELY(!growStorageBy(aIncr))) {
+      return false;
+    }
+  } else if (aIncr + mLength > N) {
+    if (!allocPolicy().checkSimulatedOOM()) {
+      return false;
+    }
   }
   MOZ_ASSERT(mLength + aIncr <= mCapacity);
   T* newend = endNoCheck() + aIncr;
@@ -871,14 +974,28 @@ VectorBase<T, N, AP, TV>::growBy(size_t aIncr)
   return true;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 MOZ_ALWAYS_INLINE bool
-VectorBase<T, N, AP, TV>::growByUninitialized(size_t aIncr)
+Vector<T, N, AP>::growByUninitialized(size_t aIncr)
 {
   MOZ_REENTRANCY_GUARD_ET_AL;
-  if (aIncr > mCapacity - mLength && !growStorageBy(aIncr)) {
-    return false;
+  if (aIncr > mCapacity - mLength) {
+    if (MOZ_UNLIKELY(!growStorageBy(aIncr))) {
+      return false;
+    }
+  } else if (aIncr + mLength > N) {
+    if (!allocPolicy().checkSimulatedOOM()) {
+      return false;
+    }
   }
+  infallibleGrowByUninitialized(aIncr);
+  return true;
+}
+
+template<typename T, size_t N, class AP>
+MOZ_ALWAYS_INLINE void
+Vector<T, N, AP>::infallibleGrowByUninitialized(size_t aIncr)
+{
   MOZ_ASSERT(mLength + aIncr <= mCapacity);
   mLength += aIncr;
 #ifdef DEBUG
@@ -886,12 +1003,11 @@ VectorBase<T, N, AP, TV>::growByUninitialized(size_t aIncr)
     mReserved = mLength;
   }
 #endif
-  return true;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline bool
-VectorBase<T, N, AP, TV>::resize(size_t aNewLength)
+Vector<T, N, AP>::resize(size_t aNewLength)
 {
   size_t curLength = mLength;
   if (aNewLength > curLength) {
@@ -901,9 +1017,9 @@ VectorBase<T, N, AP, TV>::resize(size_t aNewLength)
   return true;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 MOZ_ALWAYS_INLINE bool
-VectorBase<T, N, AP, TV>::resizeUninitialized(size_t aNewLength)
+Vector<T, N, AP>::resizeUninitialized(size_t aNewLength)
 {
   size_t curLength = mLength;
   if (aNewLength > curLength) {
@@ -913,18 +1029,18 @@ VectorBase<T, N, AP, TV>::resizeUninitialized(size_t aNewLength)
   return true;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline void
-VectorBase<T, N, AP, TV>::clear()
+Vector<T, N, AP>::clear()
 {
   MOZ_REENTRANCY_GUARD_ET_AL;
   Impl::destroy(beginNoCheck(), endNoCheck());
   mLength = 0;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline void
-VectorBase<T, N, AP, TV>::clearAndFree()
+Vector<T, N, AP>::clearAndFree()
 {
   clear();
 
@@ -935,44 +1051,48 @@ VectorBase<T, N, AP, TV>::clearAndFree()
   mBegin = static_cast<T*>(mStorage.addr());
   mCapacity = kInlineCapacity;
 #ifdef DEBUG
-  mReserved = kInlineCapacity;
+  mReserved = 0;
 #endif
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline bool
-VectorBase<T, N, AP, TV>::canAppendWithoutRealloc(size_t aNeeded) const
+Vector<T, N, AP>::canAppendWithoutRealloc(size_t aNeeded) const
 {
   return mLength + aNeeded <= mCapacity;
 }
 
-template<typename T, size_t N, class AP, class TV>
-template<typename U, size_t O, class BP, class UV>
+template<typename T, size_t N, class AP>
+template<typename U, size_t O, class BP>
 MOZ_ALWAYS_INLINE void
-VectorBase<T, N, AP, TV>::internalAppendAll(
-  const VectorBase<U, O, BP, UV>& aOther)
+Vector<T, N, AP>::internalAppendAll(const Vector<U, O, BP>& aOther)
 {
   internalAppend(aOther.begin(), aOther.length());
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 template<typename U>
 MOZ_ALWAYS_INLINE void
-VectorBase<T, N, AP, TV>::internalAppend(U&& aU)
+Vector<T, N, AP>::internalAppend(U&& aU)
 {
   MOZ_ASSERT(mLength + 1 <= mReserved);
   MOZ_ASSERT(mReserved <= mCapacity);
-  new(endNoCheck()) T(Forward<U>(aU));
+  Impl::new_(endNoCheck(), Forward<U>(aU));
   ++mLength;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 MOZ_ALWAYS_INLINE bool
-VectorBase<T, N, AP, TV>::appendN(const T& aT, size_t aNeeded)
+Vector<T, N, AP>::appendN(const T& aT, size_t aNeeded)
 {
   MOZ_REENTRANCY_GUARD_ET_AL;
-  if (mLength + aNeeded > mCapacity && !growStorageBy(aNeeded)) {
-    return false;
+  if (mLength + aNeeded > mCapacity) {
+    if (MOZ_UNLIKELY(!growStorageBy(aNeeded))) {
+      return false;
+    }
+  } else if (mLength + aNeeded > N) {
+    if (!allocPolicy().checkSimulatedOOM())
+      return false;
   }
 #ifdef DEBUG
   if (mLength + aNeeded > mReserved) {
@@ -983,9 +1103,9 @@ VectorBase<T, N, AP, TV>::appendN(const T& aT, size_t aNeeded)
   return true;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 MOZ_ALWAYS_INLINE void
-VectorBase<T, N, AP, TV>::internalAppendN(const T& aT, size_t aNeeded)
+Vector<T, N, AP>::internalAppendN(const T& aT, size_t aNeeded)
 {
   MOZ_ASSERT(mLength + aNeeded <= mReserved);
   MOZ_ASSERT(mReserved <= mCapacity);
@@ -993,10 +1113,10 @@ VectorBase<T, N, AP, TV>::internalAppendN(const T& aT, size_t aNeeded)
   mLength += aNeeded;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 template<typename U>
 inline T*
-VectorBase<T, N, AP, TV>::insert(T* aP, U&& aVal)
+Vector<T, N, AP>::insert(T* aP, U&& aVal)
 {
   MOZ_ASSERT(begin() <= aP);
   MOZ_ASSERT(aP <= end());
@@ -1020,9 +1140,9 @@ VectorBase<T, N, AP, TV>::insert(T* aP, U&& aVal)
   return begin() + pos;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline void
-VectorBase<T, N, AP, TV>::erase(T* aIt)
+Vector<T, N, AP>::erase(T* aIt)
 {
   MOZ_ASSERT(begin() <= aIt);
   MOZ_ASSERT(aIt < end());
@@ -1033,9 +1153,9 @@ VectorBase<T, N, AP, TV>::erase(T* aIt)
   popBack();
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline void
-VectorBase<T, N, AP, TV>::erase(T* aBegin, T* aEnd)
+Vector<T, N, AP>::erase(T* aBegin, T* aEnd)
 {
   MOZ_ASSERT(begin() <= aBegin);
   MOZ_ASSERT(aBegin <= aEnd);
@@ -1046,15 +1166,20 @@ VectorBase<T, N, AP, TV>::erase(T* aBegin, T* aEnd)
   shrinkBy(aEnd - aBegin);
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 template<typename U>
 MOZ_ALWAYS_INLINE bool
-VectorBase<T, N, AP, TV>::append(const U* aInsBegin, const U* aInsEnd)
+Vector<T, N, AP>::append(const U* aInsBegin, const U* aInsEnd)
 {
   MOZ_REENTRANCY_GUARD_ET_AL;
   size_t aNeeded = PointerRangeSize(aInsBegin, aInsEnd);
-  if (mLength + aNeeded > mCapacity && !growStorageBy(aNeeded)) {
-    return false;
+  if (mLength + aNeeded > mCapacity) {
+    if (MOZ_UNLIKELY(!growStorageBy(aNeeded))) {
+      return false;
+    }
+  } else if (mLength + aNeeded > N) {
+    if (!allocPolicy().checkSimulatedOOM())
+      return false;
   }
 #ifdef DEBUG
   if (mLength + aNeeded > mReserved) {
@@ -1065,10 +1190,10 @@ VectorBase<T, N, AP, TV>::append(const U* aInsBegin, const U* aInsEnd)
   return true;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 template<typename U>
 MOZ_ALWAYS_INLINE void
-VectorBase<T, N, AP, TV>::internalAppend(const U* aInsBegin, size_t aInsLength)
+Vector<T, N, AP>::internalAppend(const U* aInsBegin, size_t aInsLength)
 {
   MOZ_ASSERT(mLength + aInsLength <= mReserved);
   MOZ_ASSERT(mReserved <= mCapacity);
@@ -1076,14 +1201,19 @@ VectorBase<T, N, AP, TV>::internalAppend(const U* aInsBegin, size_t aInsLength)
   mLength += aInsLength;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 template<typename U>
 MOZ_ALWAYS_INLINE bool
-VectorBase<T, N, AP, TV>::append(U&& aU)
+Vector<T, N, AP>::append(U&& aU)
 {
   MOZ_REENTRANCY_GUARD_ET_AL;
-  if (mLength == mCapacity && !growStorageBy(1)) {
-    return false;
+  if (mLength == mCapacity) {
+    if (MOZ_UNLIKELY(!growStorageBy(1))) {
+      return false;
+    }
+  } else if (mLength + 1 > N) {
+    if (!allocPolicy().checkSimulatedOOM())
+      return false;
   }
 #ifdef DEBUG
   if (mLength + 1 > mReserved) {
@@ -1094,25 +1224,25 @@ VectorBase<T, N, AP, TV>::append(U&& aU)
   return true;
 }
 
-template<typename T, size_t N, class AP, class TV>
-template<typename U, size_t O, class BP, class UV>
+template<typename T, size_t N, class AP>
+template<typename U, size_t O, class BP>
 MOZ_ALWAYS_INLINE bool
-VectorBase<T, N, AP, TV>::appendAll(const VectorBase<U, O, BP, UV>& aOther)
+Vector<T, N, AP>::appendAll(const Vector<U, O, BP>& aOther)
 {
   return append(aOther.begin(), aOther.length());
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 template<class U>
 MOZ_ALWAYS_INLINE bool
-VectorBase<T, N, AP, TV>::append(const U* aInsBegin, size_t aInsLength)
+Vector<T, N, AP>::append(const U* aInsBegin, size_t aInsLength)
 {
   return append(aInsBegin, aInsBegin + aInsLength);
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 MOZ_ALWAYS_INLINE void
-VectorBase<T, N, AP, TV>::popBack()
+Vector<T, N, AP>::popBack()
 {
   MOZ_REENTRANCY_GUARD_ET_AL;
   MOZ_ASSERT(!empty());
@@ -1120,18 +1250,18 @@ VectorBase<T, N, AP, TV>::popBack()
   endNoCheck()->~T();
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 MOZ_ALWAYS_INLINE T
-VectorBase<T, N, AP, TV>::popCopy()
+Vector<T, N, AP>::popCopy()
 {
   T ret = back();
   popBack();
   return ret;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline T*
-VectorBase<T, N, AP, TV>::extractRawBuffer()
+Vector<T, N, AP>::extractRawBuffer()
 {
   T* ret;
   if (usingInlineStorage()) {
@@ -1149,15 +1279,15 @@ VectorBase<T, N, AP, TV>::extractRawBuffer()
     mLength = 0;
     mCapacity = kInlineCapacity;
 #ifdef DEBUG
-    mReserved = kInlineCapacity;
+    mReserved = 0;
 #endif
   }
   return ret;
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline void
-VectorBase<T, N, AP, TV>::replaceRawBuffer(T* aP, size_t aLength)
+Vector<T, N, AP>::replaceRawBuffer(T* aP, size_t aLength)
 {
   MOZ_REENTRANCY_GUARD_ET_AL;
 
@@ -1190,23 +1320,23 @@ VectorBase<T, N, AP, TV>::replaceRawBuffer(T* aP, size_t aLength)
 #endif
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline size_t
-VectorBase<T, N, AP, TV>::sizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
+Vector<T, N, AP>::sizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
 {
   return usingInlineStorage() ? 0 : aMallocSizeOf(beginNoCheck());
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline size_t
-VectorBase<T, N, AP, TV>::sizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
+Vector<T, N, AP>::sizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
 {
   return aMallocSizeOf(this) + sizeOfExcludingThis(aMallocSizeOf);
 }
 
-template<typename T, size_t N, class AP, class TV>
+template<typename T, size_t N, class AP>
 inline void
-VectorBase<T, N, AP, TV>::swap(TV& aOther)
+Vector<T, N, AP>::swap(Vector& aOther)
 {
   static_assert(N == 0,
                 "still need to implement this for N != 0");
@@ -1230,44 +1360,6 @@ VectorBase<T, N, AP, TV>::swap(TV& aOther)
   Swap(mReserved, aOther.mReserved);
 #endif
 }
-
-/*
- * STL-like container providing a short-lived, dynamic buffer.  Vector calls the
- * constructors/destructors of all elements stored in its internal buffer, so
- * non-PODs may be safely used.  Additionally, Vector will store the first N
- * elements in-place before resorting to dynamic allocation.
- *
- * T requirements:
- *  - default and copy constructible, assignable, destructible
- *  - operations do not throw
- * N requirements:
- *  - any value, however, N is clamped to min/max values
- * AllocPolicy:
- *  - see "Allocation policies" in AllocPolicy.h (defaults to
- *    mozilla::MallocAllocPolicy)
- *
- * Vector is not reentrant: T member functions called during Vector member
- * functions must not call back into the same object!
- */
-template<typename T,
-         size_t MinInlineCapacity = 0,
-         class AllocPolicy = MallocAllocPolicy>
-class Vector
-  : public VectorBase<T,
-                      MinInlineCapacity,
-                      AllocPolicy,
-                      Vector<T, MinInlineCapacity, AllocPolicy> >
-{
-  typedef VectorBase<T, MinInlineCapacity, AllocPolicy, Vector> Base;
-
-public:
-  explicit Vector(AllocPolicy alloc = AllocPolicy()) : Base(alloc) {}
-  Vector(Vector&& vec) : Base(Move(vec)) {}
-  Vector& operator=(Vector&& aOther)
-  {
-    return Base::operator=(Move(aOther));
-  }
-};
 
 } // namespace mozilla
 

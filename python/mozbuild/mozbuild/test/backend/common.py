@@ -31,7 +31,7 @@ test_data_path = mozpath.join(test_data_path, 'data')
 CONFIGS = defaultdict(lambda: {
     'defines': [],
     'non_global_defines': [],
-    'substs': [],
+    'substs': [('OS_TARGET', 'WINNT')],
 }, {
     'android_eclipse': {
         'defines': [
@@ -40,6 +40,14 @@ CONFIGS = defaultdict(lambda: {
         'non_global_defines': [],
         'substs': [
             ('ANDROID_TARGET_SDK', '16'),
+        ],
+    },
+    'binary-components': {
+        'defines': [],
+        'non_global_defines': [],
+        'substs': [
+            ('LIB_PREFIX', 'lib'),
+            ('LIB_SUFFIX', 'a'),
         ],
     },
     'stub0': {

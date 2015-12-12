@@ -11,10 +11,7 @@
 #include "nsAutoPtr.h"
 #include "txNamespaceMap.h"
 
-class txPattern;
 class txStylesheet;
-class txKeyValueHashKey;
-class txExecutionState;
 
 /**
  * The definition for the XSLT document() function
@@ -26,12 +23,14 @@ public:
     /**
      * Creates a new document() function call
     **/
-    explicit DocumentFunctionCall(const nsAString& aBaseURI);
+    explicit DocumentFunctionCall(nsIURI* aBaseURI)
+        : mBaseURI(aBaseURI)
+    {}
 
     TX_DECL_FUNCTION
 
 private:
-    nsString mBaseURI;
+    nsCOMPtr<nsIURI> mBaseURI;
 };
 
 /*
@@ -49,7 +48,7 @@ public:
     TX_DECL_FUNCTION
 
 private:
-    nsRefPtr<txNamespaceMap> mMappings;
+    RefPtr<txNamespaceMap> mMappings;
 };
 
 /**
@@ -80,7 +79,7 @@ private:
     };
     
     txStylesheet* mStylesheet;
-    nsRefPtr<txNamespaceMap> mMappings;
+    RefPtr<txNamespaceMap> mMappings;
 };
 
 /**
@@ -158,7 +157,7 @@ public:
 
 private:
     eType mType;
-    nsRefPtr<txNamespaceMap> mMappings; // Used to resolve prefixes
+    RefPtr<txNamespaceMap> mMappings; // Used to resolve prefixes
 };
 
 #endif

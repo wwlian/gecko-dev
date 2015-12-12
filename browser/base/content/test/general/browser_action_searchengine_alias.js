@@ -3,23 +3,26 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  **/
 
- let gOriginalEngine;
-
 add_task(function* () {
   // This test is only relevant if UnifiedComplete is enabled.
-  if (!Services.prefs.getBoolPref("browser.urlbar.unifiedcomplete"))
-    return;
+  let ucpref = Services.prefs.getBoolPref("browser.urlbar.unifiedcomplete");
+  Services.prefs.setBoolPref("browser.urlbar.unifiedcomplete", true);
+  registerCleanupFunction(() => {
+    Services.prefs.setBoolPref("browser.urlbar.unifiedcomplete", ucpref);
+  });
 
-  Services.search.addEngineWithDetails("MozSearch", "", "moz", "", "GET",
+  let iconURI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAABGklEQVQoz2NgGB6AnZ1dUlJSXl4eSDIyMhLW4Ovr%2B%2Fr168uXL69Zs4YoG%2BLi4i5dusTExMTGxsbNzd3f37937976%2BnpmZmagbHR09J49e5YvX66kpATVEBYW9ubNm2nTphkbG7e2tp44cQLIuHfvXm5urpaWFlDKysqqu7v73LlzECMYIiIiHj58mJCQoKKicvXq1bS0NKBgW1vbjh074uPjgeqAXE1NzSdPnvDz84M0AEUvXLgAsW379u1z5swBen3jxo2zZ892cHB4%2BvQp0KlAfwI1cHJyghQFBwfv2rULokFXV%2FfixYu7d%2B8GGqGgoMDKyrpu3br9%2B%2FcDuXl5eVA%2FAEWBfoWHAdAYoNuAYQ0XAeoUERFhGDYAAPoUaT2dfWJuAAAAAElFTkSuQmCC";
+  Services.search.addEngineWithDetails("MozSearch", iconURI, "moz", "", "GET",
                                        "http://example.com/?q={searchTerms}");
   let engine = Services.search.getEngineByName("MozSearch");
-  gOriginalEngine = Services.search.currentEngine;
+  let originalEngine = Services.search.currentEngine;
   Services.search.currentEngine = engine;
 
-  let tab = gBrowser.selectedTab = gBrowser.addTab();
+  let tab = gBrowser.selectedTab = gBrowser.addTab("about:mozilla", {animate: false});
+  yield promiseTabLoaded(gBrowser.selectedTab);
 
   registerCleanupFunction(() => {
-    Services.search.currentEngine = gOriginalEngine;
+    Services.search.currentEngine = originalEngine;
     let engine = Services.search.getEngineByName("MozSearch");
     Services.search.removeEngine(engine);
 
@@ -27,13 +30,15 @@ add_task(function* () {
       gBrowser.removeTab(tab);
     } catch(ex) { /* tab may have already been closed in case of failure */ }
 
-    return promiseClearHistory();
+    return PlacesTestUtils.clearHistory();
   });
 
-  gURLBar.focus();
-  gURLBar.value = "moz open a searc";
-  EventUtils.synthesizeKey("h" , {});
-  yield promiseSearchComplete();
+  yield promiseAutocompleteResultPopup("moz open a search");
+
+  let result = gURLBar.popup.richlistbox.children[0];
+  ok(result.hasAttribute("image"), "Result should have an image attribute");
+  ok(result.getAttribute("image") === engine.iconURI.spec,
+     "Image attribute should have the search engine's icon");
 
   EventUtils.synthesizeKey("VK_RETURN" , { });
   yield promiseTabLoaded(gBrowser.selectedTab);

@@ -22,6 +22,10 @@
 #include "ARTSPConnection.h"
 #include "ASessionDescription.h"
 
+#include "RtspPrlog.h"
+
+#include "nsIOService.h"
+
 #include <ctype.h>
 #include <cutils/properties.h>
 
@@ -35,16 +39,26 @@
 #include <netdb.h>
 #include "nsPrintfCString.h"
 
-#include "prlog.h"
+#include "mozilla/Logging.h"
 
 #include "prio.h"
 #include "prnetdb.h"
 
-extern PRLogModuleInfo* gRtspLog;
+namespace mozilla {
+namespace net {
+extern LazyLogModule gRtspLog;
+}
+}
 
-// If no access units are received within 2 secs, assume that the rtp
-// stream has ended and signal end of stream.
-static int64_t kAccessUnitTimeoutUs = 2000000ll;
+// If no access units are received within 10 secs, assume that the rtp
+// stream has ended and abort.
+static int64_t kAccessUnitTimeoutUs = 10000000ll;
+
+// The end-of-stream timer will be running in the last 2 seconds of duration.
+static int64_t kActivateEndOfStreamTimerUs = 2000000ll;
+
+// The end-of-stream timer will timeout in 2 seconds.
+static int64_t kEndOfStreamTimeoutUs = 2000000ll;
 
 // If no access units arrive for the first 10 secs after starting the
 // stream, assume none ever will and signal EOS or switch transports.
@@ -98,7 +112,8 @@ struct RtspConnectionHandler : public AHandler {
         kWhatAbort,
         kWhatTeardown,
         kWhatQuit,
-        kWhatCheck,
+        kWhatAccessUnitTimeoutCheck,
+        kWhatEndOfStreamCheck,
         kWhatSeekDone,
         kWhatPausedDone,
         kWhatAccessUnitComplete,
@@ -135,6 +150,8 @@ struct RtspConnectionHandler : public AHandler {
           mNTPAnchorUs(-1),
           mMediaAnchorUs(-1),
           mLastMediaTimeUs(0),
+          mNumAccessUnitsReceived(0),
+          mCheckPending(false),
           mCheckGeneration(0),
           mTryTCPInterleaving(false),
           mTryFakeRTCP(false),
@@ -193,19 +210,20 @@ struct RtspConnectionHandler : public AHandler {
     }
 
     void setCheckPending(bool flag) {
+        mCheckPending = flag;
         for (size_t i = 0; i < mTracks.size(); ++i) {
-            setCheckPending(i, flag);
+            setEndOfStreamCheckPending(i, flag);
         }
     }
 
-    void setCheckPending(size_t trackIndex, bool flag) {
+    void setEndOfStreamCheckPending(size_t trackIndex, bool flag) {
         TrackInfo *info = &mTracks.editItemAt(trackIndex);
         if (info) {
             info->mCheckPendings = flag;
         }
     }
 
-    bool getCheckPending(size_t trackIndex) {
+    bool getEndOfStreamCheckPending(size_t trackIndex) {
         TrackInfo *info = &mTracks.editItemAt(trackIndex);
         return info->mCheckPendings;
     }
@@ -229,6 +247,9 @@ struct RtspConnectionHandler : public AHandler {
     }
 
     void pause() {
+        if (!mSeekable) {
+            return;
+        }
         AString request = "PAUSE ";
         request.append(mSessionURL);
         request.append(" RTSP/1.0\r\n");
@@ -561,10 +582,13 @@ struct RtspConnectionHandler : public AHandler {
                                      "get something usable...");
 
                                 AString tmp;
-                                CHECK(MakeURL(
+                                if (!MakeURL(
                                             mSessionURL.c_str(),
                                             mBaseURL.c_str(),
-                                            &tmp));
+                                            &tmp)) {
+                                    LOGE("Fail to make url");
+                                    result = ERROR_UNSUPPORTED;
+                                }
 
                                 mBaseURL = tmp;
                             }
@@ -776,9 +800,9 @@ struct RtspConnectionHandler : public AHandler {
                         static_cast<ARTSPResponse *>(obj.get());
                     if (response->mStatusCode != 200) {
                         result = UNKNOWN_ERROR;
+                    } else if (!parsePlayResponse(response)) {
+                        result = UNKNOWN_ERROR;
                     } else {
-                        parsePlayResponse(response);
-
                         sp<AMessage> timeout = new AMessage(kWhatTimeout, id());
                         timeout->post(kPlayTimeoutUs);
                         mPausePending = false;
@@ -939,7 +963,26 @@ struct RtspConnectionHandler : public AHandler {
                 break;
             }
 
-            case kWhatCheck:
+            case kWhatAccessUnitTimeoutCheck:
+            {
+                int32_t generation;
+                CHECK(msg->findInt32("generation", &generation));
+                if (generation != mCheckGeneration) {
+                    // This is an outdated message. Ignore.
+                    break;
+                }
+
+                if (mNumAccessUnitsReceived == 0) {
+                    LOGI("stream ended? aborting.");
+                    disconnect();
+                    break;
+                }
+                mNumAccessUnitsReceived = 0;
+                msg->post(kAccessUnitTimeoutUs);
+                break;
+            }
+
+            case kWhatEndOfStreamCheck:
             {
                 int32_t generation;
                 CHECK(msg->findInt32("generation", &generation));
@@ -955,14 +998,18 @@ struct RtspConnectionHandler : public AHandler {
                 }
 
                 if (track->mNumAccessUnitsReceiveds == 0) {
-                    LOGI("stream ended? aborting.");
+                    if (gIOService->IsOffline()) {
+                        LOGI("stream ended? aborting.");
+                        disconnect();
+                        break;
+                    }
                     sp<AMessage> endStreamMsg = new AMessage(kWhatEndOfStream, id());
                     endStreamMsg->setSize("trackIndex", trackIndex);
                     endStreamMsg->post();
                     break;
                 }
                 track->mNumAccessUnitsReceiveds = 0;
-                msg->post(kAccessUnitTimeoutUs);
+                msg->post(kEndOfStreamTimeoutUs);
                 break;
             }
 
@@ -993,6 +1040,9 @@ struct RtspConnectionHandler : public AHandler {
                     break;
                 }
 
+                mNumAccessUnitsReceived++;
+                postAccessUnitTimeoutCheck();
+
                 size_t trackIndex;
                 CHECK(msg->findSize("track-index", &trackIndex));
 
@@ -1002,9 +1052,6 @@ struct RtspConnectionHandler : public AHandler {
                 }
 
                 TrackInfo *track = &mTracks.editItemAt(trackIndex);
-
-                track->mNumAccessUnitsReceiveds++;
-                postAccessUnitTimeoutCheck(trackIndex);
 
                 int32_t eos;
                 if (msg->findInt32("eos", &eos)) {
@@ -1045,6 +1092,17 @@ struct RtspConnectionHandler : public AHandler {
                 }
 
                 onAccessUnitComplete(trackIndex, accessUnit);
+
+                // This code is put here because now accessUnit has timestamp.
+                track->mNumAccessUnitsReceiveds++;
+                int64_t duration, timeUs;
+                mSessionDesc->getDurationUs(&duration);
+                accessUnit->meta()->findInt64("timeUs", &timeUs);
+
+                // Start a timer to detect end-of-stream if close to the end.
+                if (timeUs >= duration - kActivateEndOfStreamTimerUs) {
+                    postEndOfStreamCheck(trackIndex);
+                }
                 break;
             }
 
@@ -1088,6 +1146,11 @@ struct RtspConnectionHandler : public AHandler {
 
             case kWhatSeek1:
             {
+                if (mAborted || !mSeekPending) {
+                    LOGV("We're aborted, dropping stale packet.");
+                    break;
+                }
+
                 // Session is paused now.
                 for (size_t i = 0; i < mTracks.size(); ++i) {
                     TrackInfo *info = &mTracks.editItemAt(i);
@@ -1120,21 +1183,22 @@ struct RtspConnectionHandler : public AHandler {
 
             case kWhatSeek2:
             {
-                CHECK(mSeekPending);
-
                 int32_t result;
                 CHECK(msg->findInt32("result", &result));
 
                 LOGI("PLAY completed with result %d (%s)",
                      result, strerror(-result));
-                if (mAborted) {
-                  LOGV("we're aborted, dropping stale packet.");
-                  break;
+                if (mAborted || !mSeekPending) {
+                    LOGV("We're aborted, dropping stale packet.");
+                    break;
                 }
 
+                mCheckPending = false;
+                postAccessUnitTimeoutCheck();
+
                 for (size_t i = 0; i < mTracks.size(); i++) {
-                    setCheckPending(i, false);
-                    postAccessUnitTimeoutCheck(i);
+                    setEndOfStreamCheckPending(i, false);
+                    postEndOfStreamCheck(i);
                 }
 
                 if (result == OK) {
@@ -1145,11 +1209,14 @@ struct RtspConnectionHandler : public AHandler {
 
                     if (response->mStatusCode != 200) {
                         result = UNKNOWN_ERROR;
+                    } else if (!parsePlayResponse(response)) {
+                        result = UNKNOWN_ERROR;
                     } else {
-                        parsePlayResponse(response);
-
                         ssize_t i = response->mHeaders.indexOfKey("rtp-info");
-                        CHECK_GE(i, 0);
+                        if (i < 0) {
+                            LOGE("No RTP info in response");
+                            (new AMessage(kWhatAbort, id()))->post();
+                        }
 
                         LOGV("rtp-info: %s", response->mHeaders.valueAt(i).c_str());
 
@@ -1178,7 +1245,10 @@ struct RtspConnectionHandler : public AHandler {
                 sp<ABuffer> buffer = static_cast<ABuffer *>(obj.get());
 
                 int32_t index;
-                CHECK(buffer->meta()->findInt32("index", &index));
+                if (!buffer->meta()->findInt32("index", &index)) {
+                    LOGW("Cannot find index");
+                    break;
+                }
 
                 mRTPConn->injectPacket(index, buffer);
                 break;
@@ -1238,14 +1308,24 @@ struct RtspConnectionHandler : public AHandler {
         msg->post((mKeepAliveTimeoutUs * 9) / 10);
     }
 
-    void postAccessUnitTimeoutCheck(size_t trackIndex) {
-        if (getCheckPending(trackIndex)) {
+    void postEndOfStreamCheck(size_t trackIndex) {
+        if (getEndOfStreamCheckPending(trackIndex)) {
             return;
         }
-        setCheckPending(trackIndex, true);
-        sp<AMessage> check = new AMessage(kWhatCheck, id());
+        setEndOfStreamCheckPending(trackIndex, true);
+        sp<AMessage> check = new AMessage(kWhatEndOfStreamCheck, id());
         check->setInt32("generation", mCheckGeneration);
         check->setSize("trackIndex", trackIndex);
+        check->post(kEndOfStreamTimeoutUs);
+    }
+
+    void postAccessUnitTimeoutCheck() {
+        if (mCheckPending) {
+            return;
+        }
+        mCheckPending = true;
+        sp<AMessage> check = new AMessage(kWhatAccessUnitTimeoutCheck, id());
+        check->setInt32("generation", mCheckGeneration);
         check->post(kAccessUnitTimeoutUs);
     }
 
@@ -1266,7 +1346,7 @@ struct RtspConnectionHandler : public AHandler {
         }
     }
 
-    void parsePlayResponse(const sp<ARTSPResponse> &response) {
+    bool parsePlayResponse(const sp<ARTSPResponse> &response) {
         mSeekable = false;
 
         for (size_t i = 0; i < mTracks.size(); ++i) {
@@ -1278,25 +1358,31 @@ struct RtspConnectionHandler : public AHandler {
         if (i < 0) {
             // Server doesn't even tell use what range it is going to
             // play, therefore we won't support seeking.
-            return;
+            return false;
         }
 
         AString range = response->mHeaders.valueAt(i);
         LOGV("Range: %s", range.c_str());
 
         AString val;
-        CHECK(GetAttribute(range.c_str(), "npt", &val));
+        if (!GetAttribute(range.c_str(), "npt", &val)) {
+            LOGE("No npt attribute in range");
+            return false;
+        }
 
         float npt1, npt2;
         if (!ASessionDescription::parseNTPRange(val.c_str(), &npt1, &npt2)) {
             // This is a live stream and therefore not seekable.
 
             LOGI("This is a live stream");
-            return;
+            return false;
         }
 
         i = response->mHeaders.indexOfKey("rtp-info");
-        CHECK_GE(i, 0);
+        if (i < 0) {
+            LOGE("No RTP info");
+            return false;
+        }
 
         AString rtpInfo = response->mHeaders.valueAt(i);
         List<AString> streamInfos;
@@ -1308,16 +1394,25 @@ struct RtspConnectionHandler : public AHandler {
             (*it).trim();
             LOGV("streamInfo[%d] = %s", n, (*it).c_str());
 
-            CHECK(GetAttribute((*it).c_str(), "url", &val));
+            if (!GetAttribute((*it).c_str(), "url", &val)) {
+                LOGE("No url attribute");
+                return false;
+            }
 
             size_t trackIndex = 0;
             while (trackIndex < mTracks.size()
                     && !(val == mTracks.editItemAt(trackIndex).mURL)) {
                 ++trackIndex;
             }
-            CHECK_LT(trackIndex, mTracks.size());
+            if (trackIndex >= mTracks.size()) {
+                LOGE("No matching url");
+                return false;
+            }
 
-            CHECK(GetAttribute((*it).c_str(), "seq", &val));
+            if (!GetAttribute((*it).c_str(), "seq", &val)) {
+                LOGE("No seq attribute");
+                return false;
+            }
 
             char *end;
             unsigned long seq = strtoul(val.c_str(), &end, 10);
@@ -1326,7 +1421,10 @@ struct RtspConnectionHandler : public AHandler {
             info->mFirstSeqNumInSegment = seq;
             info->mNewSegment = true;
 
-            CHECK(GetAttribute((*it).c_str(), "rtptime", &val));
+            if (!GetAttribute((*it).c_str(), "rtptime", &val)) {
+                LOGE("No rtptime attribute");
+                return false;
+            }
 
             uint32_t rtpTime = strtoul(val.c_str(), &end, 10);
 
@@ -1345,6 +1443,7 @@ struct RtspConnectionHandler : public AHandler {
         }
 
         mSeekable = true;
+        return true;
     }
 
     sp<MetaData> getTrackFormat(size_t index, int32_t *timeScale) {
@@ -1413,6 +1512,8 @@ private:
     int64_t mMediaAnchorUs;
     int64_t mLastMediaTimeUs;
 
+    int64_t mNumAccessUnitsReceived;
+    bool mCheckPending;
     int32_t mCheckGeneration;
     bool mTryTCPInterleaving;
     bool mTryFakeRTCP;
@@ -1440,10 +1541,26 @@ private:
         }
 
         AString url;
-        CHECK(mSessionDesc->findAttribute(index, "a=control", &url));
+        if (!mSessionDesc->findAttribute(index, "a=control", &url)) {
+            LOGW("Unsupported format. Ignoring track #%d.", index);
+
+            sp<AMessage> reply = new AMessage(kWhatSetup, id());
+            reply->setSize("index", index);
+            reply->setInt32("result", ERROR_UNSUPPORTED);
+            reply->post();
+            return;
+        }
 
         AString trackURL;
-        CHECK(MakeURL(mBaseURL.c_str(), url.c_str(), &trackURL));
+        if (!MakeURL(mBaseURL.c_str(), url.c_str(), &trackURL)) {
+            LOGW("Unsupported format. Ignoring track #%d.", index);
+
+            sp<AMessage> reply = new AMessage(kWhatSetup, id());
+            reply->setSize("index", index);
+            reply->setInt32("result", ERROR_UNSUPPORTED);
+            reply->post();
+            return;
+        }
 
         mTracks.push(TrackInfo());
         TrackInfo *info = &mTracks.editItemAt(mTracks.size() - 1);
@@ -1467,8 +1584,16 @@ private:
 
         int32_t timescale;
         int32_t numChannels;
-        ASessionDescription::ParseFormatDesc(
-                formatDesc.c_str(), &timescale, &numChannels);
+        if (!ASessionDescription::ParseFormatDesc(
+                    formatDesc.c_str(), &timescale, &numChannels)) {
+            LOGW("Unsupported format. Ignoring track #%d.", index);
+
+            sp<AMessage> reply = new AMessage(kWhatSetup, id());
+            reply->setSize("index", index);
+            reply->setInt32("result", ERROR_UNSUPPORTED);
+            reply->post();
+            return;
+        }
 
         info->mTimeScale = timescale;
 
@@ -1617,8 +1742,11 @@ private:
             int32_t trackIndex, const TrackInfo *track,
             const sp<ABuffer> &accessUnit) {
         uint32_t rtpTime;
-        CHECK(accessUnit->meta()->findInt32(
-                    "rtp-time", (int32_t *)&rtpTime));
+        if (!accessUnit->meta()->findInt32(
+                    "rtp-time", (int32_t *)&rtpTime)) {
+            LOGE("No RTP time in access unit meta");
+            return false;
+        }
 
         int64_t relRtpTimeUs =
             (((int64_t)rtpTime - (int64_t)track->mNormalPlayTimeRTP) * 1000000ll)

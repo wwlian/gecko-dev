@@ -33,7 +33,7 @@ function run_test()
   run_next_test();
 }
 
-add_task(function test_execute()
+add_task(function* test_execute()
 {
   // Like the code, we check to see if nav-history-service exists
   // (i.e MOZ_PLACES is enabled), so that we don't run this test if it doesn't.
@@ -83,10 +83,10 @@ add_task(function test_execute()
   }
 
   // Add an expirable visit to this download.
-  let histsvc = Cc["@mozilla.org/browser/nav-history-service;1"].
-                getService(Ci.nsINavHistoryService);
-  yield promiseAddVisits({uri: theURI, visitDate: getExpirablePRTime(),
-                          transition: histsvc.TRANSITION_DOWNLOAD});
+  yield PlacesTestUtils.addVisits({
+    uri: theURI, visitDate: getExpirablePRTime(),
+    transition: PlacesUtils.history.TRANSITION_DOWNLOAD
+  });
 
   // Get the download manager as history observer and batch expirations
   let histobs = dm.QueryInterface(Ci.nsINavHistoryObserver);
