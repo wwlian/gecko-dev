@@ -363,6 +363,9 @@ VirtualRegister::removeRange(LiveRange* range)
 // BacktrackingAllocator
 /////////////////////////////////////////////////////////////////////
 
+std::default_random_engine BacktrackingAllocator::randomEngine;
+std::uniform_int_distribution<size_t> BacktrackingAllocator::uniformSizeTDistribution();
+
 // This function pre-allocates and initializes as much global state as possible
 // to avoid littering the algorithms with memory management cruft.
 bool
@@ -1197,10 +1200,13 @@ BacktrackingAllocator::tryAllocateNonFixed(LiveBundle* bundle,
     }
 
     if (conflicting.empty() || minimalBundle(bundle)) {
+    	// wwlian: Let's randomize this shit by starting the search at a random offset.
         // Search for any available register which the bundle can be
         // allocated to.
+    	size_t randomOffset = uniformSizeTDistribution(randomEngine);
         for (size_t i = 0; i < AnyRegister::Total; i++) {
-            if (!tryAllocateRegister(registers[i], bundle, success, pfixed, conflicting))
+            size_t iRandom = (i + randomOffset) % AnyRegister::Total;
+            if (!tryAllocateRegister(registers[iRandom], bundle, success, pfixed, conflicting))
                 return false;
             if (*success)
                 return true;
