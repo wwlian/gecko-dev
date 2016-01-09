@@ -7,6 +7,8 @@
 #ifndef jit_BacktrackingAllocator_h
 #define jit_BacktrackingAllocator_h
 
+#include <random>
+
 #include "mozilla/Array.h"
 
 #include "ds/PriorityQueue.h"
@@ -784,6 +786,9 @@ class BacktrackingAllocator : protected RegisterAllocator
     }
 
     void dumpVregs();
+
+    static std::default_random_engine randomEngine;
+    static std::uniform_int_distribution<size_t> uniformSizeTDistribution;
 };
 
 } // namespace jit
