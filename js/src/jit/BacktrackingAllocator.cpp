@@ -364,7 +364,7 @@ VirtualRegister::removeRange(LiveRange* range)
 /////////////////////////////////////////////////////////////////////
 
 std::default_random_engine BacktrackingAllocator::randomEngine;
-std::uniform_int_distribution<size_t> BacktrackingAllocator::uniformSizeTDistribution();
+std::uniform_int_distribution<size_t> BacktrackingAllocator::uniformSizeTDistribution;
 
 // This function pre-allocates and initializes as much global state as possible
 // to avoid littering the algorithms with memory management cruft.
