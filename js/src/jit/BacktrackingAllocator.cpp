@@ -366,7 +366,7 @@ VirtualRegister::removeRange(LiveRange* range)
 // BacktrackingAllocator
 /////////////////////////////////////////////////////////////////////
 
-std::linear_congruential_engine BacktrackingAllocator::randomEngine(std::chrono::system_clock::now().time_since_epoch().count());
+std::minstd_rand BacktrackingAllocator::randomEngine(std::chrono::system_clock::now().time_since_epoch().count());
 
 // This function pre-allocates and initializes as much global state as possible
 // to avoid littering the algorithms with memory management cruft.
