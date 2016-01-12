@@ -1223,7 +1223,11 @@ BacktrackingAllocator::tryAllocateNonFixed(LiveBundle* bundle,
         // Search for any available register which the bundle can be
         // allocated to.
         for (size_t i = 0; i < AnyRegister::Total; i++) {
+#ifdef ION_REGISTER_RANDOMIZATION
             if (!tryAllocateRegister(registers[registerProbeOrder[i]], bundle, success, pfixed, conflicting))
+#else
+            if (!tryAllocateRegister(registers[i], bundle, success, pfixed, conflicting))
+#endif
                 return false;
             if (*success)
                 return true;
