@@ -8328,14 +8328,6 @@ CodeGenerator::link(JSContext* cx, CompilerConstraintList* constraints)
     }
     buf[code->instructionsSize() * 4] = '\0';
     JitSpew(JitSpew_CodeBytes, "Raw Ion bytes (%d) for %s:%d:@%p:%s", code->instructionsSize(), script->filename(), script->lineno(), code->raw(), buf);
-    /*
-    size_t finalSize = code->instructionsSize() * 4 + 1 + 200;
-    char *finalBuf = js_pod_malloc<char>(finalSize);
-    snprintf(finalBuf, finalSize, "\nRaw Ion bytes (%d) for %s:%d:@%p:%s\n", code->instructionsSize(), script->filename(), script->lineno(), code->raw(), buf);
-    write(1, finalBuf, strlen(finalBuf));  // Write directly to hopefully avoid interleaving.
-    fflush(stdout);
-    js_free(finalBuf);
-    */
     js_free(buf);
 
     ionScript->setInvalidationEpilogueDataOffset(invalidateEpilogueData_.offset());
