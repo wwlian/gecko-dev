@@ -7,7 +7,9 @@
 #ifndef jit_BacktrackingAllocator_h
 #define jit_BacktrackingAllocator_h
 
+#ifdef ION_REGISTER_RANDOMIZATION
 #include <random>
+#endif
 
 #include "mozilla/Array.h"
 
@@ -787,6 +789,7 @@ class BacktrackingAllocator : protected RegisterAllocator
 
     void dumpVregs();
 
+#ifdef ION_REGISTER_RANDOMIZATION
     static std::minstd_rand randomEngine;
     /*
      * Implement register randomization by establishing a random order for probing allocatable registers.
@@ -797,6 +800,7 @@ class BacktrackingAllocator : protected RegisterAllocator
      * fall before all floating point registers.
      */
     mozilla::Array<size_t, AnyRegister::Total> registerProbeOrder;
+#endif
 };
 
 } // namespace jit
