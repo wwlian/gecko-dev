@@ -4,8 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifdef ION_REGISTER_RANDOMIZATION
 #include <algorithm>
 #include <chrono>
+#endif
 
 #include "jit/BacktrackingAllocator.h"
 
@@ -366,7 +368,9 @@ VirtualRegister::removeRange(LiveRange* range)
 // BacktrackingAllocator
 /////////////////////////////////////////////////////////////////////
 
+#ifdef ION_REGISTER_RANDOMIZATION
 std::minstd_rand BacktrackingAllocator::randomEngine(std::chrono::system_clock::now().time_since_epoch().count());
+#endif
 
 // This function pre-allocates and initializes as much global state as possible
 // to avoid littering the algorithms with memory management cruft.
@@ -431,12 +435,16 @@ BacktrackingAllocator::init()
     for (size_t i = 0; i < AnyRegister::Total; i++) {
         registers[i].reg = AnyRegister::FromCode(i);
         registers[i].allocations.setAllocator(lifoAlloc);
+#ifdef ION_REGISTER_RANDOMIZATION
         registerProbeOrder[i] = i;
+#endif
     }
 
+#ifdef ION_REGISTER_RANDOMIZATION
     // wwlian: Set the probing order of registers once for this instance by shuffling registerProbeOrder, which was
     // initialized as an identity array.
     std::shuffle(std::begin(registerProbeOrder), std::end(registerProbeOrder), randomEngine);
+#endif
 
     hotcode.setAllocator(lifoAlloc);
 
