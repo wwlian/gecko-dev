@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <algorithm>
+#include <chrono>
 
 #include "jit/BacktrackingAllocator.h"
 
@@ -365,7 +366,7 @@ VirtualRegister::removeRange(LiveRange* range)
 // BacktrackingAllocator
 /////////////////////////////////////////////////////////////////////
 
-std::default_random_engine BacktrackingAllocator::randomEngine;
+std::linear_congruential_engine BacktrackingAllocator::randomEngine(std::chrono::system_clock::now().time_since_epoch().count());
 
 // This function pre-allocates and initializes as much global state as possible
 // to avoid littering the algorithms with memory management cruft.

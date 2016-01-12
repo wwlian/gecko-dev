@@ -787,7 +787,15 @@ class BacktrackingAllocator : protected RegisterAllocator
 
     void dumpVregs();
 
-    static std::default_random_engine randomEngine;
+    static std::linear_congruential_engine randomEngine;
+    /*
+     * Implement register randomization by establishing a random order for probing allocatable registers.
+     * This is superior to shuffling the contents of registers because it avoids assumptions about the decoupling of position in the
+     * registers array and the register code.
+     * Another tempting but poor randomization option is to begin a linear, in-order probe of the registers array at a random offset; but
+     * that gives higher probability to the lowest-indexed general-purpose and floating point registers since all general purpose registers
+     * fall before all floating point registers.
+     */
     mozilla::Array<size_t, AnyRegister::Total> registerProbeOrder;
 };
 
