@@ -3225,8 +3225,7 @@ dnl ========================================================
 dnl IonMonkey register randomization.
 dnl ========================================================
 MOZ_ARG_ENABLE_BOOL(ionregrando,
-[  --enable-ionregrando
-                          Enable register randomization in IonMonkey.],
+[  --enable-ionregrando    Enable register randomization in IonMonkey.],
     ION_REGISTER_RANDOMIZATION=1,
     ION_REGISTER_RANDOMIZATION= )
 
