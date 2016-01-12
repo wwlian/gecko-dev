@@ -412,6 +412,7 @@ jit::CheckLogging()
             "  inline     Inlining\n"
             "  snapshots  Snapshot information\n"
             "  codegen    Native code generation\n"
+            "  codebytes  JIT code bytes\n"
             "  bailouts   Bailouts\n"
             "  caches     Inline caches\n"
             "  osi        Invalidation\n"
@@ -472,6 +473,8 @@ jit::CheckLogging()
         EnableChannel(JitSpew_IonSnapshots);
     if (ContainsFlag(env, "codegen"))
         EnableChannel(JitSpew_Codegen);
+    if (ContainsFlag(env, "codebytes"))
+        EnableChannel(JitSpew_CodeBytes);
     if (ContainsFlag(env, "bailouts"))
         EnableChannel(JitSpew_IonBailouts);
     if (ContainsFlag(env, "osi"))
