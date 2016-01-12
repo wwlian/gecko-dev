@@ -788,7 +788,7 @@ class BacktrackingAllocator : protected RegisterAllocator
     void dumpVregs();
 
     static std::default_random_engine randomEngine;
-    static std::uniform_int_distribution<size_t> uniformSizeTDistribution;
+    mozilla::Array<size_t, AnyRegister::Total> registerProbeOrder;
 };
 
 } // namespace jit

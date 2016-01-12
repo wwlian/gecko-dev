@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <algorithm>
+
 #include "jit/BacktrackingAllocator.h"
 
 #include "jsprf.h"
@@ -364,7 +366,6 @@ VirtualRegister::removeRange(LiveRange* range)
 /////////////////////////////////////////////////////////////////////
 
 std::default_random_engine BacktrackingAllocator::randomEngine;
-std::uniform_int_distribution<size_t> BacktrackingAllocator::uniformSizeTDistribution;
 
 // This function pre-allocates and initializes as much global state as possible
 // to avoid littering the algorithms with memory management cruft.
@@ -431,7 +432,12 @@ BacktrackingAllocator::init()
     for (size_t i = 0; i < AnyRegister::Total; i++) {
         registers[i].reg = AnyRegister::FromCode(i);
         registers[i].allocations.setAllocator(lifoAlloc);
+        registerProbeOrder[i] = i;
     }
+
+    // wwlian: Set the probing order of registers once for this instance by shuffling registerProbeOrder, which was
+    // initialized as an identity array.
+    std::shuffle(std::begin(registerProbeOrder), std::end(registerProbeOrder), randomEngine);
 
     hotcode.setAllocator(lifoAlloc);
 
@@ -1205,13 +1211,10 @@ BacktrackingAllocator::tryAllocateNonFixed(LiveBundle* bundle,
     }
 
     if (conflicting.empty() || minimalBundle(bundle)) {
-    	// wwlian: Let's randomize this shit by starting the search at a random offset.
         // Search for any available register which the bundle can be
         // allocated to.
-    	size_t randomOffset = uniformSizeTDistribution(randomEngine);
         for (size_t i = 0; i < AnyRegister::Total; i++) {
-            size_t iRandom = (i + randomOffset) % AnyRegister::Total;
-            if (!tryAllocateRegister(registers[iRandom], bundle, success, pfixed, conflicting))
+            if (!tryAllocateRegister(registers[registerProbeOrder[i]], bundle, success, pfixed, conflicting))
                 return false;
             if (*success)
                 return true;
