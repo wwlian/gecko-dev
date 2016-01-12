@@ -757,7 +757,7 @@ class BacktrackingAllocator : protected RegisterAllocator
 
     void dumpVregs();
 
-    static std::linear_congruential_engine randomEngine;
+    static std::minstd_rand randomEngine;
     /*
      * Implement register randomization by establishing a random order for probing allocatable registers.
      * This is superior to shuffling the contents of registers because it avoids assumptions about the decoupling of position in the
