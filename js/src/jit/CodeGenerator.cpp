@@ -4691,7 +4691,11 @@ CodeGenerator::generateBody()
                 }
             }
 
-            iter->accept(this);
+#ifdef ION_RANDOM_NOP
+            if (!(rand() & 0xf)) {  // 1/16 probability
+            	masm.nop();
+            }
+#endif
 
             // Track the end native offset of optimizations.
             if (iter->mirRaw() && iter->mirRaw()->trackedOptimizations())
