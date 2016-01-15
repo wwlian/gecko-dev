@@ -4267,7 +4267,7 @@ CodeGenerator::generateBody()
             if (!(rand() & 0xf)) {  // 1/16 probability
             	masm.nop();
             }
-#elif
+#endif
 
             iter->accept(this);
 
