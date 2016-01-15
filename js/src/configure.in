@@ -3222,9 +3222,9 @@ if test -n "$MOZ_DEBUG"; then
 fi
 
 dnl ========================================================
-dnl IonMonkey register randomization.
+dnl IonMonkey random NOP insertion.
 dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(ionregrando,
+MOZ_ARG_ENABLE_BOOL(ionrandomnop,
 [  --enable-ionrandomnop
                           Enable random NOP insertion between LIR instructions in IonMonkey.],
     ION_RANDOM_NOP=1,
