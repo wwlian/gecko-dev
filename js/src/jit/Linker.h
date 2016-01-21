@@ -43,8 +43,13 @@ class Linker
         if (masm.oom())
             return fail(cx);
 
-        ExecutablePool* pool;
+#ifdef BASE_OFFSET_RANDOMIZATION
+        size_t randomHeaderSize = CodeAlignment * (rand() & 0x3);  // Between 0 and 3 CodeAlignments extra.
+        size_t bytesNeeded = masm.bytesNeeded() + sizeof(JitCode*) + CodeAlignment + randomHeaderSize;
+#else
         size_t bytesNeeded = masm.bytesNeeded() + sizeof(JitCode*) + CodeAlignment;
+#endif
+        ExecutablePool* pool;
         if (bytesNeeded >= MAX_BUFFER_SIZE)
             return fail(cx);
 
@@ -56,8 +61,12 @@ class Linker
         if (!result)
             return fail(cx);
 
-        // The JitCode pointer will be stored right before the code buffer.
+        // The JitCode pointer will be stored right before the code buffer, followed by a random multiple of CodeAlignment bytes.
+#ifdef BASE_OFFSET_RANDOMIZATION
+        uint8_t* codeStart = result + sizeof(JitCode*) + randomHeaderSize;
+#else
         uint8_t* codeStart = result + sizeof(JitCode*);
+#endif
 
         // Bump the code up to a nice alignment.
         codeStart = (uint8_t*)AlignBytes((uintptr_t)codeStart, CodeAlignment);

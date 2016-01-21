@@ -3251,6 +3251,21 @@ fi
 AC_SUBST(ION_REGISTER_RANDOMIZATION)
 
 dnl ========================================================
+dnl Base offset randomization.
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(baseoffsetrando,
+[  --enable-baseoffsetrando
+                          Enable JIT base offset randomization.],
+    BASE_OFFSET_RANDOMIZATION=1,
+    BASE_OFFSET_RANDOMIZATION= )
+
+if test -n "$BASE_OFFSET_RANDOMIZATION"; then
+    AC_DEFINE(BASE_OFFSET_RANDOMIZATION)
+fi
+
+AC_SUBST(BASE_OFFSET_RANDOMIZATION)
+
+dnl ========================================================
 dnl Profiling
 dnl ========================================================
 if test -n "$MOZ_PROFILING"; then
