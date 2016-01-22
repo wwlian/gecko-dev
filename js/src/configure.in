@@ -3222,6 +3222,21 @@ if test -n "$MOZ_DEBUG"; then
 fi
 
 dnl ========================================================
+dnl Baseline JIT random NOP insertion.
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(baselinerandomnop,
+[  --enable-baselinerandomnop
+                          Enable random NOP insertion between bytecodes in the Baseline JIT.],
+    BASELINE_RANDOM_NOP=1,
+    BASELINE_RANDOM_NOP= )
+
+if test -n "$BASELINE_RANDOM_NOP"; then
+    AC_DEFINE(BASELINE_RANDOM_NOP)
+fi
+
+AC_SUBST(BASELINE_RANDOM_NOP)
+
+dnl ========================================================
 dnl IonMonkey random NOP insertion.
 dnl ========================================================
 MOZ_ARG_ENABLE_BOOL(ionrandomnop,
