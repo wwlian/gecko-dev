@@ -3281,6 +3281,21 @@ fi
 AC_SUBST(BASE_OFFSET_RANDOMIZATION)
 
 dnl ========================================================
+dnl Constant blinding
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(constantblinding,
+[  --enable-constantblinding
+                          Enable constant blinding.],
+    CONSTANT_BLINDING=1,
+    CONSTANT_BLINDING= )
+
+if test -n "$CONSTANT_BLINDING"; then
+    AC_DEFINE(CONSTANT_BLINDING)
+fi
+
+AC_SUBST(CONSTANT_BLINDING)
+
+dnl ========================================================
 dnl Profiling
 dnl ========================================================
 if test -n "$MOZ_PROFILING"; then

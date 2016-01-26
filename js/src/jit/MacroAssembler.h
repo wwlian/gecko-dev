@@ -10,6 +10,11 @@
 #include "mozilla/MacroForEach.h"
 #include "mozilla/MathAlgorithms.h"
 
+#ifdef CONSTANT_BLINDING
+#include "mozilla/Maybe.h"
+#include "mozilla/XorShift128PlusRNG.h"
+#endif
+
 #include "jscompartment.h"
 
 #if defined(JS_CODEGEN_X86)
@@ -345,6 +350,11 @@ class MacroAssembler : public MacroAssemblerSpecific
     NonAssertingLabel asmOnConversionErrorLabel_;
     NonAssertingLabel asmOnOutOfBoundsLabel_;
 
+#ifdef CONSTANT_BLINDING
+    // Random number generator for code diversification.
+    static mozilla::Maybe<mozilla::non_crypto::XorShift128PlusRNG> randomNumberGenerator;
+#endif
+
   public:
     MacroAssembler()
       : framePushed_(0),
@@ -399,6 +409,17 @@ class MacroAssembler : public MacroAssemblerSpecific
         armbuffer_.id = 0;
 #endif
     }
+
+#ifdef CONSTANT_BLINDING
+    uint64_t blindingValue() {
+    	if (randomNumberGenerator.isNothing()) {
+    		mozilla::Array<uint64_t, 2> seed;
+    		js::GenerateXorShift128PlusSeed(seed);
+    		randomNumberGenerator.emplace(seed[0], seed[1]);
+    	}
+    	return randomNumberGenerator.ref().next();
+    }
+#endif
 
     void constructRoot(JSContext* cx) {
         autoRooter_.emplace(cx, this);
