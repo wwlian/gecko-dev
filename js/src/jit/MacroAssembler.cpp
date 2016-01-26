@@ -31,6 +31,10 @@ using namespace js::jit;
 using JS::GenericNaN;
 using JS::ToInt32;
 
+#ifdef CONSTANT_BLINDING
+mozilla::Maybe<mozilla::non_crypto::XorShift128PlusRNG> randomNumberGenerator();
+#endif
+
 template <typename Source> void
 MacroAssembler::guardTypeSet(const Source& address, const TypeSet* types, BarrierKind kind,
                              Register scratch, Label* miss)
