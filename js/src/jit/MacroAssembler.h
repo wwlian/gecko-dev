@@ -352,7 +352,7 @@ class MacroAssembler : public MacroAssemblerSpecific
 
 #ifdef CONSTANT_BLINDING
     // Random number generator for code diversification.
-    static mozilla::Maybe<mozilla::non_crypto::XorShift128PlusRNG> randomNumberGenerator;
+    mozilla::Maybe<mozilla::non_crypto::XorShift128PlusRNG> randomNumberGenerator;
 #endif
 
   public:
