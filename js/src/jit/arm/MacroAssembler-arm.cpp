@@ -3165,10 +3165,9 @@ MacroAssemblerARMCompat::moveValue(const Value& val, Register type, Register dat
     	ma_mov(ImmGCPtr(reinterpret_cast<gc::Cell*>(val.toGCThing())), data);
     else {
     	if (jv.s.tag == JSVAL_TAG_INT32) {
-    		ScratchRegisterScope scratch(asMasm());
     		uint32_t secret = static_cast<uint32_t>(asMasm().blindingValue());
-			ma_mov(Imm32(secret), data);
     		ma_mov(Imm32(jv.s.payload.i32 ^ secret), data);
+    		ma_eor(Imm32(secret), data);
     	} else {
     		ma_mov(Imm32(jv.s.payload.i32), data);
     	}
