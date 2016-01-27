@@ -838,7 +838,7 @@ CodeGeneratorARM::visitBitOpI(LBitOpI* ins)
     switch (ins->bitop()) {
       case JSOP_BITOR:
         if (rhs->isConstant()) {
-        	uint32_t secret = static_cast<uint32_t>(asMasm().blindingValue());
+        	uint32_t secret = static_cast<uint32_t>(masm.blindingValue());
             masm.ma_orr(Imm32(ToInt32(rhs) & secret), ToRegister(lhs), ToRegister(dest));
             masm.ma_orr(Imm32(ToInt32(rhs) & ~secret), ToRegister(dest), ToRegister(dest));
         } else {
@@ -847,16 +847,16 @@ CodeGeneratorARM::visitBitOpI(LBitOpI* ins)
         break;
       case JSOP_BITXOR:
         if (rhs->isConstant()) {
-        	uint32_t secret = static_cast<uint32_t>(asMasm().blindingValue());
+        	uint32_t secret = static_cast<uint32_t>(masm.blindingValue());
             masm.ma_eor(Imm32(ToInt32(rhs) ^ secret), ToRegister(lhs), ToRegister(dest));
-            masm.ma_eor(secret), ToRegister(dest), ToRegister(dest));
+            masm.ma_eor(Imm32(secret), ToRegister(dest), ToRegister(dest));
         } else {
             masm.ma_eor(ToRegister(rhs), ToRegister(lhs), ToRegister(dest));
         }
         break;
       case JSOP_BITAND:
         if (rhs->isConstant()) {
-        	uint32_t secret = static_cast<uint32_t>(asMasm().blindingValue());
+        	uint32_t secret = static_cast<uint32_t>(masm.blindingValue());
             masm.ma_and(Imm32(ToInt32(rhs) | secret), ToRegister(lhs), ToRegister(dest));
             masm.ma_and(Imm32(ToInt32(rhs) | ~secret), ToRegister(dest), ToRegister(dest));
         } else {
