@@ -16,6 +16,7 @@
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
 #include "jit/OptimizationTracking.h"
+#include "jit/RNG.h"
 #include "jit/Safepoints.h"
 #include "jit/Snapshots.h"
 #include "jit/VMFunctions.h"
@@ -71,6 +72,7 @@ class CodeGeneratorShared : public LElementVisitor
     MacroAssembler& masm;
 
   protected:
+    RNG rng;
     MIRGenerator* gen;
     LIRGraph& graph;
     LBlock* current;
