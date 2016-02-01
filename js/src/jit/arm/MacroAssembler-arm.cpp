@@ -3432,25 +3432,6 @@ MacroAssemblerARMCompat::branchTest64(Condition cond, Register64 lhs, Register64
     }
 }
 
-#ifdef CONSTANT_BLINDING
-void
-MacroAssemblerARMCompat::moveValue(const Value& val, Register type, Register data)
-{
-    jsval_layout jv = JSVAL_TO_IMPL(val);
-    ma_mov(Imm32(jv.s.tag), type);
-    if (val.isMarkable())
-    	ma_mov(ImmGCPtr(reinterpret_cast<gc::Cell*>(val.toGCThing())), data);
-    else {
-    	if (jv.s.tag == JSVAL_TAG_INT32) {
-    		uint32_t secret = static_cast<uint32_t>(asMasm().blindingValue());
-    		ma_mov(Imm32(jv.s.payload.i32 ^ secret), data);
-    		ma_eor(Imm32(secret), data);
-    	} else {
-    		ma_mov(Imm32(jv.s.payload.i32), data);
-    	}
-    }
-}
-#else
 void
 MacroAssemblerARMCompat::moveValue(const Value& val, Register type, Register data)
 {
@@ -3461,7 +3442,6 @@ MacroAssemblerARMCompat::moveValue(const Value& val, Register type, Register dat
     else
         ma_mov(Imm32(jv.s.payload.i32), data);
 }
-#endif
 
 void
 MacroAssemblerARMCompat::moveValue(const Value& val, const ValueOperand& dest)
