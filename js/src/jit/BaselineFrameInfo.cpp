@@ -97,7 +97,7 @@ FrameInfo::popValue(ValueOperand dest)
     		secretVal.setInt32(secret);
 
     		masm.moveValue(secretVal, dest);
-    		masm.ma_eor(Imm32(secret ^ val->constant().getInt32Ref()), data.payloadReg());
+    		masm.ma_eor(Imm32(secret ^ val->constant().getInt32Ref()), dest.payloadReg());
     	}
 #else
         masm.moveValue(val->constant(), dest);
