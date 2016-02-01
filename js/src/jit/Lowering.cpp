@@ -4597,6 +4597,7 @@ LIRGenerator::visitBlock(MBasicBlock* block)
     definePhis();
 
     for (MInstructionIterator iter = block->begin(); *iter != block->lastIns(); iter++) {
+    	JitSpew(JitSpew_IonMIR, "MIR instruction %s", iter->opName());
         if (!visitInstruction(*iter))
             return false;
     }
