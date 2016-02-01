@@ -12,6 +12,7 @@
 #include "jit/BaselineFrame.h"
 #include "jit/FixedList.h"
 #include "jit/MacroAssembler.h"
+#includ3 "jit/RNG.h"
 #include "jit/SharedICRegisters.h"
 
 namespace js {
@@ -170,6 +171,8 @@ class FrameInfo
 
     FixedList<StackValue> stack;
     size_t spIndex;
+
+    RNG rng;
 
   public:
     FrameInfo(JSScript* script, MacroAssembler& masm)

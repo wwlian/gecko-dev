@@ -90,7 +90,18 @@ FrameInfo::popValue(ValueOperand dest)
 
     switch (val->kind()) {
       case StackValue::Constant:
+#ifdef CONSTANT_BLINDING
+    	if (val->constant().isInt32()) {
+    		int32_t secret = rng.blindingValue();
+    		Value secretVal;
+    		secretVal.setInt32(secret);
+
+    		masm.moveValue(secretVal, dest);
+    		masm.ma_eor(Imm32(secret ^ val->constant().getInt32Ref()), data.payloadReg());
+    	}
+#else
         masm.moveValue(val->constant(), dest);
+#endif
         break;
       case StackValue::LocalSlot:
         masm.loadValue(addressOfLocal(val->localSlot()), dest);
