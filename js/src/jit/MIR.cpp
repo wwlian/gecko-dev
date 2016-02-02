@@ -767,7 +767,7 @@ jit::IonCompilationCanUseNurseryPointers()
 MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
   : value_(vp)
 #ifdef CONSTANT_BLINDING
-  , blindedValue_(vp)
+  , unblindedValue_(vp)
   , redirect_(nullptr)
 #endif
 {

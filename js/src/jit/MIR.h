@@ -1319,7 +1319,7 @@ class MConstant : public MNullaryInstruction
 {
     Value value_;
 #ifdef CONSTANT_BLINDING
-    Value blindedValue_;
+    Value unblindedValue_;
     MDefinition* redirect_;
 #endif
 
@@ -1344,31 +1344,27 @@ class MConstant : public MNullaryInstruction
     }
 
 #ifdef CONSTANT_BLINDING
-    void setBlindedValue(js::Value& blindedValue) {
-    	blindedValue_ = blindedValue;
+    void blind(js::Value& blindedValue, MDefinition* redirect) {
+    	unblindedValue_ = value_;
+		value_ = blindedValue;
+		redirect_ = redirect;
     }
 
-    const js::Value& blindedValue() const {
-    	return blindedValue_;
+    void unblind() {
+    	value_ = unblindedValue_;
+    	redirect_ = nullptr;
     }
 
-    const js::Value* blindedValuePtr() const {
-    	return &blindedValue_;
+    const js::Value& unblindedValue() const {
+    	return unblindedValue_;
     }
-
-    bool hasBlindedValue() const {
-        	return value_ == blindedValue_;
-        }
-
-    void setRedirect(MDefinition *redirect) {
-        	redirect_ = redirect;
-	}
 
     const MDefinition* redirect() const {
     	return redirect_;
     }
 
-    bool hasRedirect() const {
+    bool isBlinded() const {
+    	// Presence of redirect implies that blinding has occurred.
     	return redirect_;
     }
 #endif
