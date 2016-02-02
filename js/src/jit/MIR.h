@@ -1375,6 +1375,11 @@ class MConstant : public MNullaryInstruction
     void assertInitializedPayload() const {}
 #endif
 
+#ifdef CONSTANT_BLINDING
+    int32_t blindedInt32_;
+    MDefinition* redirect_;
+#endif
+
   protected:
     MConstant(const Value& v, CompilerConstraintList* constraints);
     explicit MConstant(JSObject* obj);
@@ -1401,6 +1406,27 @@ class MConstant : public MNullaryInstruction
         MOZ_ALWAYS_TRUE(valueToBoolean(&res));
         return res;
     }
+#ifdef CONSTANT_BLINDING
+    void setBlindedInt32(int32_t blindedInt32) {
+      blindedInt32_ = blindedInt32;
+    }
+
+    const int32_t blindedInt32() const {
+    	return blindedInt32_;
+    }
+
+    void setRedirect(MDefinition *redirect) {
+        	redirect_ = redirect;
+	  }
+
+    const MDefinition* redirect() const {
+    	return redirect_;
+    }
+
+    bool hasRedirect() const {
+    	return redirect_;
+    }
+#endif
 
     void printOpcode(GenericPrinter& out) const override;
 

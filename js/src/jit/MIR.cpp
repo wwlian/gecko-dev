@@ -748,6 +748,9 @@ jit::IonCompilationCanUseNurseryPointers()
 
 MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
 {
+#ifdef CONSTANT_BLINDING
+    redirect_ = nullptr;
+#endif
     setResultType(MIRTypeFromValue(vp));
 
     MOZ_ASSERT(payload_.asBits == 0);
@@ -761,6 +764,9 @@ MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
         break;
       case MIRType_Int32:
         payload_.i32 = vp.toInt32();
+#ifdef CONSTANT_BLINDING
+        blindedInt32_ = payload_.i32;
+#endif
         break;
       case MIRType_Double:
         payload_.d = vp.toDouble();
@@ -804,6 +810,9 @@ MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
 MConstant::MConstant(JSObject* obj)
 {
     MOZ_ASSERT_IF(IsInsideNursery(obj), IonCompilationCanUseNurseryPointers());
+#ifdef CONSTANT_BLINDING
+    redirect_ = nullptr;
+#endif
     setResultType(MIRType_Object);
     payload_.obj = obj;
     setMovable();
