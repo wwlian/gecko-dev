@@ -1318,6 +1318,10 @@ class MLimitedTruncate
 class MConstant : public MNullaryInstruction
 {
     Value value_;
+#ifdef CONSTANT_BLINDING
+    Value blindedValue_;
+    MDefinition* redirect_;
+#endif
 
   protected:
     MConstant(const Value& v, CompilerConstraintList* constraints);
@@ -1338,6 +1342,37 @@ class MConstant : public MNullaryInstruction
     const js::Value* vp() const {
         return &value_;
     }
+
+#ifdef CONSTANT_BLINDING
+    void setBlindedValue(js::Value& blindedValue) {
+    	blindedValue_ = blindedValue;
+    }
+
+    const js::Value& blindedValue() const {
+    	return blindedValue_;
+    }
+
+    const js::Value* blindedValuePtr() const {
+    	return &blindedValue_;
+    }
+
+    bool hasBlindedValue() const {
+        	return value_ == blindedValue_;
+        }
+
+    void setRedirect(MDefinition *redirect) {
+        	redirect_ = redirect;
+	}
+
+    const MDefinition* redirect() const {
+    	return redirect_;
+    }
+
+    bool hasRedirect() const {
+    	return redirect_;
+    }
+#endif
+
     bool valueToBoolean() const {
         // A hack to avoid this wordy pattern everywhere in the JIT.
         return ToBoolean(HandleValue::fromMarkedLocation(&value_));

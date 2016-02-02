@@ -766,6 +766,10 @@ jit::IonCompilationCanUseNurseryPointers()
 
 MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
   : value_(vp)
+#ifdef CONSTANT_BLINDING
+  , blindedValue_(vp)
+  , redirect_(nullptr)
+#endif
 {
     setResultType(MIRTypeFromValue(vp));
     if (vp.isObject()) {
@@ -792,6 +796,10 @@ MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
 
 MConstant::MConstant(JSObject* obj)
   : value_(ObjectValue(*obj))
+#ifdef CONSTANT_BLINDING
+  , blindedValue_(ObjectValue(*obj))
+  , redirect_(nullptr)
+#endif
 {
     MOZ_ASSERT_IF(IsInsideNursery(obj), IonCompilationCanUseNurseryPointers());
     setResultType(MIRType_Object);
