@@ -38,7 +38,9 @@
 #include "jit/Lowering.h"
 #include "jit/PerfSpewer.h"
 #include "jit/RangeAnalysis.h"
+#ifdef CONSTANT_BLINDING
 #include "jit/RNG.h"
+#endif
 #include "jit/ScalarReplacement.h"
 #include "jit/Sink.h"
 #include "jit/StupidAllocator.h"
@@ -1879,6 +1881,7 @@ OptimizeMIR(MIRGenerator* mir)
     return true;
 }
 
+#ifdef CONSTANT_BLINDING
 bool
 BlindConstants(MIRGenerator* mir)
 {
@@ -1905,6 +1908,7 @@ BlindConstants(MIRGenerator* mir)
 		    }
 	    }
 }
+#endif
 
 LIRGraph*
 GenerateLIR(MIRGenerator* mir)
@@ -2020,7 +2024,9 @@ CompileBackEnd(MIRGenerator* mir)
     if (!OptimizeMIR(mir))
         return nullptr;
 
+#ifdef CONSTANT_BLINDING
     BlindConstants(mir);
+#endif
 
     LIRGraph* lir = GenerateLIR(mir);
     if (!lir)
