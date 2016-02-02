@@ -38,6 +38,7 @@
 #include "jit/Lowering.h"
 #include "jit/PerfSpewer.h"
 #include "jit/RangeAnalysis.h"
+#include "jit/RNG.h"
 #include "jit/ScalarReplacement.h"
 #include "jit/Sink.h"
 #include "jit/StupidAllocator.h"
@@ -1878,6 +1879,33 @@ OptimizeMIR(MIRGenerator* mir)
     return true;
 }
 
+bool
+BlindConstants(MIRGenerator* mir)
+{
+	RNG rng;
+	MIRGraph& graph = mir->graph();
+	for (ReversePostorderIterator block(graph.rpoBegin()); block != graph.rpoEnd(); block++) {
+		for (MInstructionIterator ins = block->begin(); *ins != block->lastIns(); ins++) {
+		    	JitSpew(JitSpew_IonMIR, "Considering blinding for MIR instruction %s", ins->opName());
+		    	if (ins->isConstant() && ins->toConstant()->value().isInt32()) {
+		    		MConstant* c = ins->toConstant();
+		    		int32_t secret = rng.blindingValue();
+		    		MConstant *secretConstant = MConstant::New(graph.alloc(), Int32Value(secret));
+		    		MBitXor* unblindOp = MBitXor::New(graph.alloc(), c, secretConstant);
+		    		c->blind(Int32Value(secret ^ c->value().toInt32()), unblindOp);
+
+		    		// Uses of the now-blinded MConstant should be transferred to the unblinding op.
+		    		c->justReplaceAllUsesWithExcept(unblindOp);
+
+		    		// Add new instructions to the block.
+		    		block->insertAfter(ins, secretConstant);
+		    		block->insertAfter(secretConstant, unblindOp);
+		    		ins++; ins++;  // Skip blinding operations that we just added.
+		    	}
+		    }
+	    }
+}
+
 LIRGraph*
 GenerateLIR(MIRGenerator* mir)
 {
@@ -1991,6 +2019,8 @@ CompileBackEnd(MIRGenerator* mir)
 
     if (!OptimizeMIR(mir))
         return nullptr;
+
+    BlindConstants(mir);
 
     LIRGraph* lir = GenerateLIR(mir);
     if (!lir)

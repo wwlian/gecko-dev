@@ -1376,7 +1376,7 @@ class MConstant : public MNullaryInstruction
 #endif
 
 #ifdef CONSTANT_BLINDING
-    int32_t blindedInt32_;
+    int32_t unblindedInt32_;
     MDefinition* redirect_;
 #endif
 
@@ -1406,24 +1406,28 @@ class MConstant : public MNullaryInstruction
         MOZ_ALWAYS_TRUE(valueToBoolean(&res));
         return res;
     }
-#ifdef CONSTANT_BLINDING
-    void setBlindedInt32(int32_t blindedInt32) {
-      blindedInt32_ = blindedInt32;
-    }
 
-    const int32_t blindedInt32() const {
-    	return blindedInt32_;
+#ifdef CONSTANT_BLINDING
+    const int32_t unblindedInt32() const {
+    	return unblindedInt32_;
     }
 
     void setRedirect(MDefinition *redirect) {
         	redirect_ = redirect;
 	  }
 
+    void blind(int32_t blindedInt32, MDefinition* redirect) {
+      unblindedInt32_ = payload_.i32
+      value_ = blindedInt32;
+      redirect_ = redirect;
+    }
+
     const MDefinition* redirect() const {
     	return redirect_;
     }
 
-    bool hasRedirect() const {
+    bool isBlinded() const {
+    	// Presence of redirect implies that blinding has occurred.
     	return redirect_;
     }
 #endif
