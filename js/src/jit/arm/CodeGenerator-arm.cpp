@@ -829,6 +829,7 @@ CodeGeneratorARM::visitBitNotI(LBitNotI* ins)
 }
 
 #ifdef CONSTANT_BLINDING
+/*
 void
 CodeGeneratorARM::visitBitOpI(LBitOpI* ins)
 {
@@ -863,6 +864,37 @@ CodeGeneratorARM::visitBitOpI(LBitOpI* ins)
         } else {
             masm.ma_and(ToRegister(rhs), ToRegister(lhs), ToRegister(dest));
         }
+        break;
+      default:
+        MOZ_CRASH("unexpected binary opcode");
+    }
+}
+*/
+void
+CodeGeneratorARM::visitBitOpI(LBitOpI* ins)
+{
+    const LAllocation* lhs = ins->getOperand(0);
+    const LAllocation* rhs = ins->getOperand(1);
+    const LDefinition* dest = ins->getDef(0);
+    // All of these bitops should be either imm32's, or integer registers.
+    switch (ins->bitop()) {
+      case JSOP_BITOR:
+        if (rhs->isConstant())
+            masm.ma_orr(Imm32(ToInt32(rhs)), ToRegister(lhs), ToRegister(dest));
+        else
+            masm.ma_orr(ToRegister(rhs), ToRegister(lhs), ToRegister(dest));
+        break;
+      case JSOP_BITXOR:
+        if (rhs->isConstant())
+            masm.ma_eor(Imm32(ToInt32(rhs)), ToRegister(lhs), ToRegister(dest));
+        else
+            masm.ma_eor(ToRegister(rhs), ToRegister(lhs), ToRegister(dest));
+        break;
+      case JSOP_BITAND:
+        if (rhs->isConstant())
+            masm.ma_and(Imm32(ToInt32(rhs)), ToRegister(lhs), ToRegister(dest));
+        else
+            masm.ma_and(ToRegister(rhs), ToRegister(lhs), ToRegister(dest));
         break;
       default:
         MOZ_CRASH("unexpected binary opcode");
