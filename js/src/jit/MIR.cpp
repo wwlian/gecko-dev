@@ -797,7 +797,7 @@ MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
 MConstant::MConstant(JSObject* obj)
   : value_(ObjectValue(*obj))
 #ifdef CONSTANT_BLINDING
-  , blindedValue_(ObjectValue(*obj))
+  , unblindedValue_(ObjectValue(*obj))
   , redirect_(nullptr)
 #endif
 {
