@@ -97,7 +97,11 @@ FrameInfo::popValue(ValueOperand dest)
     		secretVal.setInt32(secret);
 
     		masm.moveValue(secretVal, dest);
-    		masm.ma_eor(Imm32(secret ^ val->constant().getInt32Ref()), dest.payloadReg());
+#if defined(JS_NUNBOX32)
+    		masm.xor32(Imm32(secret ^ val->constant().getInt32Ref()), dest.payloadReg());
+#elif defined(JS_PUNBOX64)
+    		masm.xor32(Imm32(secret ^ val->constant().getInt32Ref()), dest.valueReg());
+#endif
     	}
 #else
         masm.moveValue(val->constant(), dest);
