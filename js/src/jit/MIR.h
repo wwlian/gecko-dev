@@ -1344,7 +1344,7 @@ class MConstant : public MNullaryInstruction
     }
 
 #ifdef CONSTANT_BLINDING
-    void blind(js::Value& blindedValue, MDefinition* redirect) {
+    void blind(Value blindedValue, MDefinition* redirect) {
     	unblindedValue_ = value_;
 		value_ = blindedValue;
 		redirect_ = redirect;
