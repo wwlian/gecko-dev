@@ -1882,7 +1882,7 @@ OptimizeMIR(MIRGenerator* mir)
 }
 
 #ifdef CONSTANT_BLINDING
-bool
+void
 BlindConstants(MIRGenerator* mir)
 {
 	RNG rng;
@@ -1901,7 +1901,7 @@ BlindConstants(MIRGenerator* mir)
 		    		c->justReplaceAllUsesWithExcept(unblindOp);
 
 		    		// Add new instructions to the block.
-		    		block->insertAfter(ins, secretConstant);
+		    		block->insertAfter(*ins, secretConstant);
 		    		block->insertAfter(secretConstant, unblindOp);
 		    		ins++; ins++;  // Skip blinding operations that we just added.
 		    	}
