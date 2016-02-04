@@ -1890,7 +1890,7 @@ BlindConstants(MIRGenerator* mir)
 	for (ReversePostorderIterator block(graph.rpoBegin()); block != graph.rpoEnd(); block++) {
 		for (MInstructionIterator ins = block->begin(); *ins != block->lastIns(); ins++) {
 		    	JitSpew(JitSpew_IonMIR, "Considering blinding for MIR instruction %s", ins->opName());
-		    	if (ins->isConstant() && ins->toConstant()->value().isInt32()) {
+		    	if (ins->isConstant() && ins->toConstant()->value().isInt32() && ins->toConstant()->isUntrusted()) {
 		    		MConstant* c = ins->toConstant();
 		    		int32_t secret = rng.blindingValue();
 		    		MConstant *secretConstant = MConstant::New(graph.alloc(), Int32Value(secret));

@@ -1892,10 +1892,18 @@ IonBuilder::inspectOpcode(JSOp op)
         return jsop_eval(GET_ARGC(pc));
 
       case JSOP_INT8:
+#ifdef CONSTANT_BLINDING
+        return pushConstant(Int32Value(GET_INT8(pc)), true);
+#else
         return pushConstant(Int32Value(GET_INT8(pc)));
+#endif
 
       case JSOP_UINT16:
+#ifdef CONSTANT_BLINDING
+        return pushConstant(Int32Value(GET_UINT16(pc)), true);
+#else
         return pushConstant(Int32Value(GET_UINT16(pc)));
+#endif
 
       case JSOP_GETGNAME:
       {
@@ -1970,10 +1978,18 @@ IonBuilder::inspectOpcode(JSOp op)
         return jsop_setaliasedvar(ScopeCoordinate(pc));
 
       case JSOP_UINT24:
+#ifdef CONSTANT_BLINDING
+        return pushConstant(Int32Value(GET_UINT24(pc)), true);
+#else
         return pushConstant(Int32Value(GET_UINT24(pc)));
+#endif
 
       case JSOP_INT32:
+#ifdef CONSTANT_BLINDING
+        return pushConstant(Int32Value(GET_INT32(pc)), true);
+#else
         return pushConstant(Int32Value(GET_INT32(pc)));
+#endif
 
       case JSOP_LOOPHEAD:
         // JSOP_LOOPHEAD is handled when processing the loop header.
@@ -4604,9 +4620,13 @@ IonBuilder::processThrow()
 }
 
 bool
-IonBuilder::pushConstant(const Value& v)
+IonBuilder::pushConstant(const Value& v
+#ifdef CONSTANT_BLINDING
+		, bool isUntrusted
+#endif
+		)
 {
-    current->push(constant(v));
+    current->push(constant(v, isUntrusted));
     return true;
 }
 
@@ -14091,7 +14111,11 @@ IonBuilder::checkNurseryObject(JSObject* obj)
 }
 
 MConstant*
-IonBuilder::constant(const Value& v)
+IonBuilder::constant(const Value& v
+#ifdef CONSTANT_BLINDING
+		, bool isUntrusted
+#endif
+		)
 {
     MOZ_ASSERT(!v.isString() || v.toString()->isAtom(),
                "Handle non-atomized strings outside IonBuilder.");
@@ -14100,6 +14124,10 @@ IonBuilder::constant(const Value& v)
         checkNurseryObject(&v.toObject());
 
     MConstant* c = MConstant::New(alloc(), v, constraints());
+#ifdef CONSTANT_BLINDING
+    if (isUntrusted)
+    	 c->setUntrusted();
+#endif
     current->add(c);
     return c;
 }

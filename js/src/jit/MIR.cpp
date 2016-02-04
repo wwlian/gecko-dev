@@ -749,6 +749,7 @@ jit::IonCompilationCanUseNurseryPointers()
 MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
 #ifdef CONSTANT_BLINDING
   : redirect_(nullptr)
+  , isUntrusted_(false)
 #endif
 {
     setResultType(MIRTypeFromValue(vp));
@@ -809,7 +810,9 @@ MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
 
 MConstant::MConstant(JSObject* obj)
 #ifdef CONSTANT_BLINDING
+<<<<<<< HEAD
   : redirect_(nullptr)
+  , isUntrusted_(false)
 #endif
 {
     MOZ_ASSERT_IF(IsInsideNursery(obj), IonCompilationCanUseNurseryPointers());

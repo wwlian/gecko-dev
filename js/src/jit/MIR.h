@@ -1376,6 +1376,7 @@ class MConstant : public MNullaryInstruction
 #endif
 
 #ifdef CONSTANT_BLINDING
+    bool isUntrusted_;
     int32_t unblindedInt32_;
     MDefinition* redirect_;
 #endif
@@ -1410,6 +1411,14 @@ class MConstant : public MNullaryInstruction
 #ifdef CONSTANT_BLINDING
     const int32_t unblindedInt32() const {
     	return unblindedInt32_;
+    }
+
+    void markUntrusted() {
+    	isUntrusted_ = true;
+    }
+
+    bool isUntrusted() {
+    	return isUntrusted_;
     }
 
     void setRedirect(MDefinition *redirect) {
