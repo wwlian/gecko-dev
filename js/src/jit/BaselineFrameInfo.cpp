@@ -92,7 +92,11 @@ FrameInfo::popValue(ValueOperand dest)
       case StackValue::Constant:
 #ifdef CONSTANT_BLINDING
     	if (val->constant().isInt32()) {
-    		int32_t secret = rng.blindingValue();
+        /* Clearing the most significant bit is a trick that prevents it from getting
+         * sign-extended on 64-bit architectures, which would cause the unblinding
+         * XOR to clear the punboxing tag.
+         */
+    		int32_t secret = rng.blindingValue() & 0x7fffffff;
     		Value secretVal;
     		secretVal.setInt32(secret);
 
@@ -100,7 +104,7 @@ FrameInfo::popValue(ValueOperand dest)
 #if defined(JS_NUNBOX32)
     		masm.xor32(Imm32(secret ^ val->constant().getInt32Ref()), dest.payloadReg());
 #elif defined(JS_PUNBOX64)
-    		masm.xor32(Imm32(secret ^ val->constant().getInt32Ref()), dest.valueReg());
+    		masm.xorPtr(Imm32(secret ^ val->constant().getInt32Ref()), dest.valueReg());
 #endif
     	}
 #else
