@@ -73,7 +73,9 @@ class CodeGeneratorShared : public LElementVisitor
     MacroAssembler& masm;
 
   protected:
+#ifdef CONSTANT_BLINDING
     RNG rng;
+#endif
     MIRGenerator* gen;
     LIRGraph& graph;
     LBlock* current;
