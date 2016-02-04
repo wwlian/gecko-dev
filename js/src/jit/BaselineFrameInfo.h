@@ -172,7 +172,9 @@ class FrameInfo
     FixedList<StackValue> stack;
     size_t spIndex;
 
+#ifdef CONSTANT_BLINDING
     RNG rng;
+#endif
 
   public:
     FrameInfo(JSScript* script, MacroAssembler& masm)
