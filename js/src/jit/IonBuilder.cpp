@@ -14126,7 +14126,7 @@ IonBuilder::constant(const Value& v
     MConstant* c = MConstant::New(alloc(), v, constraints());
 #ifdef CONSTANT_BLINDING
     if (isUntrusted)
-    	 c->setUntrusted();
+    	 c->markUntrusted();
 #endif
     current->add(c);
     return c;
