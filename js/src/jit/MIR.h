@@ -1319,6 +1319,7 @@ class MConstant : public MNullaryInstruction
 {
     Value value_;
 #ifdef CONSTANT_BLINDING
+    bool isUntrusted_;
     Value unblindedValue_;
     MDefinition* redirect_;
 #endif
@@ -1344,6 +1345,14 @@ class MConstant : public MNullaryInstruction
     }
 
 #ifdef CONSTANT_BLINDING
+    void markUntrusted() {
+    	isUntrusted_ = true;
+    }
+
+    bool isUntrusted() {
+    	return isUntrusted_;
+    }
+
     void blind(Value blindedValue, MDefinition* redirect) {
     	unblindedValue_ = value_;
 		value_ = blindedValue;

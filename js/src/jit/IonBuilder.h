@@ -342,9 +342,14 @@ class IonBuilder
     void rewriteParameters();
     bool initScopeChain(MDefinition* callee = nullptr);
     bool initArgumentsObject();
-    bool pushConstant(const Value& v);
 
-    MConstant* constant(const Value& v);
+#ifdef CONSTANT_BLINDING
+    bool pushConstant(const Value& v, bool isUntrusted = false);
+    MConstant* constant(const Value& v, bool isUntrusted = false);
+#else
+    bool pushConstant(const Value& v);
+	MConstant* constant(const Value& v);
+#endif
     MConstant* constantInt(int32_t i);
     MInstruction* initializedLength(MDefinition* obj, MDefinition* elements,
                                     JSValueType unboxedType);

@@ -767,6 +767,7 @@ jit::IonCompilationCanUseNurseryPointers()
 MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
   : value_(vp)
 #ifdef CONSTANT_BLINDING
+  , isUntrusted_(false)
   , unblindedValue_(vp)
   , redirect_(nullptr)
 #endif
@@ -797,6 +798,7 @@ MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
 MConstant::MConstant(JSObject* obj)
   : value_(ObjectValue(*obj))
 #ifdef CONSTANT_BLINDING
+  , isUntrusted_(false)
   , unblindedValue_(ObjectValue(*obj))
   , redirect_(nullptr)
 #endif
