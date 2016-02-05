@@ -90,19 +90,19 @@ FrameInfo::popValue(ValueOperand dest)
 #ifdef CONSTANT_BLINDING
     	if (val->constant().isInt32()) {
     		JitSpew(JitSpew_IonMIR, "Blinding Constant %d", val->constant().getInt32Ref());
-			/* Clearing the most significant bit is a trick that prevents it from getting
-			 * sign-extended on 64-bit architectures, which would cause the unblinding
-			 * XOR to clear the punboxing tag.
-			 */
+        /* Clearing the most significant bit is a trick that prevents it from getting
+         * sign-extended on 64-bit architectures, which would cause the unblinding
+         * XOR instruction to clear the punboxing tag.
+         */
     		int32_t secret = rng.blindingValue() & 0x7fffffff;
-    		Value secretVal;
-    		secretVal.setInt32(secret);
+    		Value scrambledVal;
+    		scrambledVal.setInt32(secret ^ val->constant().getInt32Ref());
 
-    		masm.moveValue(secretVal, dest);
+    		masm.moveValue(scrambledVal, dest);
 #if defined(JS_NUNBOX32)
-    		masm.xor32(Imm32(secret ^ val->constant().getInt32Ref()), dest.payloadReg());
+    		masm.xor32(Imm32(secret), dest.payloadReg());
 #elif defined(JS_PUNBOX64)
-    		masm.xorPtr(Imm32(secret ^ val->constant().getInt32Ref()), dest.valueReg());
+    		masm.xorPtr(Imm32(secret), dest.valueReg());
 #endif
     	} else {
     		masm.moveValue(val->constant(), dest);
