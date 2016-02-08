@@ -1882,6 +1882,116 @@ OptimizeMIR(MIRGenerator* mir)
 }
 
 #ifdef CONSTANT_BLINDING
+bool
+areAllUsesAccumulatable(MDefinition *ins) {
+	MOZ_ASSERT(ins != nullptr);
+
+	for (MUseIterator i(ins->usesBegin()), e(ins->usesEnd()); i != e; ++i) {
+		MNode* consumer = i->consumer();
+		if (!consumer->isDefinition()) return false;
+		MDefinition *def = consumer->toDefinition();
+		if (!def->isBitAnd()
+		    && !def->isBitOr()
+			&& !def->isBitXor()
+			&& !def->isAdd()
+			&& !def->isSub()) {
+			return false;
+		}
+	}
+	return true;
+}
+
+void preComputationBlind(RNG rng, MBasicBlock *block, MConstant *c) {
+	JitSpew(JitSpew_IonMIR, "Precomputation blinding  int32 %d", c->value().toInt32());
+	int32_t secret = rng.blindingValue();
+	MConstant *secretConstant = MConstant::New(graph.alloc(), Int32Value(secret));
+	MBitXor* unblindOp = MBitXor::New(graph.alloc(), c, secretConstant);
+	c->blind(Int32Value(secret ^ c->value().toInt32()), unblindOp);
+
+	// Uses of the now-blinded MConstant should be transferred to the unblinding op.
+	c->justReplaceAllUsesWithExcept(unblindOp);
+
+	// Add new instructions to the block.
+	block->insertAfter(*ins, secretConstant);
+	block->insertAfter(secretConstant, unblindOp);
+}
+
+void accumulationBlindAll(RNG rng, MBasicBlock *block, MConstant *c) {
+	JitSpew(JitSpew_IonMIR, "Accumulation blinding  int32 %d", c->value().toInt32());
+	for (MUseIterator i(ins->usesBegin()), e(ins->usesEnd()); i != e; ++i) {
+		MDefinition* consumer = i->consumer()->toDefinition();
+		if (consumer->isBitAnd()) {
+			accumulationBitAndBlind(rng, block, c, consumer);
+		} else if (consumer->isBitOr()) {
+			accumulationBitOrBlind(rng, block, c, consumer);
+		} else if (consumer->isBitXor()) {
+			accumulationBitXorBlind(rng, block, c, consumer);
+		} else if (consumer->isAdd()) {
+			accumulationAddBlind(rng, block, c, consumer);
+		} else if (consumer->isSub()) {
+			accumulationSubBlind(rng, block, c, consumer);
+		}
+
+	}
+}
+
+void accumulationBitAndBlind(RNG rng, MBasicBlock *block, MConstant *c, MDefinition *consumer) {
+	uint32_t secret = static_cast<uint32_t>(rng.blindingValue());
+	c->blind(Int32Value(c->value().toInt32() | secret), consumer);
+	MConstant *unblindOperand = MConstant::New(graph.alloc(), Int32Value(c->value().toInt32() | ~secret));
+	MBitAnd* unblindOp = MBitAnd::New(graph.alloc(), consumer, unblindOperand);
+	block->insertAfter(consumer, unblindOperand);
+	block->insertAfter(unblindOperand, unblindOp);
+}
+
+void accumulationBitOrBlind(RNG rng, MBasicBlock *block, MConstant *c, MDefinition *consumer) {
+	uint32_t secret = static_cast<uint32_t>(rng.blindingValue());
+	c->blind(Int32Value(c->value().toInt32() & secret), consumer);
+	MConstant *unblindOperand = MConstant::New(graph.alloc(), Int32Value(c->value().toInt32() & ~secret));
+	MBitOr* unblindOp = MBitOr::New(graph.alloc(), consumer, unblindOperand);
+	block->insertAfter(consumer, unblindOperand);
+	block->insertAfter(unblindOperand, unblindOp);
+}
+
+void accumulationBitXorBlind(RNG rng, MBasicBlock *block, MConstant *c, MDefinition *consumer) {
+	uint32_t secret = static_cast<uint32_t>(rng.blindingValue());
+	c->blind(Int32Value(c->value().toInt32() ^ secret), consumer);
+	MConstant *unblindOperand = MConstant::New(graph.alloc(), Int32Value(secret));
+	MBitXor* unblindOp = MBitXor::New(graph.alloc(), consumer, unblindOperand);
+	block->insertAfter(consumer, unblindOperand);
+	block->insertAfter(unblindOperand, unblindOp);
+}
+
+void accumulationAddBlind(RNG rng, MBasicBlock *block, MConstant *c, MDefinition *consumer) {
+	int32_t constant = c->value().toInt32();
+	int32_t secret;
+	if (constant <= 0) {
+		secret = rng.blindingValue(constant, 0);
+	} else {
+		secret = rng.blindingValue(0, constant);
+	}
+	c->blind(Int32Value(constant - secret), consumer);
+	MConstant *unblindOperand = MConstant::New(graph.alloc(), Int32Value(secret));
+	MAdd* unblindOp = MAdd::New(graph.alloc(), consumer, unblindOperand);
+	block->insertAfter(consumer, unblindOperand);
+	block->insertAfter(unblindOperand, unblindOp);
+}
+
+void accumulationSubBlind(RNG rng, MBasicBlock *block, MConstant *c, MDefinition *consumer) {
+	int32_t constant = c->value().toInt32();
+	int32_t secret;
+	if (constant <= 0) {
+		secret = rng.blindingValue(constant, 0);
+	} else {
+		secret = rng.blindingValue(0, constant);
+	}
+	c->blind(Int32Value(constant - secret), consumer);
+	MConstant *unblindOperand = MConstant::New(graph.alloc(), Int32Value(secret));
+	MSub* unblindOp = MSub::New(graph.alloc(), consumer, unblindOperand);
+	block->insertAfter(consumer, unblindOperand);
+	block->insertAfter(unblindOperand, unblindOp);
+}
+
 void
 BlindConstants(MIRGenerator* mir)
 {
@@ -1889,21 +1999,13 @@ BlindConstants(MIRGenerator* mir)
 	MIRGraph& graph = mir->graph();
 	for (ReversePostorderIterator block(graph.rpoBegin()); block != graph.rpoEnd(); block++) {
 		for (MInstructionIterator ins = block->begin(); *ins != block->lastIns(); ins++) {
-		    	JitSpew(JitSpew_IonMIR, "Considering blinding for MIR instruction %s", ins->opName());
 		    	if (ins->isConstant() && ins->toConstant()->value().isInt32() && ins->toConstant()->isUntrusted()) {
-		    		MConstant* c = ins->toConstant();
-		    		int32_t secret = rng.blindingValue();
-		    		MConstant *secretConstant = MConstant::New(graph.alloc(), Int32Value(secret));
-		    		MBitXor* unblindOp = MBitXor::New(graph.alloc(), c, secretConstant);
-		    		c->blind(Int32Value(secret ^ c->value().toInt32()), unblindOp);
+		    		if (areAllUsesAccumulatable(*ins)) {
+		    			accumulationBlindAll(rng, ins->toConstant());
+		    		} else {
+		    			preComputationBlind(rng, *block, ins->toConstant());
+		    		}
 
-		    		// Uses of the now-blinded MConstant should be transferred to the unblinding op.
-		    		c->justReplaceAllUsesWithExcept(unblindOp);
-
-		    		// Add new instructions to the block.
-		    		block->insertAfter(*ins, secretConstant);
-		    		block->insertAfter(secretConstant, unblindOp);
-		    		ins++; ins++;  // Skip blinding operations that we just added.
 		    	}
 		    }
 	    }
