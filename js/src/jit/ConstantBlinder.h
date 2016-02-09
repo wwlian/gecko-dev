@@ -21,7 +21,7 @@ class ConstantBlinder final {
 	void accumulationBlindBitAnd(MBasicBlock *block, MConstant *c, MDefinition *consumer);
 	void accumulationBlindBitOr(MBasicBlock *block, MConstant *c, MDefinition *consumer);
 	void accumulationBlindBitXor(MBasicBlock *block, MConstant *c, MDefinition *consumer);
-	void accumulationBlindAddSub(MBasicBlock *block, MConstant *c, MDefinition *consumer);
+	void accumulationBlindAddSub(MBasicBlock *block, MConstant *c, MBinaryArithInstruction *consumer);
 };
 
 } /* namespace jit */

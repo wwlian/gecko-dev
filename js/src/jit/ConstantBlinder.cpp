@@ -69,7 +69,7 @@ ConstantBlinder::accumulationBlindAll(MBasicBlock *block, MConstant *c) {
         } else if (consumer->isBitXor()) {
             accumulationBlindBitXor(block, c, consumer);
         } else if (consumer->isAdd() || consumer->isSub()) {
-            accumulationBlindAddSub(block, c, consumer);
+            accumulationBlindAddSub(block, c, static_cast<MBinaryArithInstruction*>(consumer));
         }
     }
 }
@@ -116,7 +116,7 @@ ConstantBlinder::accumulationBlindBitXor(MBasicBlock *block, MConstant *c, MDefi
 }
 
 void
-ConstantBlinder::accumulationBlindAddSub(MBasicBlock *block, MConstant *c, MDefinition *consumer) {
+ConstantBlinder::accumulationBlindAddSub(MBasicBlock *block, MConstant *c, MBinaryArithInstruction *consumer) {
     int32_t constant = c->value().toInt32();
     int32_t secret;
     if (constant <= 0) {
@@ -127,12 +127,13 @@ ConstantBlinder::accumulationBlindAddSub(MBasicBlock *block, MConstant *c, MDefi
     int32_t o2 = constant - secret;
     c->blind(Int32Value(secret), consumer);
     MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(o2));
-    MInstruction* unblindOp;
+    MBinaryArithInstruction* unblindOp;
     if (consumer->isAdd()) {
         unblindOp = MAdd::New(graph_->alloc(), consumer, unblindOperand);
     } else {
         unblindOp = MSub::New(graph_->alloc(), consumer, unblindOperand);
     }
+    unblindOp->setSpecialization(consumer->specialization());
 
     consumer->justReplaceAllUsesWithExcept(unblindOp);
     block->insertAfter(consumer->toInstruction(), unblindOperand);
