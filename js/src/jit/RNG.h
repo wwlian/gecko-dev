@@ -13,10 +13,10 @@
 
 class RNG {
   public:
-  RNG() {
-			mozilla::Array<uint64_t, 2> seed;
-			js::GenerateXorShift128PlusSeed(seed);
-      randomNumberGenerator = new mozilla::non_crypto::XorShift128PlusRNG(seed[0], seed[1]);
+    RNG() {
+	mozilla::Array<uint64_t, 2> seed;
+	js::GenerateXorShift128PlusSeed(seed);
+    randomNumberGenerator = new mozilla::non_crypto::XorShift128PlusRNG(seed[0], seed[1]);
   }
 
   ~RNG() {
