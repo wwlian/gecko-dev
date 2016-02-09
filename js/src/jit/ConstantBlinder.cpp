@@ -9,7 +9,7 @@ namespace jit {
 
 void
 ConstantBlinder::blindConstants() {
-    for (ReversePostorderIterator block(graph_.rpoBegin()); block != graph_.rpoEnd(); block++) {
+    for (ReversePostorderIterator block(graph_->rpoBegin()); block != graph_->rpoEnd(); block++) {
         for (MInstructionIterator ins = block->begin(); *ins != block->lastIns(); ins++) {
             if (ins->isConstant() && ins->toConstant()->value().isInt32() && ins->toConstant()->isUntrusted()) {
                 if (areAllUsesAccumulatable(*ins)) {
@@ -34,7 +34,7 @@ ConstantBlinder::preComputationBlind(MBasicBlock *block, MConstant *c) {
     c->justReplaceAllUsesWithExcept(unblindOp);
 
     // Add new instructions to the block.
-    block->insertAfter(*ins, secretConstant);
+    block->insertAfter(c, secretConstant);
     block->insertAfter(secretConstant, unblindOp);
 }
 

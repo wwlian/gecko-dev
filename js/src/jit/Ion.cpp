@@ -39,7 +39,7 @@
 #include "jit/PerfSpewer.h"
 #include "jit/RangeAnalysis.h"
 #ifdef CONSTANT_BLINDING
-#include "jit/RNG.h"
+#include "jit/ConstantBlinder.h"
 #endif
 #include "jit/ScalarReplacement.h"
 #include "jit/Sink.h"

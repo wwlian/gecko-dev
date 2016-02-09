@@ -11,20 +11,20 @@ class ConstantBlinder final {
 	MIRGraph *graph_;
   public:
 	ConstantBlinder(MIRGraph *graph) : graph_(graph) {}
-	void blindConstants() final;
+	void blindConstants();
 
   private:
-	void preComputationBlind(MBasicBlock *block, MConstant *c) final;
-	bool areAllUsesAccumulatable(MDefinition *ins) final;
-	void accumulationBlindAll(MBasicBlock *block, MConstant *c) final;
-	void accumulationBitAndBlind(MBasicBlock *block, MConstant *c, MDefinition *consumer) final;
-	void accumulationBitOrBlind(MBasicBlock *block, MConstant *c, MDefinition *consumer) final;
-	void accumulationBitXorBlind(MBasicBlock *block, MConstant *c, MDefinition *consumer) final;
-	void accumulationAddSubBlind(MBasicBlock *block, MConstant *c, MDefinition *consumer) final;
+	void preComputationBlind(MBasicBlock *block, MConstant *c);
+	bool areAllUsesAccumulatable(MDefinition *ins);
+	void accumulationBlindAll(MBasicBlock *block, MConstant *c);
+	void accumulationBitAndBlind(MBasicBlock *block, MConstant *c, MDefinition *consumer);
+	void accumulationBitOrBlind(MBasicBlock *block, MConstant *c, MDefinition *consumer);
+	void accumulationBitXorBlind(MBasicBlock *block, MConstant *c, MDefinition *consumer);
+	void accumulationAddSubBlind(MBasicBlock *block, MConstant *c, MDefinition *consumer);
 };
 
 } /* namespace jit */
 } /* namespace js */
 
 #endif /* jit_ConstantBlinder_h */
-#endif /* CONSTANT_BLINDING /*
+#endif /* CONSTANT_BLINDING */
