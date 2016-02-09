@@ -59,7 +59,7 @@ ConstantBlinder::areAllUsesAccumulatable(MDefinition *ins) {
 
 void
 ConstantBlinder::accumulationBlindAll(MBasicBlock *block, MConstant *c) {
-    JitSpew(JitSpew_IonMIR, "Accumulation blinding  int32 %d", c->value().toInt32());
+    JitSpew(JitSpew_IonMIR, "Accumulation blinding int32 %d", c->value().toInt32());
     for (MUseIterator i(c->usesBegin()), e(c->usesEnd()); i != e; ++i) {
         MDefinition* consumer = i->consumer()->toDefinition();
         if (consumer->isBitAnd()) {
@@ -76,9 +76,11 @@ ConstantBlinder::accumulationBlindAll(MBasicBlock *block, MConstant *c) {
 
 void
 ConstantBlinder::accumulationBlindBitAnd(MBasicBlock *block, MConstant *c, MDefinition *consumer) {
-    uint32_t secret = static_cast<uint32_t>(rng_.blindingValue());
-    c->blind(Int32Value(c->value().toInt32() | secret), consumer);
-    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(c->value().toInt32() | ~secret));
+    int32_t secret = rng_.blindingValue();
+    int32_t o1 = c->value().toInt32() | secret;
+    int32_t o2 = c->value().toInt32() | ~secret;
+    c->blind(Int32Value(o1), consumer);
+    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(o2));
     MBitAnd* unblindOp = MBitAnd::New(graph_->alloc(), consumer, unblindOperand);
 
     consumer->justReplaceAllUsesWithExcept(unblindOp);
@@ -88,9 +90,11 @@ ConstantBlinder::accumulationBlindBitAnd(MBasicBlock *block, MConstant *c, MDefi
 
 void
 ConstantBlinder::accumulationBlindBitOr(MBasicBlock *block, MConstant *c, MDefinition *consumer) {
-    uint32_t secret = static_cast<uint32_t>(rng_.blindingValue());
-    c->blind(Int32Value(c->value().toInt32() & secret), consumer);
-    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(c->value().toInt32() & ~secret));
+    int32_t secret = rng_.blindingValue();
+    int32_t o1 = c->value().toInt32() & secret;
+    int32_t o2 = c->value().toInt32() & ~secret;
+    c->blind(Int32Value(o1), consumer);
+    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(o2));
     MBitOr* unblindOp = MBitOr::New(graph_->alloc(), consumer, unblindOperand);
 
     consumer->justReplaceAllUsesWithExcept(unblindOp);
@@ -100,9 +104,10 @@ ConstantBlinder::accumulationBlindBitOr(MBasicBlock *block, MConstant *c, MDefin
 
 void
 ConstantBlinder::accumulationBlindBitXor(MBasicBlock *block, MConstant *c, MDefinition *consumer) {
-    uint32_t secret = static_cast<uint32_t>(rng_.blindingValue());
-    c->blind(Int32Value(c->value().toInt32() ^ secret), consumer);
-    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(secret));
+    int32_t secret = rng_.blindingValue();
+    int32_t o2 = c->value().toInt32() ^ secret;
+    c->blind(Int32Value(secret), consumer);
+    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(o2));
     MBitXor* unblindOp = MBitXor::New(graph_->alloc(), consumer, unblindOperand);
 
     consumer->justReplaceAllUsesWithExcept(unblindOp);
@@ -119,8 +124,9 @@ ConstantBlinder::accumulationBlindAddSub(MBasicBlock *block, MConstant *c, MDefi
     } else {
         secret = rng_.blindingValue(0, constant);
     }
-    c->blind(Int32Value(constant - secret), consumer);
-    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(secret));
+    int32_t o2 = constant - secret;
+    c->blind(Int32Value(secret), consumer);
+    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(o2));
     MInstruction* unblindOp;
     if (consumer->isAdd()) {
         unblindOp = MAdd::New(graph_->alloc(), consumer, unblindOperand);
