@@ -18,10 +18,10 @@ class ConstantBlinder final {
 	void preComputationBlind(MBasicBlock *block, MConstant *c);
 	bool areAllUsesAccumulatable(MDefinition *ins);
 	void accumulationBlindAll(MBasicBlock *block, MConstant *c);
-	void accumulationBitAndBlind(MBasicBlock *block, MConstant *c, MDefinition *consumer);
-	void accumulationBitOrBlind(MBasicBlock *block, MConstant *c, MDefinition *consumer);
-	void accumulationBitXorBlind(MBasicBlock *block, MConstant *c, MDefinition *consumer);
-	void accumulationAddSubBlind(MBasicBlock *block, MConstant *c, MDefinition *consumer);
+	void accumulationBlindBitAnd(MBasicBlock *block, MConstant *c, MDefinition *consumer);
+	void accumulationBlindBitOr(MBasicBlock *block, MConstant *c, MDefinition *consumer);
+	void accumulationBlindBitXor(MBasicBlock *block, MConstant *c, MDefinition *consumer);
+	void accumulationBlindAddSub(MBasicBlock *block, MConstant *c, MDefinition *consumer);
 };
 
 } /* namespace jit */
