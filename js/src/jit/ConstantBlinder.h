@@ -15,13 +15,13 @@ class ConstantBlinder final {
 	void blindConstants();
 
   private:
-	void preComputationBlind(MBasicBlock *block, MConstant *c);
+	void preComputationBlind(MConstant *c);
 	bool areAllUsesAccumulatable(MDefinition *ins);
-	void accumulationBlindAll(MBasicBlock *block, MConstant *c);
-	void accumulationBlindBitAnd(MBasicBlock *block, MConstant *c, MDefinition *consumer);
-	void accumulationBlindBitOr(MBasicBlock *block, MConstant *c, MDefinition *consumer);
-	void accumulationBlindBitXor(MBasicBlock *block, MConstant *c, MDefinition *consumer);
-	void accumulationBlindAddSub(MBasicBlock *block, MConstant *c, MBinaryArithInstruction *consumer);
+	void accumulationBlindAll(MConstant *c);
+	void accumulationBlindBitAnd(MConstant *c, MDefinition *consumer);
+	void accumulationBlindBitOr(MConstant *c, MDefinition *consumer);
+	void accumulationBlindBitXor(MConstant *c, MDefinition *consumer);
+	void accumulationBlindAddSub(MConstant *c, MBinaryArithInstruction *consumer);
 };
 
 } /* namespace jit */
