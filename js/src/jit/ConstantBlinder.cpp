@@ -26,16 +26,17 @@ void
 ConstantBlinder::preComputationBlind(MConstant *c) {
     JitSpew(JitSpew_IonMIR, "Precomputation blinding  int32 %d", c->value().toInt32());
     int32_t secret = rng_.blindingValue();
-    MConstant *secretConstant = MConstant::New(graph_->alloc(), Int32Value(secret));
-    MBitXor* unblindOp = MBitXor::New(graph_->alloc(), c, secretConstant);
-    c->blind(Int32Value(secret ^ c->value().toInt32()), unblindOp);
+    int32_t unblindOpInt = secret ^ c->value().toInt32();
+    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(unblindOpInt));
+    MBitXor* unblindOp = MBitXor::New(graph_->alloc(), c, unblindOperand);
+    c->blindBitXor(graph_->alloc(), secret, Int32Value(secret));
 
     // Uses of the now-blinded MConstant should be transferred to the unblinding op.
     c->justReplaceAllUsesWithExcept(unblindOp);
 
     // Add new instructions after the constant.
-    c->block()->insertAfter(c, secretConstant);
-    c->block()->insertAfter(secretConstant, unblindOp);
+    c->block()->insertAfter(c, unblindOperand);
+    c->block()->insertAfter(unblindOperand, unblindOp);
 }
 
 bool
@@ -76,12 +77,25 @@ ConstantBlinder::accumulationBlindAll(MConstant *c) {
 
 void
 ConstantBlinder::accumulationBlindBitAnd(MConstant *c, MDefinition *consumer) {
-    int32_t secret = rng_.blindingValue();
-    int32_t o1 = c->value().toInt32() | secret;
-    int32_t o2 = c->value().toInt32() | ~secret;
-    c->blind(Int32Value(o1), consumer);
-    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(o2));
-    MBitAnd* unblindOp = MBitAnd::New(graph_->alloc(), consumer, unblindOperand);
+    int32_t unblindOpInt;
+    if (c->isBitAndBlinded()) {
+        unblindOpInt = c->unblindedValue().toInt32() | ~c->bitAndBlindedVariant()->secret();
+    } else {
+        int32_t secret = rng_.blindingValue();
+        int32_t o1 = c->value().toInt32() | secret;
+        unblindOpInt = c->value().toInt32() | ~secret;
+        c->blindBitAnd(graph_->alloc(), secret, Int32Value(o1));
+
+        if (c != c->bitAndBlindedVariant()) {
+            consumer->block()->insertBefore(consumer->toInstruction(), c->bitAndBlindedVariant());
+        }
+    }
+    if (c != c->bitAndBlindedVariant()) {
+        consumer->replaceOperand((consumer->getOperand(0) == static_cast<MDefinition*>(c)) ? 0 : 1,
+                                c->bitAndBlindedVariant());
+    }
+    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(unblindOpInt));
+    MBinaryBitwiseInstruction* unblindOp = MBitAnd::New(graph_->alloc(), consumer, unblindOperand);
 
     consumer->justReplaceAllUsesWithExcept(unblindOp);
     consumer->block()->insertAfter(consumer->toInstruction(), unblindOperand);
@@ -90,12 +104,25 @@ ConstantBlinder::accumulationBlindBitAnd(MConstant *c, MDefinition *consumer) {
 
 void
 ConstantBlinder::accumulationBlindBitOr(MConstant *c, MDefinition *consumer) {
-    int32_t secret = rng_.blindingValue();
-    int32_t o1 = c->value().toInt32() & secret;
-    int32_t o2 = c->value().toInt32() & ~secret;
-    c->blind(Int32Value(o1), consumer);
-    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(o2));
-    MBitOr* unblindOp = MBitOr::New(graph_->alloc(), consumer, unblindOperand);
+    int32_t unblindOpInt;
+    if (c->isBitOrBlinded()) {
+        unblindOpInt = c->unblindedValue().toInt32() & ~c->bitOrBlindedVariant()->secret();
+    } else {
+        int32_t secret = rng_.blindingValue();
+        int32_t o1 = c->value().toInt32() & secret;
+        unblindOpInt = c->value().toInt32() & ~secret;
+        c->blindBitOr(graph_->alloc(), secret, Int32Value(o1));
+
+        if (c != c->bitOrBlindedVariant()) {
+            consumer->block()->insertBefore(consumer->toInstruction(), c->bitOrBlindedVariant());
+        }
+    }
+    if (c != c->bitOrBlindedVariant()) {
+        consumer->replaceOperand((consumer->getOperand(0) == static_cast<MDefinition*>(c)) ? 0 : 1,
+                                c->bitOrBlindedVariant());
+    }
+    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(unblindOpInt));
+    MBinaryBitwiseInstruction* unblindOp = MBitOr::New(graph_->alloc(), consumer, unblindOperand);
 
     consumer->justReplaceAllUsesWithExcept(unblindOp);
     consumer->block()->insertAfter(consumer->toInstruction(), unblindOperand);
@@ -104,11 +131,24 @@ ConstantBlinder::accumulationBlindBitOr(MConstant *c, MDefinition *consumer) {
 
 void
 ConstantBlinder::accumulationBlindBitXor(MConstant *c, MDefinition *consumer) {
-    int32_t secret = rng_.blindingValue();
-    int32_t o2 = c->value().toInt32() ^ secret;
-    c->blind(Int32Value(secret), consumer);
-    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(o2));
-    MBitXor* unblindOp = MBitXor::New(graph_->alloc(), consumer, unblindOperand);
+    int32_t unblindOpInt;
+    if (c->isBitXorBlinded()) {
+        unblindOpInt = c->unblindedValue().toInt32() ^ c->bitXorBlindedVariant()->secret();
+    } else {
+        int32_t secret = rng_.blindingValue();
+        unblindOpInt = c->value().toInt32() ^ secret;
+        c->blindBitXor(graph_->alloc(), secret, Int32Value(secret));
+
+        if (c != c->bitXorBlindedVariant()) {
+            consumer->block()->insertBefore(consumer->toInstruction(), c->bitXorBlindedVariant());
+        }
+    }
+    if (c != c->bitXorBlindedVariant()) {
+        consumer->replaceOperand((consumer->getOperand(0) == static_cast<MDefinition*>(c)) ? 0 : 1,
+                                c->bitXorBlindedVariant());
+    }
+    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(unblindOpInt));
+    MBinaryBitwiseInstruction* unblindOp = MBitXor::New(graph_->alloc(), consumer, unblindOperand);
 
     consumer->justReplaceAllUsesWithExcept(unblindOp);
     consumer->block()->insertAfter(consumer->toInstruction(), unblindOperand);
@@ -117,16 +157,30 @@ ConstantBlinder::accumulationBlindBitXor(MConstant *c, MDefinition *consumer) {
 
 void
 ConstantBlinder::accumulationBlindAddSub(MConstant *c, MBinaryArithInstruction *consumer) {
-    int32_t constant = c->value().toInt32();
-    int32_t secret;
-    if (constant <= 0) {
-        secret = rng_.blindingValue(constant, 0);
+    int32_t unblindOpInt;
+    if (c->isAddSubBlinded()) {
+        unblindOpInt = c->unblindedValue().toInt32() - c->addSubBlindedVariant()->secret();
     } else {
-        secret = rng_.blindingValue(0, constant);
+        int32_t constant = c->value().toInt32();
+        int32_t secret;
+        if (constant <= 0) {
+            secret = rng_.blindingValue(constant, 0);
+        } else {
+            secret = rng_.blindingValue(0, constant);
+        }
+        JitSpew(JitSpew_IonMIR, "Constant %d Secret %d", c->value().toInt32(), secret);
+        unblindOpInt = constant - secret;
+        c->blindAddSub(graph_->alloc(), secret, Int32Value(secret));
+
+        if (c != c->addSubBlindedVariant()) {
+            consumer->block()->insertBefore(consumer->toInstruction(), c->addSubBlindedVariant());
+        }
     }
-    int32_t o2 = constant - secret;
-    c->blind(Int32Value(secret), consumer);
-    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(o2));
+    if (c != c->addSubBlindedVariant()) {
+        consumer->replaceOperand((consumer->getOperand(0) == static_cast<MDefinition*>(c)) ? 0 : 1,
+                                c->addSubBlindedVariant());
+    }
+    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(unblindOpInt));
     MBinaryArithInstruction* unblindOp;
     if (consumer->isAdd()) {
         unblindOp = MAdd::New(graph_->alloc(), consumer, unblindOperand);

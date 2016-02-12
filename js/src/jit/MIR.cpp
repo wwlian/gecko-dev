@@ -769,7 +769,10 @@ MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
 #ifdef CONSTANT_BLINDING
   , isUntrusted_(false)
   , unblindedValue_(vp)
-  , redirect_(nullptr)
+  , addSubBlindedVariant_(nullptr)
+  , bitAndBlindedVariant_(nullptr)
+  , bitOrBlindedVariant_(nullptr)
+  , bitXorBlindedVariant_(nullptr)
 #endif
 {
     setResultType(MIRTypeFromValue(vp));
@@ -800,7 +803,10 @@ MConstant::MConstant(JSObject* obj)
 #ifdef CONSTANT_BLINDING
   , isUntrusted_(false)
   , unblindedValue_(ObjectValue(*obj))
-  , redirect_(nullptr)
+  , addSubBlindedVariant_(nullptr)
+  , bitAndBlindedVariant_(nullptr)
+  , bitOrBlindedVariant_(nullptr)
+  , bitXorBlindedVariant_(nullptr)
 #endif
 {
     MOZ_ASSERT_IF(IsInsideNursery(obj), IonCompilationCanUseNurseryPointers());
@@ -912,6 +918,122 @@ MConstant::canProduceFloat32() const
         return IsFloat32Representable(value_.toDouble());
     return true;
 }
+
+#ifdef CONSTANT_BLINDING
+bool
+MConstant::isThisInstanceBlinded() {
+ return addSubBlindedVariant_ == this || bitAndBlindedVariant_ == this || bitOrBlindedVariant_ == this || bitXorBlindedVariant_ == this;
+}
+
+void
+MConstant::blindAddSub(TempAllocator& alloc, int32_t secret, const Value& blindedValue) {
+    MOZ_ASSERT(!isAddSubBlinded());
+    if (isThisInstanceBlinded()) {
+        MDefinitionVector inputs(alloc);
+        addSubBlindedVariant_ = clone(alloc, inputs)->toConstant();
+        addSubBlindedVariant_->value_ = unblindedValue_;
+        addSubBlindedVariant_->blindAddSub(alloc, secret, blindedValue);
+    } else {
+        secret_ = secret;
+        unblindedValue_ = value_;
+        value_ = blindedValue;
+        addSubBlindedVariant_ = this;
+    }
+}
+
+void
+MConstant::blindBitAnd(TempAllocator& alloc, int32_t secret, const Value& blindedValue) {
+    MOZ_ASSERT(!isBitAndBlinded());
+    if (isThisInstanceBlinded()) {
+        MDefinitionVector inputs(alloc);
+        bitAndBlindedVariant_ = clone(alloc, inputs)->toConstant();
+        bitAndBlindedVariant_->value_ = unblindedValue_;
+        bitAndBlindedVariant_->blindBitAnd(alloc, secret, blindedValue);
+    } else {
+        secret_ = secret;
+        unblindedValue_ = value_;
+        value_ = blindedValue;
+        bitAndBlindedVariant_ = this;
+    }
+}
+
+void
+MConstant::blindBitOr(TempAllocator& alloc, int32_t secret, const Value& blindedValue) {
+    MOZ_ASSERT(!isBitOrBlinded());
+    if (isThisInstanceBlinded()) {
+        MDefinitionVector inputs(alloc);
+        bitOrBlindedVariant_ = clone(alloc, inputs)->toConstant();
+        bitOrBlindedVariant_->value_ = unblindedValue_;
+        bitOrBlindedVariant_->blindBitOr(alloc, secret, blindedValue);
+    } else {
+        secret_ = secret;
+        unblindedValue_ = value_;
+        value_ = blindedValue;
+        bitOrBlindedVariant_ = this;
+    }
+}
+
+void
+MConstant::blindBitXor(TempAllocator& alloc, int32_t secret, const Value& blindedValue) {
+    MOZ_ASSERT(!isBitXorBlinded());
+    if (isThisInstanceBlinded()) {
+        MDefinitionVector inputs(alloc);
+        bitXorBlindedVariant_ = clone(alloc, inputs)->toConstant();
+        bitXorBlindedVariant_->value_ = unblindedValue_;
+        bitXorBlindedVariant_->blindBitXor(alloc, secret, blindedValue);
+    } else {
+        secret_ = secret;
+        unblindedValue_ = value_;
+        value_ = blindedValue;
+        bitXorBlindedVariant_ = this;
+    }
+}
+
+bool
+MConstant::isAddSubBlinded() {
+    return addSubBlindedVariant_ != nullptr;
+}
+
+bool
+MConstant::isBitAndBlinded() {
+    return bitAndBlindedVariant_ != nullptr;
+}
+
+bool
+MConstant::isBitOrBlinded() {
+    return bitOrBlindedVariant_ != nullptr;
+}
+
+bool
+MConstant::isBitXorBlinded() {
+    return bitXorBlindedVariant_ != nullptr;
+}
+
+int32_t
+MConstant::secret() {
+    return secret_;
+}
+
+MConstant*
+MConstant::addSubBlindedVariant() {
+    return addSubBlindedVariant_;
+}
+
+MConstant*
+MConstant::bitAndBlindedVariant() {
+    return bitAndBlindedVariant_;
+}
+
+MConstant*
+MConstant::bitOrBlindedVariant() {
+    return bitOrBlindedVariant_;
+}
+
+MConstant*
+MConstant::bitXorBlindedVariant() {
+    return bitXorBlindedVariant_;
+}
+#endif
 
 MDefinition*
 MSimdValueX4::foldsTo(TempAllocator& alloc)

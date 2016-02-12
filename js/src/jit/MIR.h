@@ -1321,7 +1321,13 @@ class MConstant : public MNullaryInstruction
 #ifdef CONSTANT_BLINDING
     bool isUntrusted_;
     Value unblindedValue_;
-    MDefinition* redirect_;
+    int32_t secret_;
+    MConstant* addSubBlindedVariant_;
+    MConstant* bitAndBlindedVariant_;
+    MConstant* bitOrBlindedVariant_;
+    MConstant* bitXorBlindedVariant_;
+
+    bool isThisInstanceBlinded();
 #endif
 
   protected:
@@ -1353,29 +1359,23 @@ class MConstant : public MNullaryInstruction
     	return isUntrusted_;
     }
 
-    void blind(Value blindedValue, MDefinition* redirect) {
-    	unblindedValue_ = value_;
-		value_ = blindedValue;
-		redirect_ = redirect;
-    }
-
-    void unblind() {
-    	value_ = unblindedValue_;
-    	redirect_ = nullptr;
-    }
-
     const js::Value& unblindedValue() const {
-    	return unblindedValue_;
+        return unblindedValue_;
     }
 
-    const MDefinition* redirect() const {
-    	return redirect_;
-    }
-
-    bool isBlinded() const {
-    	// Presence of redirect implies that blinding has occurred.
-    	return redirect_;
-    }
+    void blindAddSub(TempAllocator& alloc, int32_t secret, const Value& blindedValue);
+    void blindBitAnd(TempAllocator& alloc, int32_t secret, const Value& blindedValue);
+    void blindBitOr(TempAllocator& alloc, int32_t secret, const Value& blindedValue);
+    void blindBitXor(TempAllocator& alloc, int32_t secret, const Value& blindedValue);
+    bool isAddSubBlinded();
+    bool isBitAndBlinded();
+    bool isBitOrBlinded();
+    bool isBitXorBlinded();
+    int32_t secret();
+    MConstant* addSubBlindedVariant();
+    MConstant* bitAndBlindedVariant();
+    MConstant* bitOrBlindedVariant();
+    MConstant* bitXorBlindedVariant();
 #endif
 
     bool valueToBoolean() const {
