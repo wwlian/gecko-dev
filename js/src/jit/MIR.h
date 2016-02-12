@@ -1378,7 +1378,13 @@ class MConstant : public MNullaryInstruction
 #ifdef CONSTANT_BLINDING
     bool isUntrusted_;
     int32_t unblindedInt32_;
-    MDefinition* redirect_;
+    int32_t secret_;
+    MConstant* addSubBlindedVariant_;
+    MConstant* bitAndBlindedVariant_;
+    MConstant* bitOrBlindedVariant_;
+    MConstant* bitXorBlindedVariant_;
+
+    bool isThisInstanceBlinded();
 #endif
 
   protected:
@@ -1409,7 +1415,7 @@ class MConstant : public MNullaryInstruction
     }
 
 #ifdef CONSTANT_BLINDING
-    const int32_t unblindedInt32() const {
+    int32_t unblindedInt32() const {
     	return unblindedInt32_;
     }
 
@@ -1421,24 +1427,19 @@ class MConstant : public MNullaryInstruction
     	return isUntrusted_;
     }
 
-    void setRedirect(MDefinition *redirect) {
-        	redirect_ = redirect;
-	  }
-
-    void blind(int32_t blindedInt32, MDefinition* redirect) {
-      unblindedInt32_ = payload_.i32
-      value_ = blindedInt32;
-      redirect_ = redirect;
-    }
-
-    const MDefinition* redirect() const {
-    	return redirect_;
-    }
-
-    bool isBlinded() const {
-    	// Presence of redirect implies that blinding has occurred.
-    	return redirect_;
-    }
+    void blindAddSub(TempAllocator& alloc, int32_t secret, const Value& blindedValue);
+    void blindBitAnd(TempAllocator& alloc, int32_t secret, const Value& blindedValue);
+    void blindBitOr(TempAllocator& alloc, int32_t secret, const Value& blindedValue);
+    void blindBitXor(TempAllocator& alloc, int32_t secret, const Value& blindedValue);
+    bool isAddSubBlinded();
+    bool isBitAndBlinded();
+    bool isBitOrBlinded();
+    bool isBitXorBlinded();
+    int32_t secret();
+    MConstant* addSubBlindedVariant();
+    MConstant* bitAndBlindedVariant();
+    MConstant* bitOrBlindedVariant();
+    MConstant* bitXorBlindedVariant();
 #endif
 
     void printOpcode(GenericPrinter& out) const override;
