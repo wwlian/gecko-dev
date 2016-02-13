@@ -49,9 +49,9 @@ ConstantBlinder::areAllUsesAccumulatable(MDefinition *ins) {
         MDefinition *def = consumer->toDefinition();
         if (!def->isBitAnd()
             && !def->isBitOr()
-            && !def->isBitXor()
+            && !def->isBitXor()) { /*
             && !def->isAdd()
-            && !def->isSub()) {
+            && !def->isSub()) { */
             return false;
         }
     }
@@ -90,9 +90,14 @@ ConstantBlinder::accumulationBlindBitAnd(MConstant *c, MDefinition *consumer) {
             consumer->block()->insertBefore(consumer->toInstruction(), c->bitAndBlindedVariant());
         }
     }
+    // Redirect one or both of the consumer's operand slots if necessary.
     if (c != c->bitAndBlindedVariant()) {
-        consumer->replaceOperand((consumer->getOperand(0) == static_cast<MDefinition*>(c)) ? 0 : 1,
-                                c->bitAndBlindedVariant());
+        if (consumer->getOperand(0) == static_cast<MDefinition*>(c)) {
+            consumer->replaceOperand(0, c->bitAndBlindedVariant());
+        }
+        if (consumer->getOperand(1) == static_cast<MDefinition*>(c)) {
+            consumer->replaceOperand(1, c->bitAndBlindedVariant());
+        }
     }
     MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(unblindOpInt));
     MBinaryBitwiseInstruction* unblindOp = MBitAnd::New(graph_->alloc(), consumer, unblindOperand);
@@ -117,9 +122,14 @@ ConstantBlinder::accumulationBlindBitOr(MConstant *c, MDefinition *consumer) {
             consumer->block()->insertBefore(consumer->toInstruction(), c->bitOrBlindedVariant());
         }
     }
+    // Redirect one or both of the consumer's operand slots if necessary.
     if (c != c->bitOrBlindedVariant()) {
-        consumer->replaceOperand((consumer->getOperand(0) == static_cast<MDefinition*>(c)) ? 0 : 1,
-                                c->bitOrBlindedVariant());
+        if (consumer->getOperand(0) == static_cast<MDefinition*>(c)) {
+            consumer->replaceOperand(0, c->bitOrBlindedVariant());
+        }
+        if (consumer->getOperand(1) == static_cast<MDefinition*>(c)) {
+            consumer->replaceOperand(1, c->bitOrBlindedVariant());
+        }
     }
     MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(unblindOpInt));
     MBinaryBitwiseInstruction* unblindOp = MBitOr::New(graph_->alloc(), consumer, unblindOperand);
@@ -143,9 +153,14 @@ ConstantBlinder::accumulationBlindBitXor(MConstant *c, MDefinition *consumer) {
             consumer->block()->insertBefore(consumer->toInstruction(), c->bitXorBlindedVariant());
         }
     }
+    // Redirect one or both of the consumer's operand slots if necessary.
     if (c != c->bitXorBlindedVariant()) {
-        consumer->replaceOperand((consumer->getOperand(0) == static_cast<MDefinition*>(c)) ? 0 : 1,
-                                c->bitXorBlindedVariant());
+        if (consumer->getOperand(0) == static_cast<MDefinition*>(c)) {
+            consumer->replaceOperand(0, c->bitXorBlindedVariant());
+        }
+        if (consumer->getOperand(1) == static_cast<MDefinition*>(c)) {
+            consumer->replaceOperand(1, c->bitXorBlindedVariant());
+        }
     }
     MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(unblindOpInt));
     MBinaryBitwiseInstruction* unblindOp = MBitXor::New(graph_->alloc(), consumer, unblindOperand);
@@ -176,9 +191,14 @@ ConstantBlinder::accumulationBlindAddSub(MConstant *c, MBinaryArithInstruction *
             consumer->block()->insertBefore(consumer->toInstruction(), c->addSubBlindedVariant());
         }
     }
+    // Redirect one or both of the consumer's operand slots if necessary.
     if (c != c->addSubBlindedVariant()) {
-        consumer->replaceOperand((consumer->getOperand(0) == static_cast<MDefinition*>(c)) ? 0 : 1,
-                                c->addSubBlindedVariant());
+        if (consumer->getOperand(0) == static_cast<MDefinition*>(c)) {
+            consumer->replaceOperand(0, c->addSubBlindedVariant());
+        }
+        if (consumer->getOperand(1) == static_cast<MDefinition*>(c)) {
+            consumer->replaceOperand(1, c->addSubBlindedVariant());
+        }
     }
     MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(unblindOpInt));
     MBinaryArithInstruction* unblindOp;
