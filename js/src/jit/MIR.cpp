@@ -1071,12 +1071,10 @@ MConstant::blindAddSub(TempAllocator& alloc, int32_t secret, const Value& blinde
     MOZ_ASSERT(!isAddSubBlinded());
     if (isThisInstanceBlinded()) {
         MDefinitionVector inputs(alloc);
-        addSubBlindedVariant_ = clone(alloc, inputs)->toConstant();
-        addSubBlindedVariant_->value_ = unblindedValue_;
+        addSubBlindedVariant_ = MConstant::New(alloc, unblindedValue_);
         addSubBlindedVariant_->blindAddSub(alloc, secret, blindedValue);
     } else {
         secret_ = secret;
-        unblindedValue_ = value_;
         value_ = blindedValue;
         addSubBlindedVariant_ = this;
     }
@@ -1087,12 +1085,10 @@ MConstant::blindBitAnd(TempAllocator& alloc, int32_t secret, const Value& blinde
     MOZ_ASSERT(!isBitAndBlinded());
     if (isThisInstanceBlinded()) {
         MDefinitionVector inputs(alloc);
-        bitAndBlindedVariant_ = clone(alloc, inputs)->toConstant();
-        bitAndBlindedVariant_->value_ = unblindedValue_;
+        bitAndBlindedVariant_ = MConstant::New(alloc, unblindedValue_);
         bitAndBlindedVariant_->blindBitAnd(alloc, secret, blindedValue);
     } else {
         secret_ = secret;
-        unblindedValue_ = value_;
         value_ = blindedValue;
         bitAndBlindedVariant_ = this;
     }
@@ -1103,12 +1099,10 @@ MConstant::blindBitOr(TempAllocator& alloc, int32_t secret, const Value& blinded
     MOZ_ASSERT(!isBitOrBlinded());
     if (isThisInstanceBlinded()) {
         MDefinitionVector inputs(alloc);
-        bitOrBlindedVariant_ = clone(alloc, inputs)->toConstant();
-        bitOrBlindedVariant_->value_ = unblindedValue_;
+        bitOrBlindedVariant_ = MConstant::New(alloc, unblindedValue_);
         bitOrBlindedVariant_->blindBitOr(alloc, secret, blindedValue);
     } else {
         secret_ = secret;
-        unblindedValue_ = value_;
         value_ = blindedValue;
         bitOrBlindedVariant_ = this;
     }
@@ -1119,12 +1113,10 @@ MConstant::blindBitXor(TempAllocator& alloc, int32_t secret, const Value& blinde
     MOZ_ASSERT(!isBitXorBlinded());
     if (isThisInstanceBlinded()) {
         MDefinitionVector inputs(alloc);
-        bitXorBlindedVariant_ = clone(alloc, inputs)->toConstant();
-        bitXorBlindedVariant_->value_ = unblindedValue_;
+        bitXorBlindedVariant_ = MConstant::New(alloc, unblindedValue_);
         bitXorBlindedVariant_->blindBitXor(alloc, secret, blindedValue);
     } else {
         secret_ = secret;
-        unblindedValue_ = value_;
         value_ = blindedValue;
         bitXorBlindedVariant_ = this;
     }
