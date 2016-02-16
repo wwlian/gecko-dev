@@ -1383,6 +1383,7 @@ class MConstant : public MNullaryInstruction
     MConstant* bitAndBlindedVariant_;
     MConstant* bitOrBlindedVariant_;
     MConstant* bitXorBlindedVariant_;
+    MDefinition* precomputationRedirect_;
 
     bool isThisInstanceBlinded();
 #endif
@@ -1425,6 +1426,14 @@ class MConstant : public MNullaryInstruction
 
     bool isUntrusted() {
     	return isUntrusted_;
+    }
+
+    MDefinition* precomputationRedirect() {
+        return precomputationRedirect_;
+    }
+
+    void setPrecomputationRedirect(MDefinition* redirect) {
+        precomputationRedirect_ = redirect;
     }
 
     void blindAddSub(TempAllocator& alloc, int32_t secret, const Value& blindedValue);
