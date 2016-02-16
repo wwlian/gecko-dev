@@ -939,7 +939,7 @@ BaselineCompiler::emitBody()
 
     while (true) {
 #ifdef BASELINE_RANDOM_NOP
-    	if (!(rand() & 0x7)) {
+    	if (!(rng_.blindingValue(0, 7))) {
     		masm.nop();
     	}
 #endif

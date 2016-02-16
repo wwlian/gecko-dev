@@ -173,7 +173,7 @@ class FrameInfo
     size_t spIndex;
 
 #ifdef BASELINE_CONSTANT_BLINDING
-    RNG rng;
+    RNG rng_;
 #endif
 
   public:
