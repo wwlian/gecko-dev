@@ -1318,7 +1318,7 @@ class MLimitedTruncate
 class MConstant : public MNullaryInstruction
 {
     Value value_;
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
     bool isUntrusted_;
     Value unblindedValue_;
     int32_t secret_;
@@ -1351,7 +1351,7 @@ class MConstant : public MNullaryInstruction
         return &value_;
     }
 
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
     void markUntrusted() {
     	isUntrusted_ = true;
     }

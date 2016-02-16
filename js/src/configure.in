@@ -3281,19 +3281,34 @@ fi
 AC_SUBST(BASE_OFFSET_RANDOMIZATION)
 
 dnl ========================================================
-dnl Constant blinding
+dnl Constant blinding (Baseline JIT)
 dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(constantblinding,
-[  --enable-constantblinding
-                          Enable constant blinding.],
-    CONSTANT_BLINDING=1,
-    CONSTANT_BLINDING= )
+MOZ_ARG_ENABLE_BOOL(baselineconstantblinding,
+[  --enable-baselineconstantblinding
+                          Enable constant blinding in the Baseline JIT.],
+    BASELINE_CONSTANT_BLINDING=1,
+    BASELINE_CONSTANT_BLINDING= )
 
-if test -n "$CONSTANT_BLINDING"; then
-    AC_DEFINE(CONSTANT_BLINDING)
+if test -n "$BASELINE_CONSTANT_BLINDING"; then
+    AC_DEFINE(BASELINE_CONSTANT_BLINDING)
 fi
 
-AC_SUBST(CONSTANT_BLINDING)
+AC_SUBST(BASELINE_CONSTANT_BLINDING)
+
+dnl ========================================================
+dnl Constant blinding (IonMonkey)
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(ionconstantblinding,
+[  --enable-ionconstantblinding
+                          Enable constant blinding in IonMonkey.],
+    ION_CONSTANT_BLINDING=1,
+    ION_CONSTANT_BLINDING= )
+
+if test -n "$ION_CONSTANT_BLINDING"; then
+    AC_DEFINE(ION_CONSTANT_BLINDING)
+fi
+
+AC_SUBST(ION_CONSTANT_BLINDING)
 
 dnl ========================================================
 dnl Profiling

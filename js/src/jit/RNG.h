@@ -5,7 +5,6 @@
  *      Author: wilsonlian
  */
 
-#ifdef CONSTANT_BLINDING
 #ifndef jit_RNG_h
 #define jit_RNG_h
 
@@ -38,4 +37,3 @@ class RNG {
 };
 
 #endif /* jit_RNG_h */
-#endif /* CONSTANT_BLINDING */

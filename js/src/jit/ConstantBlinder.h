@@ -1,4 +1,4 @@
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
 #ifndef jit_ConstantBlinder_h
 #define jit_ConstantBlinder_h
 
@@ -29,4 +29,4 @@ class ConstantBlinder final {
 } /* namespace js */
 
 #endif /* jit_ConstantBlinder_h */
-#endif /* CONSTANT_BLINDING */
+#endif /* ION_CONSTANT_BLINDING */

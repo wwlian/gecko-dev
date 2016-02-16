@@ -343,7 +343,7 @@ class IonBuilder
     bool initScopeChain(MDefinition* callee = nullptr);
     bool initArgumentsObject();
 
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
     bool pushConstant(const Value& v, bool isUntrusted = false);
     MConstant* constant(const Value& v, bool isUntrusted = false);
 #else

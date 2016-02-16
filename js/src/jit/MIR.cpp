@@ -766,7 +766,7 @@ jit::IonCompilationCanUseNurseryPointers()
 
 MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
   : value_(vp)
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
   , isUntrusted_(false)
   , unblindedValue_(vp)
   , addSubBlindedVariant_(nullptr)
@@ -801,7 +801,7 @@ MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
 
 MConstant::MConstant(JSObject* obj)
   : value_(ObjectValue(*obj))
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
   , isUntrusted_(false)
   , unblindedValue_(ObjectValue(*obj))
   , addSubBlindedVariant_(nullptr)
@@ -921,7 +921,7 @@ MConstant::canProduceFloat32() const
     return true;
 }
 
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
 bool
 MConstant::isThisInstanceBlinded() {
  return addSubBlindedVariant_ == this || bitAndBlindedVariant_ == this || bitOrBlindedVariant_ == this || bitXorBlindedVariant_ == this;

@@ -87,7 +87,7 @@ FrameInfo::popValue(ValueOperand dest)
 
     switch (val->kind()) {
       case StackValue::Constant:
-#ifdef CONSTANT_BLINDING
+#ifdef BASELINE_CONSTANT_BLINDING
     	if (val->constant().isInt32()) {
     		JitSpew(JitSpew_IonMIR, "Blinding Constant %d", val->constant().getInt32Ref());
         /* Clearing the most significant bit is a trick that prevents it from getting

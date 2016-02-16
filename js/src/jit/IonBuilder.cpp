@@ -1889,14 +1889,14 @@ IonBuilder::inspectOpcode(JSOp op)
         return jsop_eval(GET_ARGC(pc));
 
       case JSOP_INT8:
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
         return pushConstant(Int32Value(GET_INT8(pc)), true);
 #else
         return pushConstant(Int32Value(GET_INT8(pc)));
 #endif
 
       case JSOP_UINT16:
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
         return pushConstant(Int32Value(GET_UINT16(pc)), true);
 #else
         return pushConstant(Int32Value(GET_UINT16(pc)));
@@ -1971,14 +1971,14 @@ IonBuilder::inspectOpcode(JSOp op)
         return jsop_setaliasedvar(ScopeCoordinate(pc));
 
       case JSOP_UINT24:
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
         return pushConstant(Int32Value(GET_UINT24(pc)), true);
 #else
         return pushConstant(Int32Value(GET_UINT24(pc)));
 #endif
 
       case JSOP_INT32:
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
         return pushConstant(Int32Value(GET_INT32(pc)), true);
 #else
         return pushConstant(Int32Value(GET_INT32(pc)));
@@ -4570,16 +4570,21 @@ IonBuilder::processThrow()
     return processControlEnd();
 }
 
+#ifdef ION_CONSTANT_BLINDING
 bool
-IonBuilder::pushConstant(const Value& v
-#ifdef CONSTANT_BLINDING
-		, bool isUntrusted
-#endif
-		)
+IonBuilder::pushConstant(const Value& v, bool isUntrusted)
 {
     current->push(constant(v, isUntrusted));
     return true;
 }
+#else
+bool
+IonBuilder::pushConstant(const Value& v)
+{
+    current->push(constant(v));
+    return true;
+}
+#endif
 
 bool
 IonBuilder::bitnotTrySpecialized(bool* emitted, MDefinition* input)
@@ -13932,7 +13937,7 @@ IonBuilder::checkNurseryObject(JSObject* obj)
 
 MConstant*
 IonBuilder::constant(const Value& v
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
 		, bool isUntrusted
 #endif
 		)
@@ -13944,7 +13949,7 @@ IonBuilder::constant(const Value& v
         checkNurseryObject(&v.toObject());
 
     MConstant* c = MConstant::New(alloc(), v, constraints());
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
     if (isUntrusted)
     	 c->markUntrusted();
 #endif

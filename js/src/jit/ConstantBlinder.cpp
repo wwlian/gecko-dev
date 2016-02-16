@@ -1,4 +1,4 @@
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
 
 #include "jit/ConstantBlinder.h"
 
@@ -229,4 +229,4 @@ ConstantBlinder::accumulationBlindAddSub(MConstant* c, MBinaryArithInstruction* 
 
 } /* namespace jit */
 } /* namespace js */
-#endif /* CONSTANT_BLINDING */
+#endif /* ION_CONSTANT_BLINDING */
