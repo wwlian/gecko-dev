@@ -1375,7 +1375,7 @@ class MConstant : public MNullaryInstruction
     void assertInitializedPayload() const {}
 #endif
 
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
     bool isUntrusted_;
     int32_t unblindedInt32_;
     int32_t secret_;
@@ -1415,7 +1415,7 @@ class MConstant : public MNullaryInstruction
         return res;
     }
 
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
     int32_t unblindedInt32() const {
     	return unblindedInt32_;
     }

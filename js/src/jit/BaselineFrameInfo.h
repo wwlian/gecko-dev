@@ -172,7 +172,7 @@ class FrameInfo
     FixedList<StackValue> stack;
     size_t spIndex;
 
-#ifdef CONSTANT_BLINDING
+#ifdef BASELINE_CONSTANT_BLINDING
     RNG rng;
 #endif
 

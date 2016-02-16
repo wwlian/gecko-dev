@@ -137,9 +137,6 @@ class MIRGenerator;
 class LIRGraph;
 class CodeGenerator;
 
-#ifdef CONSTANT_BLINDING
-void BlindConstants(MIRGenerator* mir);
-#endif
 bool OptimizeMIR(MIRGenerator* mir);
 LIRGraph* GenerateLIR(MIRGenerator* mir);
 CodeGenerator* GenerateCode(MIRGenerator* mir, LIRGraph* lir);

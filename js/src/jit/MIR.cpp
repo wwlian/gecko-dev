@@ -747,7 +747,7 @@ jit::IonCompilationCanUseNurseryPointers()
 #endif // DEBUG
 
 MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
   : isUntrusted_(false)
   , addSubBlindedVariant_(nullptr)
   , bitAndBlindedVariant_(nullptr)
@@ -813,7 +813,7 @@ MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
 }
 
 MConstant::MConstant(JSObject* obj)
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
   : isUntrusted_(false)
   , addSubBlindedVariant_(nullptr)
   , bitAndBlindedVariant_(nullptr)
@@ -1062,7 +1062,7 @@ MConstant::valueToBoolean(bool* res) const
     }
 }
 
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
 bool
 MConstant::isThisInstanceBlinded() {
  return addSubBlindedVariant_ == this || bitAndBlindedVariant_ == this || bitOrBlindedVariant_ == this || bitXorBlindedVariant_ == this;

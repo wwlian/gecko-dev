@@ -38,7 +38,7 @@
 #include "jit/Lowering.h"
 #include "jit/PerfSpewer.h"
 #include "jit/RangeAnalysis.h"
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
 #include "jit/ConstantBlinder.h"
 #endif
 #include "jit/ScalarReplacement.h"
@@ -1995,7 +1995,7 @@ CompileBackEnd(MIRGenerator* mir)
     if (!OptimizeMIR(mir))
         return nullptr;
 
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
     ConstantBlinder cb(&mir->graph());
     cb.blindConstants();
 #endif
