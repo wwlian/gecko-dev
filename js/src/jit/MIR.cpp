@@ -773,6 +773,7 @@ MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
   , bitAndBlindedVariant_(nullptr)
   , bitOrBlindedVariant_(nullptr)
   , bitXorBlindedVariant_(nullptr)
+  , precomputationRedirect_(nullptr)
 #endif
 {
     setResultType(MIRTypeFromValue(vp));
@@ -807,6 +808,7 @@ MConstant::MConstant(JSObject* obj)
   , bitAndBlindedVariant_(nullptr)
   , bitOrBlindedVariant_(nullptr)
   , bitXorBlindedVariant_(nullptr)
+  , precomputationRedirect_(nullptr)
 #endif
 {
     MOZ_ASSERT_IF(IsInsideNursery(obj), IonCompilationCanUseNurseryPointers());

@@ -12,72 +12,81 @@ ConstantBlinder::blindConstants() {
     for (ReversePostorderIterator block(graph_->rpoBegin()); block != graph_->rpoEnd(); block++) {
         for (MInstructionIterator ins = block->begin(); *ins != block->lastIns(); ins++) {
             if (ins->isConstant() && ins->toConstant()->value().isInt32() && ins->toConstant()->isUntrusted()) {
-                if (areAllUsesAccumulatable(*ins)) {
-                    accumulationBlindAll(ins->toConstant());
-                } else {
-                    preComputationBlind(ins->toConstant());
-                }
+                blindConstant(ins->toConstant());
             }
         }
     }
 }
 
-void
-ConstantBlinder::preComputationBlind(MConstant *c) {
-    JitSpew(JitSpew_IonMIR, "Precomputation blinding  int32 %d", c->unblindedValue().toInt32());
-    int32_t secret = rng_.blindingValue();
-    int32_t unblindOpInt = secret ^ c->unblindedValue().toInt32();
-    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(unblindOpInt));
-    MBitXor* unblindOp = MBitXor::New(graph_->alloc(), c, unblindOperand);
-    c->blindBitXor(graph_->alloc(), secret, Int32Value(secret));
-
-    // Uses of the now-blinded MConstant should be transferred to the unblinding op.
-    c->justReplaceAllUsesWithExcept(unblindOp);
-
-    // Add new instructions after the constant.
-    c->block()->insertAfter(c, unblindOperand);
-    c->block()->insertAfter(unblindOperand, unblindOp);
-}
-
 bool
-ConstantBlinder::areAllUsesAccumulatable(MDefinition *ins) {
-    MOZ_ASSERT(ins != nullptr);
-
-    for (MUseIterator i(ins->usesBegin()), e(ins->usesEnd()); i != e; ++i) {
-        MNode* consumer = i->consumer();
-        if (!consumer->isDefinition()) return false;
-        MDefinition *def = consumer->toDefinition();
-        if (!def->isBitAnd()
-            && !def->isBitOr()
-            && !def->isBitXor()) { /*
-            && !def->isAdd()
-            && !def->isSub()) { */
-            return false;
-        }
-    }
-    return true;
+ConstantBlinder::isConsumerAccumulationBlindable(MNode* node) {
+    if (!node->isDefinition()) return false;
+    MDefinition* def = node->toDefinition();
+    return def->isBitAnd() || def->isBitOr() || def->isBitXor();
 }
 
 void
-ConstantBlinder::accumulationBlindAll(MConstant *c) {
-    JitSpew(JitSpew_IonMIR, "Accumulation blinding int32 %d", c->unblindedValue().toInt32());
+ConstantBlinder::blindConstant(MConstant* c) {
     for (MUseIterator i(c->usesBegin()), e(c->usesEnd()); i != e;) {
-        MDefinition* consumer = i->consumer()->toDefinition();
-        i++;  // accumulationBlind* might modify the constant's use chain so get next use now.
-        if (consumer->isBitAnd()) {
-            accumulationBlindBitAnd(c, consumer);
-        } else if (consumer->isBitOr()) {
-            accumulationBlindBitOr(c, consumer);
-        } else if (consumer->isBitXor()) {
-            accumulationBlindBitXor(c, consumer);
-        } else if (consumer->isAdd() || consumer->isSub()) {
-            accumulationBlindAddSub(c, static_cast<MBinaryArithInstruction*>(consumer));
+        MUse* currentUse = *i;
+        i++;  // Increment iterator before we start blinding things and mucking with use chains.
+        MNode* consumer = currentUse->consumer();
+        if (isConsumerAccumulationBlindable(consumer)) {
+            accumulationBlind(c, currentUse);
+        } else {
+            preComputationBlind(c, currentUse);
         }
     }
 }
 
 void
-ConstantBlinder::accumulationBlindBitAnd(MConstant *c, MDefinition *consumer) {
+ConstantBlinder::preComputationBlind(MConstant* c, MUse* currentUse) {
+    JitSpew(JitSpew_IonMIR, "Precomputation blinding  int32 %d", c->unblindedValue().toInt32());
+    MNode* consumer = currentUse->consumer();
+    if (c->precomputationRedirect() == nullptr) {
+        int32_t unblindOpInt;
+        if (c->isBitXorBlinded()) {
+           unblindOpInt = c->unblindedValue().toInt32() ^ c->bitXorBlindedVariant()->secret();
+        } else {
+           int32_t secret = rng_.blindingValue();
+           unblindOpInt = c->unblindedValue().toInt32() ^ secret;
+           c->blindBitXor(graph_->alloc(), secret, Int32Value(secret));
+
+           if (c != c->bitXorBlindedVariant()) {
+               consumer->block()->insertBefore(c, c->bitXorBlindedVariant());
+           }
+        }
+
+        MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(unblindOpInt));
+        MBinaryBitwiseInstruction* unblindOp = MBitXor::New(graph_->alloc(), c->bitXorBlindedVariant(), unblindOperand);
+        currentUse->replaceProducer(unblindOp);
+
+        c->bitXorBlindedVariant()->block()->insertAfter(c->bitXorBlindedVariant(), unblindOperand);
+        c->bitXorBlindedVariant()->block()->insertAfter(unblindOperand, unblindOp);
+
+        c->setPrecomputationRedirect(unblindOp);
+    } else {
+        currentUse->replaceProducer(c->precomputationRedirect());
+    }
+}
+
+void
+ConstantBlinder::accumulationBlind(MConstant* c, MUse* currentUse) {
+    JitSpew(JitSpew_IonMIR, "Accumulation blinding int32 %d", c->unblindedValue().toInt32());
+    MDefinition* consumer = currentUse->consumer()->toDefinition();
+    if (consumer->isBitAnd()) {
+        accumulationBlindBitAnd(c, consumer);
+    } else if (consumer->isBitOr()) {
+        accumulationBlindBitOr(c, consumer);
+    } else if (consumer->isBitXor()) {
+        accumulationBlindBitXor(c, consumer);
+    } else {
+        MOZ_ASSERT(false);
+    }
+}
+
+void
+ConstantBlinder::accumulationBlindBitAnd(MConstant* c, MDefinition* consumer) {
     int32_t unblindOpInt;
     if (c->isBitAndBlinded()) {
         unblindOpInt = c->unblindedValue().toInt32() | ~c->bitAndBlindedVariant()->secret();
@@ -109,7 +118,7 @@ ConstantBlinder::accumulationBlindBitAnd(MConstant *c, MDefinition *consumer) {
 }
 
 void
-ConstantBlinder::accumulationBlindBitOr(MConstant *c, MDefinition *consumer) {
+ConstantBlinder::accumulationBlindBitOr(MConstant* c, MDefinition* consumer) {
     int32_t unblindOpInt;
     if (c->isBitOrBlinded()) {
         unblindOpInt = c->unblindedValue().toInt32() & ~c->bitOrBlindedVariant()->secret();
@@ -141,7 +150,7 @@ ConstantBlinder::accumulationBlindBitOr(MConstant *c, MDefinition *consumer) {
 }
 
 void
-ConstantBlinder::accumulationBlindBitXor(MConstant *c, MDefinition *consumer) {
+ConstantBlinder::accumulationBlindBitXor(MConstant* c, MDefinition* consumer) {
     int32_t unblindOpInt;
     if (c->isBitXorBlinded()) {
         unblindOpInt = c->unblindedValue().toInt32() ^ c->bitXorBlindedVariant()->secret();
@@ -172,7 +181,7 @@ ConstantBlinder::accumulationBlindBitXor(MConstant *c, MDefinition *consumer) {
 }
 
 void
-ConstantBlinder::accumulationBlindAddSub(MConstant *c, MBinaryArithInstruction *consumer) {
+ConstantBlinder::accumulationBlindAddSub(MConstant* c, MBinaryArithInstruction* consumer) {
     int32_t unblindOpInt;
     if (c->isAddSubBlinded()) {
         unblindOpInt = c->unblindedValue().toInt32() - c->addSubBlindedVariant()->secret();
