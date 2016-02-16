@@ -15,6 +15,9 @@
 #include "jit/IonCode.h"
 #include "jit/JitCompartment.h"
 #include "jit/MacroAssembler.h"
+#ifdef BASE_OFFSET_RANDOMIZATION
+#include "jit/RNG.h"
+#endif
 
 namespace js {
 namespace jit {
@@ -23,6 +26,9 @@ class Linker
 {
     MacroAssembler& masm;
     mozilla::Maybe<AutoWritableJitCode> awjc;
+#ifdef BASE_OFFSET_RANDOMIZATION
+    RNG rng_;
+#endif
 
     JitCode* fail(JSContext* cx) {
         ReportOutOfMemory(cx);
@@ -45,6 +51,12 @@ class Linker
         if (masm.oom())
             return fail(cx);
 
+#ifdef BASE_OFFSET_RANDOMIZATION
+        size_t randomHeaderSize = CodeAlignment * (rng_.blindingValue(0, 3));  // Between 0 and 3 CodeAlignments extra.
+        size_t bytesNeeded = masm.bytesNeeded() + sizeof(JitCode*) + CodeAlignment + randomHeaderSize;
+#else
+        size_t bytesNeeded = masm.bytesNeeded() + sizeof(JitCode*) + CodeAlignment;
+#endif
         ExecutablePool* pool;
         size_t bytesNeeded = masm.bytesNeeded() + sizeof(JitCode*) + CodeAlignment;
         if (bytesNeeded >= MAX_BUFFER_SIZE)

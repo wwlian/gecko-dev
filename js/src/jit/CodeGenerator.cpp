@@ -4692,7 +4692,7 @@ CodeGenerator::generateBody()
             }
 
 #ifdef ION_RANDOM_NOP
-            if (!(rand() & 0x7)) {  // 1/8 probability
+            if (!(rng_.blindingValue(0, 7))) {  // 1/8 probability
             	masm.nop();
             }
 #endif

@@ -953,6 +953,11 @@ BaselineCompiler::emitBody()
     bool compileCoverage = script->hasScriptCounts();
 
     while (true) {
+#ifdef BASELINE_RANDOM_NOP
+        if (!(rng_.blindingValue(0, 7))) {
+          masm.nop();
+        }
+#endif
         JSOp op = JSOp(*pc);
         JitSpew(JitSpew_BaselineOp, "Compiling op @ %d: %s",
                 int(script->pcToOffset(pc)), CodeName[op]);

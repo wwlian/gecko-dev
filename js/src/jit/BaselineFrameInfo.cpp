@@ -97,7 +97,7 @@ FrameInfo::popValue(ValueOperand dest)
          * sign-extended on 64-bit architectures, which would cause the unblinding
          * XOR instruction to clear the punboxing tag.
          */
-    		int32_t secret = rng.blindingValue() & 0x7fffffff;
+    		int32_t secret = rng_.blindingValue() & 0x7fffffff;
     		Value scrambledVal;
     		scrambledVal.setInt32(secret ^ val->constant().getInt32Ref());
 
