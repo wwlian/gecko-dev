@@ -17,6 +17,7 @@ class ConstantBlinder final {
   private:
 	bool isConsumerAccumulationBlindable(MNode* def);
 	void blindConstant(MConstant* c);
+	void preComputationBlindAll(MConstant *c);
 	void preComputationBlind(MConstant *c, MUse* currentUse);
 	void accumulationBlind(MConstant *c, MUse* currentUse);
 	void accumulationBlindBitAnd(MConstant *c, MDefinition *consumer);

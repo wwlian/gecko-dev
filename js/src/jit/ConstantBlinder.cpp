@@ -12,7 +12,8 @@ ConstantBlinder::blindConstants() {
     for (ReversePostorderIterator block(graph_->rpoBegin()); block != graph_->rpoEnd(); block++) {
         for (MInstructionIterator ins = block->begin(); *ins != block->lastIns(); ins++) {
             if (ins->isConstant() && ins->toConstant()->value().isInt32() && ins->toConstant()->isUntrusted()) {
-                blindConstant(ins->toConstant());
+                preComputationBlindAll(ins->toConstant());
+                //blindConstant(ins->toConstant());
             }
         }
     }
@@ -37,6 +38,23 @@ ConstantBlinder::blindConstant(MConstant* c) {
             preComputationBlind(c, currentUse);
         }
     }
+}
+
+void
+ConstantBlinder::preComputationBlindAll(MConstant *c) {
+    JitSpew(JitSpew_IonMIR, "Precomputation blinding all uses of int32 %d", c->unblindedValue().toInt32());
+    int32_t secret = rng_.blindingValue();
+    int32_t unblindOpInt = secret ^ c->unblindedValue().toInt32();
+    MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(unblindOpInt));
+    MBitXor* unblindOp = MBitXor::New(graph_->alloc(), c, unblindOperand);
+    c->blindBitXor(graph_->alloc(), secret, Int32Value(secret));
+
+    // Uses of the now-blinded MConstant should be transferred to the unblinding op.
+    c->justReplaceAllUsesWithExcept(unblindOp);
+
+    // Add new instructions after the constant.
+    c->block()->insertAfter(c, unblindOperand);
+    c->block()->insertAfter(unblindOperand, unblindOp);
 }
 
 void
