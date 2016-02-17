@@ -55,7 +55,9 @@ class OutOfLineLambdaArrow;
 
 class CodeGenerator : public CodeGeneratorSpecific
 {
+#ifdef ION_RANDOM_NOP
     RNG rng_;
+#ifdef ION_RANDOM_NOP
 
     void generateArgumentsChecks(bool bailout = true);
     bool generateBody();
