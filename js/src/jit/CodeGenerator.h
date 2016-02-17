@@ -56,7 +56,7 @@ class CodeGenerator : public CodeGeneratorSpecific
 {
 #ifdef ION_RANDOM_NOP
     RNG rng_;
-#ifdef ION_RANDOM_NOP
+#endif
 
     void generateArgumentsChecks(bool bailout = true);
     bool generateBody();
