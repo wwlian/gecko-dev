@@ -7,7 +7,6 @@ namespace jit {
 
 class ConstantBlinder final {
   private:
-    RNG rng_;
     MIRGraph *graph_;
   public:
     ConstantBlinder(MIRGraph *graph) : graph_(graph) {}

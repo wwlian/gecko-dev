@@ -8,9 +8,6 @@
 #define jit_BaselineCompiler_h
 
 #include "jit/FixedList.h"
-#ifdef BASELINE_RANDOM_NOP
-#include "jit/RNG.h"
-#endif
 #if defined(JS_CODEGEN_X86)
 # include "jit/x86/BaselineCompiler-x86.h"
 #elif defined(JS_CODEGEN_X64)
@@ -245,10 +242,6 @@ class BaselineCompiler : public BaselineCompilerSpecific
 
     // Whether any on stack arguments are modified.
     bool modifiesArguments_;
-
-#ifdef BASELINE_RANDOM_NOP
-    RNG rng_;
-#endif
 
     Label* labelOf(jsbytecode* pc) {
         return &labels_[script->pcToOffset(pc)];

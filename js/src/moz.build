@@ -241,6 +241,7 @@ UNIFIED_SOURCES += [
     'jit/Recover.cpp',
     'jit/RegisterAllocator.cpp',
     'jit/RematerializedFrame.cpp',
+    'jit/RNG.cpp',
     'jit/Safepoints.cpp',
     'jit/ScalarReplacement.cpp',
     'jit/shared/BaselineCompiler-shared.cpp',
