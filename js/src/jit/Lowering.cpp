@@ -2669,6 +2669,9 @@ LIRGenerator::visitSetInitializedLength(MSetInitializedLength* ins)
     MOZ_ASSERT(ins->elements()->type() == MIRType_Elements);
     MOZ_ASSERT(ins->index()->type() == MIRType_Int32);
 
+#ifndef ION_CONSTANT_BLINDING
+    MOZ_ASSERT(ins->index()->isConstant());
+#endif
     add(new(alloc()) LSetInitializedLength(useRegister(ins->elements()),
                                            useRegisterOrConstant(ins->index())), ins);
 }
