@@ -348,7 +348,7 @@ class IonBuilder
     MConstant* constant(const Value& v, bool isUntrusted = false);
 #else
     bool pushConstant(const Value& v);
-	MConstant* constant(const Value& v);
+    MConstant* constant(const Value& v);
 #endif
     MConstant* constantInt(int32_t i);
     MInstruction* initializedLength(MDefinition* obj, MDefinition* elements,
