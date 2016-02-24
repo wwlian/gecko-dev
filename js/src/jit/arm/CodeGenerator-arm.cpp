@@ -25,7 +25,6 @@
 
 #include "jit/MacroAssembler-inl.h"
 #include "jit/shared/CodeGenerator-shared-inl.h"
-#include "jit/RNG.h"
 
 using namespace js;
 using namespace js::jit;

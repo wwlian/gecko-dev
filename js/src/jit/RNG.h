@@ -1,39 +1,24 @@
-/*
- * RNG.h
- *
- *  Created on: Jan 28, 2016
- *      Author: wilsonlian
- */
-
 #ifndef jit_RNG_h
 #define jit_RNG_h
 
+#include "jsmath.h"
+#include "mozilla/Array.h"
 #include "mozilla/XorShift128PlusRNG.h"
+
+namespace js {
+namespace jit{
 
 class RNG {
   public:
-    RNG() {
-	mozilla::Array<uint64_t, 2> seed;
-	js::GenerateXorShift128PlusSeed(seed);
-    randomNumberGenerator = new mozilla::non_crypto::XorShift128PlusRNG(seed[0], seed[1]);
-  }
-
-  ~RNG() {
-    delete randomNumberGenerator;
-  }
-
-	int32_t blindingValue(const int32_t min = INT32_MIN, const int32_t max = INT32_MAX) {
-		MOZ_ASSERT(min <= max);
-		if (min == INT32_MIN && max == INT32_MAX)
-			return static_cast<int32_t>(randomNumberGenerator->next());
-
-		double range = static_cast<double>(max - min + 1);
-		return min + static_cast<int32_t>(randomNumberGenerator->nextDouble() * range);
-	}
+    static uint32_t nextUint32();
+    static uint64_t nextUint64();
+    static double nextDouble();
+    static int32_t blindingValue(const int32_t min = INT32_MIN, const int32_t max = INT32_MAX);
 
   private:
-	// Random number generator for code diversification.
-	mozilla::non_crypto::XorShift128PlusRNG *randomNumberGenerator;
+    static mozilla::non_crypto::XorShift128PlusRNG* init();
+    static mozilla::non_crypto::XorShift128PlusRNG *randomNumberGenerator;
 };
-
+}  // namespace jit
+}  // namespace js
 #endif /* jit_RNG_h */

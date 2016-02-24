@@ -954,9 +954,9 @@ BaselineCompiler::emitBody()
 
     while (true) {
 #ifdef BASELINE_RANDOM_NOP
-        if (!(rng_.blindingValue(0, 7))) {
-          masm.nop();
-        }
+    	if (!(RNG::nextUint32() & 7)) {
+    		masm.nop();
+    	}
 #endif
         JSOp op = JSOp(*pc);
         JitSpew(JitSpew_BaselineOp, "Compiling op @ %d: %s",

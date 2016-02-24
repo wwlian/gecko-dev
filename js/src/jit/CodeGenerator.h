@@ -12,10 +12,6 @@
 # include "jit/PerfSpewer.h"
 #endif
 
-#ifdef ION_RANDOM_NOP
-#include "jit/RNG.h"
-#endif
-
 #if defined(JS_CODEGEN_X86)
 # include "jit/x86/CodeGenerator-x86.h"
 #elif defined(JS_CODEGEN_X64)
@@ -55,10 +51,6 @@ class OutOfLineLambdaArrow;
 
 class CodeGenerator : public CodeGeneratorSpecific
 {
-#ifdef ION_RANDOM_NOP
-    RNG rng_;
-#endif
-
     void generateArgumentsChecks(bool bailout = true);
     bool generateBody();
 
