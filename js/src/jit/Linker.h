@@ -15,7 +15,9 @@
 #include "jit/IonCode.h"
 #include "jit/JitCompartment.h"
 #include "jit/MacroAssembler.h"
+#ifdef BASE_OFFSET_RANDOMIZATION
 #include "jit/RNG.h"
+#endif
 
 namespace js {
 namespace jit {
