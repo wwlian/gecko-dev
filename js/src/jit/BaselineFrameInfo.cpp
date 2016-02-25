@@ -10,6 +10,10 @@
 # include "jit/BytecodeAnalysis.h"
 #endif
 
+#ifdef BASELINE_CONSTANT_BLINDING
+#include "jit/RNG.h"
+#endif
+
 using namespace js;
 using namespace js::jit;
 
