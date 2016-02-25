@@ -39,6 +39,9 @@
 #include "jit/MIRGenerator.h"
 #include "jit/MoveEmitter.h"
 #include "jit/RangeAnalysis.h"
+#ifdef ION_RANDOM_NOP
+#include "jit/RNG.h"
+#endif
 #include "jit/SharedICHelpers.h"
 #include "vm/MatchPairs.h"
 #include "vm/RegExpStatics.h"
