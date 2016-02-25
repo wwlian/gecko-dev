@@ -36,6 +36,10 @@
 #include "vm/Interpreter-inl.h"
 #include "vm/NativeObject-inl.h"
 
+#ifdef BASELINE_RANDOM_NOP
+#include "jit/RNG.h"
+#endif
+
 using namespace js;
 using namespace js::jit;
 

@@ -1,8 +1,8 @@
 #ifdef ION_CONSTANT_BLINDING
 
 #include "jit/ConstantBlinder.h"
-
 #include "jit/JitSpewer.h"
+#include "jit/RNG.h"
 
 namespace js {
 namespace jit {
