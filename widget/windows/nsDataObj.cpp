@@ -74,14 +74,14 @@ nsresult nsDataObj::CStream::Init(nsIURI *pSourceURI,
   rv = NS_NewChannel(getter_AddRefs(mChannel),
                      pSourceURI,
                      aRequestingNode,
-                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS,
+                     nsILoadInfo::SEC_NORMAL,
                      nsIContentPolicy::TYPE_OTHER,
                      nullptr,   // loadGroup
                      nullptr,   // aCallbacks
                      nsIRequest::LOAD_FROM_CACHE);
 
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = mChannel->AsyncOpen2(this);
+  rv = mChannel->AsyncOpen(this, nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
   return NS_OK;
 }
@@ -1129,13 +1129,15 @@ nsDataObj :: GetFileContentsInternetShortcut ( FORMATETC& aFE, STGMEDIUM& aSTG )
   if ( NS_FAILED(ExtractShortcutURL(url)) )
     return E_OUTOFMEMORY;
 
-  // will need to change if we ever support iDNS
-  nsAutoCString asciiUrl;
-  LossyCopyUTF16toASCII(url, asciiUrl);
-
-  nsCOMPtr<nsIFile> icoFile;
   nsCOMPtr<nsIURI> aUri;
   NS_NewURI(getter_AddRefs(aUri), url);
+
+  nsresult rv;
+  nsAutoCString asciiUrl;
+  rv = aUri->GetAsciiSpec(asciiUrl);
+  if (NS_FAILED(rv)) {
+    return E_FAIL;
+  }
 
   const char *shortcutFormatStr;
   int totalLen;
@@ -1147,14 +1149,12 @@ nsDataObj :: GetFileContentsInternetShortcut ( FORMATETC& aFE, STGMEDIUM& aSTG )
     totalLen = formatLen + asciiUrl.Length();  // don't include null character
   } else {
     nsCOMPtr<nsIFile> icoFile;
-    nsCOMPtr<nsIURI> aUri;
-    NS_NewURI(getter_AddRefs(aUri), url);
 
     nsAutoString aUriHash;
 
     mozilla::widget::FaviconHelper::ObtainCachedIconFile(aUri, aUriHash, mIOThread, true);
 
-    nsresult rv = mozilla::widget::FaviconHelper::GetOutputIconPath(aUri, icoFile, true);
+    rv = mozilla::widget::FaviconHelper::GetOutputIconPath(aUri, icoFile, true);
     NS_ENSURE_SUCCESS(rv, E_FAIL);
     rv = icoFile->GetNativePath(path);
     NS_ENSURE_SUCCESS(rv, E_FAIL);
@@ -1290,7 +1290,27 @@ HRESULT nsDataObj::GetText(const nsACString & aDataFlavor, FORMATETC& aFE, STGME
   // by the appropriate size to account for the null (one char for CF_TEXT, one char16_t for
   // CF_UNICODETEXT).
   DWORD allocLen = (DWORD)len;
-  if ( aFE.cfFormat == nsClipboard::CF_HTML ) {
+  if ( aFE.cfFormat == CF_TEXT ) {
+    // Someone is asking for text/plain; convert the unicode (assuming it's present)
+    // to text with the correct platform encoding.
+    size_t bufferSize = sizeof(char)*(len + 2);
+    char* plainTextData = static_cast<char*>(moz_xmalloc(bufferSize));
+    char16_t* castedUnicode = reinterpret_cast<char16_t*>(data);
+    int32_t plainTextLen = WideCharToMultiByte(CP_ACP, 0, (LPCWSTR)castedUnicode, len / 2 + 1, plainTextData, bufferSize, NULL, NULL);
+    // replace the unicode data with our plaintext data. Recall that |plainTextLen| doesn't include
+    // the null in the length.
+    free(data);
+    if ( plainTextLen ) {
+      data = plainTextData;
+      allocLen = plainTextLen;
+    }
+    else {
+      free(plainTextData);
+      NS_WARNING ( "Oh no, couldn't convert unicode to plain text" );
+      return S_OK;
+    }
+  }
+  else if ( aFE.cfFormat == nsClipboard::CF_HTML ) {
     // Someone is asking for win32's HTML flavor. Convert our html fragment
     // from unicode to UTF-8 then put it into a format specified by msft.
     NS_ConvertUTF16toUTF8 converter ( reinterpret_cast<char16_t*>(data) );

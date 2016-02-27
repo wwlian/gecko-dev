@@ -10,6 +10,8 @@
 # include "jit/BytecodeAnalysis.h"
 #endif
 
+#include "jit/BaselineFrameInfo-inl.h"
+#include "jit/MacroAssembler-inl.h"
 #ifdef BASELINE_CONSTANT_BLINDING
 #include "jit/RNG.h"
 #endif

@@ -12,6 +12,7 @@
 #include "mozilla/layers/ISurfaceAllocator.h"
 #include "mozilla/layers/ShadowLayerUtilsGralloc.h"
 #include "gfx2DGlue.h"
+#include "gfxPrefs.h" // for gfxPrefs
 #include "SharedSurfaceGralloc.h"
 
 #if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 17
@@ -242,7 +243,7 @@ GrallocTextureData::UpdateFromSurface(gfx::SourceSurface* aSurface)
   RefPtr<DataSourceSurface> srcSurf = aSurface->GetDataSurface();
 
   if (!srcSurf) {
-    gfxCriticalError() << "Failed to GetDataSurface in UpdateFromSurface.";
+    gfxCriticalError() << "Failed to GetDataSurface in UpdateFromSurface (GTC).";
     return false;
   }
 
@@ -258,7 +259,7 @@ GrallocTextureData::UpdateFromSurface(gfx::SourceSurface* aSurface)
   DataSourceSurface::MappedSurface sourceMap;
 
   if (!srcSurf->Map(DataSourceSurface::READ, &sourceMap)) {
-    gfxCriticalError() << "Failed to map source surface for UpdateFromSurface.";
+    gfxCriticalError() << "Failed to map source surface for UpdateFromSurface (GTC).";
     return false;
   }
 

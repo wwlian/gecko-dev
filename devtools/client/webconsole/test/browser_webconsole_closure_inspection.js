@@ -1,7 +1,7 @@
-/*
- * Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/
- */
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 // Check that inspecting a closure in the variables view sidebar works when
 // execution is paused.
@@ -18,13 +18,6 @@ function test() {
     gWebConsole = gJSTerm = gVariablesView = null;
   });
 
-  function resumeDebugger(toolbox, panelWin, deferred) {
-    panelWin.gThreadClient.addOneTimeListener("resumed", () => {
-      ok(true, "Debugger resumed");
-      deferred.resolve({ toolbox: toolbox, panelWin: panelWin });
-    });
-  }
-
   function fetchScopes(hud, toolbox, panelWin, deferred) {
     panelWin.once(panelWin.EVENTS.FETCHED_SCOPES, () => {
       ok(true, "Scopes were fetched");
@@ -36,11 +29,6 @@ function test() {
   loadTab(TEST_URI).then(() => {
     openConsole().then((hud) => {
       openDebugger().then(({ toolbox, panelWin }) => {
-        let deferred = promise.defer();
-        resumeDebugger(toolbox, panelWin, deferred);
-
-        return deferred.promise;
-      }).then(({ toolbox, panelWin }) => {
         let deferred = promise.defer();
         fetchScopes(hud, toolbox, panelWin, deferred);
 

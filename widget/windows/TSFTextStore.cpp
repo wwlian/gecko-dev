@@ -1315,11 +1315,14 @@ TSFTextStore::TSFTextStore()
   , mRequestedAttrValues(false)
   , mIsRecordingActionsWithoutLock(false)
   , mPendingOnSelectionChange(false)
-  , mPendingOnLayoutChange(false)
+  , mHasReturnedNoLayoutError(false)
+  , mWaitingQueryLayout(false)
   , mPendingDestroy(false)
   , mDeferClearingLockedContent(false)
   , mNativeCaretIsCreated(false)
   , mDeferNotifyingTSF(false)
+  , mDeferCommittingComposition(false)
+  , mDeferCancellingComposition(false)
   , mDestroyed(false)
 {
   for (int32_t i = 0; i < NUM_OF_SUPPORTED_ATTRS; i++) {
@@ -1670,7 +1673,7 @@ TSFTextStore::DidLockGranted()
   // If the widget has gone, we don't need to notify anything.
   if (!mWidget || mWidget->Destroyed()) {
     mPendingOnSelectionChange = false;
-    mPendingOnLayoutChange = false;
+    mHasReturnedNoLayoutError = false;
   }
 }
 
@@ -1695,7 +1698,7 @@ TSFTextStore::FlushPendingActions()
     mPendingActions.Clear();
     mLockedContent.Clear();
     mPendingOnSelectionChange = false;
-    mPendingOnLayoutChange = false;
+    mHasReturnedNoLayoutError = false;
     return;
   }
 
@@ -1873,19 +1876,33 @@ TSFTextStore::FlushPendingActions()
 void
 TSFTextStore::MaybeFlushPendingNotifications()
 {
+  if (IsReadLocked()) {
+    MOZ_LOG(sTextStoreLog, LogLevel::Debug,
+      ("TSF: 0x%p   TSFTextStore::MaybeFlushPendingNotifications(), "
+       "putting off flushing pending notifications due to being the "
+       "document locked...", this));
+    return;
+  }
+
+  if (mDeferCommittingComposition) {
+    MOZ_LOG(sTextStoreLog, LogLevel::Info,
+      ("TSF: 0x%p   TSFTextStore::MaybeFlushPendingNotifications(), "
+       "calling TSFTextStore::CommitCompositionInternal(false)...", this));
+    mDeferCommittingComposition = mDeferCancellingComposition = false;
+    CommitCompositionInternal(false);
+  } else if (mDeferCancellingComposition) {
+    MOZ_LOG(sTextStoreLog, LogLevel::Info,
+      ("TSF: 0x%p   TSFTextStore::MaybeFlushPendingNotifications(), "
+       "calling TSFTextStore::CommitCompositionInternal(true)...", this));
+    mDeferCommittingComposition = mDeferCancellingComposition = false;
+    CommitCompositionInternal(true);
+  }
+
   if (mDeferNotifyingTSF) {
     MOZ_LOG(sTextStoreLog, LogLevel::Debug,
            ("TSF: 0x%p   TSFTextStore::MaybeFlushPendingNotifications(), "
             "putting off flushing pending notifications due to being "
             "dispatching events...", this));
-    return;
-  }
-
-  if (IsReadLocked()) {
-    MOZ_LOG(sTextStoreLog, LogLevel::Debug,
-           ("TSF: 0x%p   TSFTextStore::MaybeFlushPendingNotifications(), "
-            "putting off flushing pending notifications due to being the "
-            "document locked...", this));
     return;
   }
 
@@ -1901,11 +1918,11 @@ TSFTextStore::MaybeFlushPendingNotifications()
             "mLockedContent is cleared", this));
   }
 
-  if (mPendingOnLayoutChange) {
+  if (mHasReturnedNoLayoutError) {
     MOZ_LOG(sTextStoreLog, LogLevel::Info,
            ("TSF: 0x%p   TSFTextStore::MaybeFlushPendingNotifications(), "
             "calling TSFTextStore::NotifyTSFOfLayoutChange()...", this));
-    NotifyTSFOfLayoutChange(true);
+    NotifyTSFOfLayoutChange();
   }
 
   if (mPendingOnSelectionChange) {
@@ -3011,10 +3028,21 @@ TSFTextStore::InsertEmbedded(DWORD dwFlags,
 }
 
 void
-TSFTextStore::SetInputScope(const nsString& aHTMLInputType)
+TSFTextStore::SetInputScope(const nsString& aHTMLInputType,
+                            const nsString& aHTMLInputInputMode)
 {
   mInputScopes.Clear();
   if (aHTMLInputType.IsEmpty() || aHTMLInputType.EqualsLiteral("text")) {
+    if (aHTMLInputInputMode.EqualsLiteral("url")) {
+      mInputScopes.AppendElement(IS_URL);
+    } else if (aHTMLInputInputMode.EqualsLiteral("email")) {
+      mInputScopes.AppendElement(IS_EMAIL_SMTPEMAILADDRESS);
+    } else if (aHTMLInputType.EqualsLiteral("tel")) {
+      mInputScopes.AppendElement(IS_TELEPHONE_FULLTELEPHONENUMBER);
+      mInputScopes.AppendElement(IS_TELEPHONE_LOCALNUMBER);
+    } else if (aHTMLInputType.EqualsLiteral("numeric")) {
+      mInputScopes.AppendElement(IS_NUMBER);
+    }
     return;
   }
   
@@ -3339,10 +3367,11 @@ TSFTextStore::GetACPFromPoint(TsViewCookie vcView,
 {
   MOZ_LOG(sTextStoreLog, LogLevel::Info,
          ("TSF: 0x%p TSFTextStore::GetACPFromPoint(pvcView=%d, pt=%p (x=%d, "
-          "y=%d), dwFlags=%s, pacp=%p, mDeferNotifyingTSF=%s",
+          "y=%d), dwFlags=%s, pacp=%p, mDeferNotifyingTSF=%s, "
+          "mWaitingQueryLayout=%s",
           this, vcView, pt, pt ? pt->x : 0, pt ? pt->y : 0,
           GetACPFromPointFlagName(dwFlags).get(), pacp,
-          GetBoolName(mDeferNotifyingTSF)));
+          GetBoolName(mDeferNotifyingTSF), GetBoolName(mWaitingQueryLayout)));
 
   if (!IsReadLocked()) {
     MOZ_LOG(sTextStoreLog, LogLevel::Error,
@@ -3372,11 +3401,13 @@ TSFTextStore::GetACPFromPoint(TsViewCookie vcView,
     return E_INVALIDARG;
   }
 
+  mWaitingQueryLayout = false;
+
   if (mLockedContent.IsLayoutChanged()) {
     MOZ_LOG(sTextStoreLog, LogLevel::Error,
-           ("TSF: 0x%p   TSFTextStore::GetACPFromPoint() FAILED due to "
-            "layout not recomputed", this));
-    mPendingOnLayoutChange = true;
+           ("TSF: 0x%p   TSFTextStore::GetACPFromPoint() returned "
+            "TS_E_NOLAYOUT", this));
+    mHasReturnedNoLayoutError = true;
     return TS_E_NOLAYOUT;
   }
 
@@ -3492,9 +3523,9 @@ TSFTextStore::GetTextExt(TsViewCookie vcView,
   MOZ_LOG(sTextStoreLog, LogLevel::Info,
          ("TSF: 0x%p TSFTextStore::GetTextExt(vcView=%ld, "
           "acpStart=%ld, acpEnd=%ld, prc=0x%p, pfClipped=0x%p), "
-          "mDeferNotifyingTSF=%s",
+          "mDeferNotifyingTSF=%s, mWaitingQueryLayout=%s",
           this, vcView, acpStart, acpEnd, prc, pfClipped,
-          GetBoolName(mDeferNotifyingTSF)));
+          GetBoolName(mDeferNotifyingTSF), GetBoolName(mWaitingQueryLayout)));
 
   if (!IsReadLocked()) {
     MOZ_LOG(sTextStoreLog, LogLevel::Error,
@@ -3524,6 +3555,8 @@ TSFTextStore::GetTextExt(TsViewCookie vcView,
     return TS_E_INVALIDPOS;
   }
 
+  mWaitingQueryLayout = false;
+
   // NOTE: TSF (at least on Win 8.1) doesn't return TS_E_NOLAYOUT to the
   // caller even if we return it.  It's converted to just E_FAIL.
   // However, this is fixed on Win 10.
@@ -3538,44 +3571,44 @@ TSFTextStore::GetTextExt(TsViewCookie vcView,
     // no developers who want to disable this hack for tests.
     const bool kIsMSOfficeJapaneseIME2010 =
       kSink->IsMSOfficeJapaneseIME2010Active();
+    // MS IME for Japanese doesn't support asynchronous handling at deciding
+    // its suggest list window position.  The feature was implemented
+    // starting from Windows 8.  And also we may meet same trouble in e10s
+    // mode on Win7.  So, we should never return TS_E_NOLAYOUT to MS IME for
+    // Japanese.
     if (kIsMSOfficeJapaneseIME2010 ||
         ((sDoNotReturnNoLayoutErrorToMSJapaneseIMEAtFirstChar ||
           sDoNotReturnNoLayoutErrorToMSJapaneseIMEAtCaret) &&
          kSink->IsMSJapaneseIMEActive())) {
-      // MS IME for Japanese doesn't support asynchronous handling at deciding
-      // its suggest list window position.  The feature was implemented
-      // starting from Windows 8.
-      if (IsWin8OrLater() || kIsMSOfficeJapaneseIME2010) {
-        // Basically, MS-IME tries to retrieve whole composition string rect
-        // at deciding suggest window immediately after unlocking the document.
-        // However, in e10s mode, the content hasn't updated yet in most cases.
-        // Therefore, if the first character at the retrieving range rect is
-        // available, we should use it as the result.
-        if ((kIsMSOfficeJapaneseIME2010 ||
-             sDoNotReturnNoLayoutErrorToMSJapaneseIMEAtFirstChar) &&
-            !mLockedContent.IsLayoutChangedAfter(acpStart) &&
-            acpStart < acpEnd) {
-          acpEnd = acpStart;
-          MOZ_LOG(sTextStoreLog, LogLevel::Debug,
-                 ("TSF: 0x%p   TSFTextStore::GetTextExt() hacked the offsets "
-                  "of the first character of changing range of the composition "
-                  "string for TIP acpStart=%d, acpEnd=%d",
-                  this, acpStart, acpEnd));
-        }
-        // Although, the condition is not clear, MS-IME sometimes retrieves the
-        // caret rect immediately after modifying the composition string but
-        // before unlocking the document.  In such case, we should return the
-        // nearest character rect.
-        else if ((kIsMSOfficeJapaneseIME2010 ||
-                  sDoNotReturnNoLayoutErrorToMSJapaneseIMEAtCaret) &&
-                 acpStart == acpEnd &&
-                 currentSel.IsCollapsed() && currentSel.EndOffset() == acpEnd) {
-          acpEnd = acpStart = mLockedContent.MinOffsetOfLayoutChanged();
-          MOZ_LOG(sTextStoreLog, LogLevel::Debug,
-                 ("TSF: 0x%p   TSFTextStore::GetTextExt() hacked the offsets "
-                  "of the caret of the composition string for TIP acpStart=%d, "
-                  "acpEnd=%d", this, acpStart, acpEnd));
-        }
+      // Basically, MS-IME tries to retrieve whole composition string rect
+      // at deciding suggest window immediately after unlocking the document.
+      // However, in e10s mode, the content hasn't updated yet in most cases.
+      // Therefore, if the first character at the retrieving range rect is
+      // available, we should use it as the result.
+      if ((kIsMSOfficeJapaneseIME2010 ||
+           sDoNotReturnNoLayoutErrorToMSJapaneseIMEAtFirstChar) &&
+          !mLockedContent.IsLayoutChangedAfter(acpStart) &&
+          acpStart < acpEnd) {
+        acpEnd = acpStart;
+        MOZ_LOG(sTextStoreLog, LogLevel::Debug,
+               ("TSF: 0x%p   TSFTextStore::GetTextExt() hacked the offsets "
+                "of the first character of changing range of the composition "
+                "string for TIP acpStart=%d, acpEnd=%d",
+                this, acpStart, acpEnd));
+      }
+      // Although, the condition is not clear, MS-IME sometimes retrieves the
+      // caret rect immediately after modifying the composition string but
+      // before unlocking the document.  In such case, we should return the
+      // nearest character rect.
+      else if ((kIsMSOfficeJapaneseIME2010 ||
+                sDoNotReturnNoLayoutErrorToMSJapaneseIMEAtCaret) &&
+               acpStart == acpEnd &&
+               currentSel.IsCollapsed() && currentSel.EndOffset() == acpEnd) {
+        acpEnd = acpStart = mLockedContent.MinOffsetOfLayoutChanged();
+        MOZ_LOG(sTextStoreLog, LogLevel::Debug,
+               ("TSF: 0x%p   TSFTextStore::GetTextExt() hacked the offsets "
+                "of the caret of the composition string for TIP acpStart=%d, "
+                "acpEnd=%d", this, acpStart, acpEnd));
       }
     }
     // Free ChangJie 2010 and Easy Changjei 1.0.12.0 doesn't handle
@@ -3611,9 +3644,9 @@ TSFTextStore::GetTextExt(TsViewCookie vcView,
 
   if (mLockedContent.IsLayoutChangedAfter(acpEnd)) {
     MOZ_LOG(sTextStoreLog, LogLevel::Error,
-           ("TSF: 0x%p   TSFTextStore::GetTextExt() FAILED due to "
-            "layout not recomputed at %d", this, acpEnd));
-    mPendingOnLayoutChange = true;
+           ("TSF: 0x%p   TSFTextStore::GetTextExt() returned TS_E_NOLAYOUT "
+            "(acpEnd=%d)", this, acpEnd));
+    mHasReturnedNoLayoutError = true;
     return TS_E_NOLAYOUT;
   }
 
@@ -4093,6 +4126,7 @@ TSFTextStore::RecordCompositionStartAction(ITfCompositionView* aComposition,
   }
 
   lockedContent.StartComposition(aComposition, *action, aPreserveSelection);
+  action->mData = mComposition.mString;
 
   MOZ_LOG(sTextStoreLog, LogLevel::Info,
          ("TSF: 0x%p   TSFTextStore::RecordCompositionStartAction() succeeded: "
@@ -4130,6 +4164,33 @@ TSFTextStore::RecordCompositionEndAction()
     return E_FAIL;
   }
   lockedContent.EndComposition(*action);
+
+  // If this composition was restart but the composition doesn't modify
+  // anything, we should remove the pending composition for preventing to
+  // dispatch redundant composition events.
+  for (size_t i = mPendingActions.Length(), j = 1; i > 0; --i, ++j) {
+    PendingAction& pendingAction = mPendingActions[i - 1];
+    if (pendingAction.mType == PendingAction::COMPOSITION_START) {
+      if (pendingAction.mData != action->mData) {
+        break;
+      }
+      // When only setting selection is necessary, we should append it.
+      if (pendingAction.mAdjustSelection) {
+        PendingAction* setSelection = mPendingActions.AppendElement();
+        setSelection->mType = PendingAction::SET_SELECTION;
+        setSelection->mSelectionStart = pendingAction.mSelectionStart;
+        setSelection->mSelectionLength = pendingAction.mSelectionLength;
+        setSelection->mSelectionReversed = false;
+      }
+      // Remove the redundant pending composition.
+      mPendingActions.RemoveElementsAt(i - 1, j);
+      MOZ_LOG(sTextStoreLog, LogLevel::Info,
+             ("TSF: 0x%p   TSFTextStore::RecordCompositionEndAction(), "
+              "succeeded, but the composition was canceled due to redundant",
+              this));
+      return S_OK;
+    }
+  }
 
   MOZ_LOG(sTextStoreLog, LogLevel::Info,
          ("TSF: 0x%p   TSFTextStore::RecordCompositionEndAction(), succeeded",
@@ -4509,7 +4570,8 @@ TSFTextStore::CreateAndSetFocus(nsWindowBase* aFocusedWidget,
             "ITfTheadMgr::AssociateFocus() failure"));
     return false;
   }
-  sEnabledTextStore->SetInputScope(aContext.mHTMLInputType);
+  sEnabledTextStore->SetInputScope(aContext.mHTMLInputType,
+                                   aContext.mHTMLInputInputmode);
 
   if (sEnabledTextStore->mSink) {
     MOZ_LOG(sTextStoreLog, LogLevel::Info,
@@ -4555,17 +4617,37 @@ TSFTextStore::OnTextChangeInternal(const IMENotification& aIMENotification)
          ("TSF: 0x%p   TSFTextStore::OnTextChangeInternal(aIMENotification={ "
           "mMessage=0x%08X, mTextChangeData={ mStartOffset=%lu, "
           "mRemovedEndOffset=%lu, mAddedEndOffset=%lu, "
-          "mCausedByComposition=%s, mOccurredDuringComposition=%s }), "
+          "mCausedOnlyByComposition=%s, "
+          "mIncludingChangesDuringComposition=%s, "
+          "mIncludingChangesWithoutComposition=%s }), "
           "mSink=0x%p, mSinkMask=%s, mComposition.IsComposing()=%s",
           this, aIMENotification.mMessage,
           textChangeData.mStartOffset,
           textChangeData.mRemovedEndOffset,
           textChangeData.mAddedEndOffset,
-          GetBoolName(textChangeData.mCausedByComposition),
-          GetBoolName(textChangeData.mOccurredDuringComposition),
+          GetBoolName(textChangeData.mCausedOnlyByComposition),
+          GetBoolName(textChangeData.mIncludingChangesDuringComposition),
+          GetBoolName(textChangeData.mIncludingChangesWithoutComposition),
           mSink.get(),
           GetSinkMaskNameStr(mSinkMask).get(),
           GetBoolName(mComposition.IsComposing())));
+
+  if (textChangeData.mCausedOnlyByComposition) {
+    // Ignore text change notifications caused only by composition since it's
+    // already been handled internally.
+    return NS_OK;
+  }
+
+  if (mComposition.IsComposing() &&
+      !textChangeData.mIncludingChangesDuringComposition) {
+    // Ignore text changes when they don't include changes caused not by
+    // composition at the latest composition because changes before current
+    // composition start shouldn't cause forcibly committing composition.
+    // In the future, we should notify TSF of such delayed text changes
+    // after current composition is active (In such case,
+    // mIncludingChangesWithoutComposition is true).
+    return NS_OK;
+  }
 
   mDeferNotifyingTSF = false;
 
@@ -4653,6 +4735,12 @@ TSFTextStore::OnSelectionChangeInternal(const IMENotification& aIMENotification)
           GetBoolName(mIsRecordingActionsWithoutLock),
           GetBoolName(mComposition.IsComposing())));
 
+  if (selectionChangeData.mCausedByComposition) {
+    // Ignore selection change notifications caused by composition since it's
+    // already been handled internally.
+    return NS_OK;
+  }
+
   mDeferNotifyingTSF = false;
 
   // A compositionstart event handler can change selection before actually
@@ -4670,12 +4758,6 @@ TSFTextStore::OnSelectionChangeInternal(const IMENotification& aIMENotification)
            ("TSF: 0x%p   TSFTextStore::OnSelectionChangeInternal(), WARNING, "
             "ignoring selection change notification which occurred before "
             "composition start.", this));
-    return NS_OK;
-  }
-
-
-  if (IsReadLocked()) {
-    // XXX Why don't we mark mPendingOnSelectionChange as true here?
     return NS_OK;
   }
 
@@ -4756,7 +4838,7 @@ TSFTextStore::OnLayoutChangeInternal()
   MOZ_LOG(sTextStoreLog, LogLevel::Info,
          ("TSF: 0x%p   TSFTextStore::OnLayoutChangeInternal(), calling "
           "NotifyTSFOfLayoutChange()...", this));
-  if (NS_WARN_IF(!NotifyTSFOfLayoutChange(mPendingOnLayoutChange))) {
+  if (NS_WARN_IF(!NotifyTSFOfLayoutChange())) {
     rv = NS_ERROR_FAILURE;
   }
 
@@ -4769,9 +4851,19 @@ TSFTextStore::OnLayoutChangeInternal()
 }
 
 bool
-TSFTextStore::NotifyTSFOfLayoutChange(bool aFlush)
+TSFTextStore::NotifyTSFOfLayoutChange()
 {
-  mPendingOnLayoutChange = false;
+  // If we're waiting a query of layout information from TIP, it means that
+  // we've returned TS_E_NOLAYOUT error.
+  bool returnedNoLayoutError =
+    mHasReturnedNoLayoutError || mWaitingQueryLayout;
+
+  // If we returned TS_E_NOLAYOUT, TIP should query the computed layout again.
+  mWaitingQueryLayout = returnedNoLayoutError;
+
+  // For avoiding to call this method again at unlocking the document during
+  // calls of OnLayoutChange(), reset mHasReturnedNoLayoutError.
+  mHasReturnedNoLayoutError = false;
 
   // Now, layout has been computed.  We should notify mLockedContent for
   // making GetTextExt() and GetACPFromPoint() not return TS_E_NOLAYOUT.
@@ -4784,7 +4876,7 @@ TSFTextStore::NotifyTSFOfLayoutChange(bool aFlush)
   MaybeDestroyNativeCaret();
 
   // This method should return true if either way succeeds.
-  bool ret = false;
+  bool ret = true;
 
   if (mSink) {
     MOZ_LOG(sTextStoreLog, LogLevel::Info,
@@ -4792,12 +4884,16 @@ TSFTextStore::NotifyTSFOfLayoutChange(bool aFlush)
             "calling ITextStoreACPSink::OnLayoutChange()...",
             this));
     HRESULT hr = mSink->OnLayoutChange(TS_LC_CHANGE, TEXTSTORE_DEFAULT_VIEW);
+    MOZ_LOG(sTextStoreLog, LogLevel::Info,
+           ("TSF: 0x%p   TSFTextStore::NotifyTSFOfLayoutChange(), "
+            "called ITextStoreACPSink::OnLayoutChange()",
+            this));
     ret = SUCCEEDED(hr);
   }
 
   // The layout change caused by composition string change should cause
   // calling ITfContextOwnerServices::OnLayoutChange() too.
-  if (aFlush && mContext) {
+  if (returnedNoLayoutError && mContext) {
     RefPtr<ITfContextOwnerServices> service;
     mContext->QueryInterface(IID_ITfContextOwnerServices,
                              getter_AddRefs(service));
@@ -4807,11 +4903,88 @@ TSFTextStore::NotifyTSFOfLayoutChange(bool aFlush)
               "calling ITfContextOwnerServices::OnLayoutChange()...",
               this));
       HRESULT hr = service->OnLayoutChange();
-      ret = SUCCEEDED(hr);
+      ret = ret && SUCCEEDED(hr);
+      MOZ_LOG(sTextStoreLog, LogLevel::Info,
+             ("TSF: 0x%p   TSFTextStore::NotifyTSFOfLayoutChange(), "
+              "called ITfContextOwnerServices::OnLayoutChange()",
+              this));
     }
   }
 
-  return ret;
+  if (!mWidget || mWidget->Destroyed()) {
+    MOZ_LOG(sTextStoreLog, LogLevel::Info,
+           ("TSF: 0x%p   TSFTextStore::NotifyTSFOfLayoutChange(), "
+            "the widget is destroyed during calling OnLayoutChange()",
+            this));
+    return ret;
+  }
+
+  if (mDestroyed) {
+    MOZ_LOG(sTextStoreLog, LogLevel::Info,
+           ("TSF: 0x%p   TSFTextStore::NotifyTSFOfLayoutChange(), "
+            "the TSFTextStore instance is destroyed during calling "
+            "OnLayoutChange()",
+            this));
+    return ret;
+  }
+
+  // If we returned TS_E_NOLAYOUT again, we need another call of
+  // OnLayoutChange() later.  So, let's wait a query from TIP.
+  if (mHasReturnedNoLayoutError) {
+    mWaitingQueryLayout = true;
+  }
+
+  if (!mWaitingQueryLayout) {
+    MOZ_LOG(sTextStoreLog, LogLevel::Info,
+           ("TSF: 0x%p   TSFTextStore::NotifyTSFOfLayoutChange(), "
+            "succeeded notifying TIP of our layout change",
+            this));
+    return ret;
+  }
+
+  // If we believe that TIP needs to retry to retrieve our layout information
+  // later, we should call it with ::PostMessage() hack.
+  MOZ_LOG(sTextStoreLog, LogLevel::Debug,
+          ("TSF: 0x%p   TSFTextStore::NotifyTSFOfLayoutChange(), "
+           "posing  MOZ_WM_NOTIY_TSF_OF_LAYOUT_CHANGE for calling "
+           "OnLayoutChange() again...", this));
+  ::PostMessage(mWidget->GetWindowHandle(),
+                MOZ_WM_NOTIY_TSF_OF_LAYOUT_CHANGE,
+                reinterpret_cast<WPARAM>(this), 0);
+
+  return true;
+}
+
+void
+TSFTextStore::NotifyTSFOfLayoutChangeAgain()
+{
+  // Before preforming this method, TIP has accessed our layout information by
+  // itself.  In such case, we don't need to call OnLayoutChange() anymore.
+  if (!mWaitingQueryLayout) {
+    return;
+  }
+
+  MOZ_LOG(sTextStoreLog, LogLevel::Info,
+         ("TSF: 0x%p   TSFTextStore::NotifyTSFOfLayoutChangeAgain(), "
+          "calling NotifyTSFOfLayoutChange()...", this));
+  NotifyTSFOfLayoutChange();
+
+  // If TIP didn't retrieved our layout information during a call of
+  // NotifyTSFOfLayoutChange(), it means that the TIP already gave up to
+  // retry to retrieve layout information or doesn't necessary it anymore.
+  // But don't forget that the call may have caused returning TS_E_NOLAYOUT
+  // error again.  In such case we still need to call OnLayoutChange() later.
+  if (!mHasReturnedNoLayoutError && mWaitingQueryLayout) {
+    mWaitingQueryLayout = false;
+    MOZ_LOG(sTextStoreLog, LogLevel::Warning,
+            ("TSF: 0x%p   TSFTextStore::NotifyTSFOfLayoutChangeAgain(), "
+             "called NotifyTSFOfLayoutChange() but TIP didn't retry to "
+             "retrieve the layout information", this));
+  } else {
+    MOZ_LOG(sTextStoreLog, LogLevel::Info,
+            ("TSF: 0x%p   TSFTextStore::NotifyTSFOfLayoutChangeAgain(), "
+             "called NotifyTSFOfLayoutChange()", this));
+  }
 }
 
 nsresult
@@ -4990,10 +5163,35 @@ TSFTextStore::CommitCompositionInternal(bool aDiscard)
           mComposition.mView.get(),
           NS_ConvertUTF16toUTF8(mComposition.mString).get()));
 
+  // If the document is locked, TSF will fail to commit composition since
+  // TSF needs another document lock.  So, let's put off the request.
+  // Note that TextComposition will commit composition in the focused editor
+  // with the latest composition string for web apps and waits asynchronous
+  // committing messages.  Therefore, we can and need to perform this
+  // asynchronously.
+  if (IsReadLocked()) {
+    if (mDeferCommittingComposition || mDeferCancellingComposition) {
+      MOZ_LOG(sTextStoreLog, LogLevel::Debug,
+        ("TSF: 0x%p   TSFTextStore::CommitCompositionInternal(), "
+         "does nothing because already called and waiting unlock...", this));
+      return;
+    }
+    if (aDiscard) {
+      mDeferCancellingComposition = true;
+    } else {
+      mDeferCommittingComposition = true;
+    }
+    MOZ_LOG(sTextStoreLog, LogLevel::Debug,
+      ("TSF: 0x%p   TSFTextStore::CommitCompositionInternal(), "
+       "putting off to request to %s composition after unlocking the document",
+       this, aDiscard ? "cancel" : "commit"));
+    return;
+  }
+
   if (mComposition.IsComposing() && aDiscard) {
     LONG endOffset = mComposition.EndOffset();
     mComposition.mString.Truncate(0);
-    if (mSink && !mLock) {
+    if (mSink) {
       TS_TEXTCHANGE textChange;
       textChange.acpStart = mComposition.mStart;
       textChange.acpOldEnd = endOffset;
@@ -5110,7 +5308,8 @@ TSFTextStore::SetInputContext(nsWindowBase* aWidget,
 
   if (aAction.mFocusChange != InputContextAction::FOCUS_NOT_CHANGED) {
     if (sEnabledTextStore) {
-      sEnabledTextStore->SetInputScope(aContext.mHTMLInputType);
+      sEnabledTextStore->SetInputScope(aContext.mHTMLInputType,
+                                       aContext.mHTMLInputInputmode);
     }
     return;
   }
@@ -5450,6 +5649,13 @@ TSFTextStore::ProcessMessage(nsWindowBase* aWindow,
       }
       CommitComposition(false);
       break;
+    case MOZ_WM_NOTIY_TSF_OF_LAYOUT_CHANGE: {
+      TSFTextStore* textStore = reinterpret_cast<TSFTextStore*>(aWParam);
+      if (textStore == sEnabledTextStore) {
+        textStore->NotifyTSFOfLayoutChangeAgain();
+      }
+      break;
+    }
   }
 }
 

@@ -17,7 +17,7 @@ function test() {
   let previouslySelectedEngine = Services.search.currentEngine;
   Services.search.currentEngine = engine;
   engine.alias = "b";
-  
+
   let base = "https://www.bing.com/search?q=foo&pc=MOZI";
   let url;
 
@@ -134,6 +134,9 @@ function test() {
       let docStart = Ci.nsIWebProgressListener.STATE_IS_DOCUMENT |
                      Ci.nsIWebProgressListener.STATE_START;
       if (!(flags & docStart) || !webProgress.isTopLevel)
+        return;
+
+      if (req.originalURI.spec == "about:blank")
         return;
 
       info("received document start");

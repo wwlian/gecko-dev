@@ -16,11 +16,12 @@
 #include "NetworkUtils.h"
 
 #include "prprf.h"
+#include "SystemProperty.h"
 
 #include <android/log.h>
-#include <cutils/properties.h>
 #include <limits>
 #include "mozilla/dom/network/NetUtils.h"
+#include "mozilla/fallible.h"
 
 #include <errno.h>
 #include <string.h>
@@ -42,6 +43,7 @@
 
 using namespace mozilla::dom;
 using namespace mozilla::ipc;
+using mozilla::system::Property;
 
 static const char* PERSIST_SYS_USB_CONFIG_PROPERTY = "persist.sys.usb.config";
 static const char* SYS_USB_CONFIG_PROPERTY         = "sys.usb.config";
@@ -91,9 +93,9 @@ static uint32_t SDK_VERSION;
 static uint32_t SUPPORT_IPV6_TETHERING;
 
 struct IFProperties {
-  char gateway[PROPERTY_VALUE_MAX];
-  char dns1[PROPERTY_VALUE_MAX];
-  char dns2[PROPERTY_VALUE_MAX];
+  char gateway[Property::VALUE_MAX_LENGTH];
+  char dns1[Property::VALUE_MAX_LENGTH];
+  char dns2[Property::VALUE_MAX_LENGTH];
 };
 
 struct CurrentCommand {
@@ -138,7 +140,7 @@ const CommandFunc NetworkUtils::sWifiEnableChain[] = {
   NetworkUtils::startAccessPointDriver,
   NetworkUtils::setAccessPoint,
   NetworkUtils::startSoftAP,
-  NetworkUtils::setInterfaceUp,
+  NetworkUtils::setConfig,
   NetworkUtils::tetherInterface,
   NetworkUtils::addInterfaceToLocalNetwork,
   NetworkUtils::addRouteToLocalNetwork,
@@ -182,7 +184,7 @@ const CommandFunc NetworkUtils::sWifiRetryChain[] = {
   NetworkUtils::startAccessPointDriver,
   NetworkUtils::setAccessPoint,
   NetworkUtils::startSoftAP,
-  NetworkUtils::setInterfaceUp,
+  NetworkUtils::setConfig,
   NetworkUtils::tetherInterface,
   NetworkUtils::addInterfaceToLocalNetwork,
   NetworkUtils::addRouteToLocalNetwork,
@@ -200,7 +202,7 @@ const CommandFunc NetworkUtils::sWifiOperationModeChain[] = {
 };
 
 const CommandFunc NetworkUtils::sUSBEnableChain[] = {
-  NetworkUtils::setInterfaceUp,
+  NetworkUtils::setConfig,
   NetworkUtils::enableNat,
   NetworkUtils::setIpForwardingEnabled,
   NetworkUtils::tetherInterface,
@@ -240,7 +242,7 @@ const CommandFunc NetworkUtils::sUpdateUpStreamChain[] = {
 };
 
 const CommandFunc NetworkUtils::sStartDhcpServerChain[] = {
-  NetworkUtils::setInterfaceUp,
+  NetworkUtils::setConfig,
   NetworkUtils::startTethering,
   NetworkUtils::setDhcpServerSuccess
 };
@@ -266,6 +268,21 @@ const CommandFunc NetworkUtils::sNetworkInterfaceDisableAlarmChain[] = {
 const CommandFunc NetworkUtils::sNetworkInterfaceSetAlarmChain[] = {
   NetworkUtils::setAlarm,
   NetworkUtils::networkInterfaceAlarmSuccess
+};
+
+const CommandFunc NetworkUtils::sGetInterfacesChain[] = {
+  NetworkUtils::getInterfaceList,
+  NetworkUtils::getInterfacesSuccess
+};
+
+const CommandFunc NetworkUtils::sGetInterfaceConfigChain[] = {
+  NetworkUtils::getConfig,
+  NetworkUtils::getInterfaceConfigSuccess
+};
+
+const CommandFunc NetworkUtils::sSetInterfaceConfigChain[] = {
+  NetworkUtils::setConfig,
+  NetworkUtils::setInterfaceConfigSuccess
 };
 
 const CommandFunc NetworkUtils::sTetheringInterfaceSetAlarmChain[] = {
@@ -367,18 +384,27 @@ static void join(nsTArray<nsCString>& array,
 #undef CHECK_LEN
 }
 
+static void convertUTF8toUTF16(nsTArray<nsCString>& narrow,
+                               nsTArray<nsString>& wide,
+                               uint32_t length)
+{
+  for (uint32_t i = 0; i < length; i++) {
+    wide.AppendElement(NS_ConvertUTF8toUTF16(narrow[i].get()));
+  }
+}
+
 /**
  * Helper function to get network interface properties from the system property table.
  */
 static void getIFProperties(const char* ifname, IFProperties& prop)
 {
-  char key[PROPERTY_KEY_MAX];
-  PR_snprintf(key, PROPERTY_KEY_MAX - 1, "net.%s.gw", ifname);
-  property_get(key, prop.gateway, "");
-  PR_snprintf(key, PROPERTY_KEY_MAX - 1, "net.%s.dns1", ifname);
-  property_get(key, prop.dns1, "");
-  PR_snprintf(key, PROPERTY_KEY_MAX - 1, "net.%s.dns2", ifname);
-  property_get(key, prop.dns2, "");
+  char key[Property::KEY_MAX_LENGTH];
+  PR_snprintf(key, Property::KEY_MAX_LENGTH - 1, "net.%s.gw", ifname);
+  Property::Get(key, prop.gateway, "");
+  PR_snprintf(key, Property::KEY_MAX_LENGTH - 1, "net.%s.dns1", ifname);
+  Property::Get(key, prop.dns1, "");
+  PR_snprintf(key, Property::KEY_MAX_LENGTH - 1, "net.%s.dns2", ifname);
+  Property::Get(key, prop.dns2, "");
 }
 
 static int getIpType(const char *aIp) {
@@ -766,27 +792,6 @@ void NetworkUtils::removeGlobalAlarm(CommandChain* aChain,
   char command[MAX_COMMAND_SIZE];
 
   PR_snprintf(command, MAX_COMMAND_SIZE - 1, "bandwidth removeglobalalert");
-  doCommand(command, aChain, aCallback);
-}
-
-void NetworkUtils::setInterfaceUp(CommandChain* aChain,
-                                  CommandCallback aCallback,
-                                  NetworkResultOptions& aResult)
-{
-  char command[MAX_COMMAND_SIZE];
-  if (SDK_VERSION >= 16) {
-    PR_snprintf(command, MAX_COMMAND_SIZE - 1, "interface setcfg %s %s %s %s",
-                     GET_CHAR(mIfname),
-                     GET_CHAR(mIp),
-                     GET_CHAR(mPrefix),
-                     GET_CHAR(mLink));
-  } else {
-    PR_snprintf(command, MAX_COMMAND_SIZE - 1, "interface setcfg %s %s %s [%s]",
-                     GET_CHAR(mIfname),
-                     GET_CHAR(mIp),
-                     GET_CHAR(mPrefix),
-                     GET_CHAR(mLink));
-  }
   doCommand(command, aChain, aCallback);
 }
 
@@ -1195,6 +1200,47 @@ void NetworkUtils::setInterfaceDns(CommandChain* aChain,
     written += ret;
   }
 
+  doCommand(command, aChain, aCallback);
+}
+
+void NetworkUtils::getInterfaceList(CommandChain* aChain,
+                                    CommandCallback aCallback,
+                                    NetworkResultOptions& aResult)
+{
+  char command[MAX_COMMAND_SIZE];
+  snprintf(command, MAX_COMMAND_SIZE - 1, "interface list");
+
+  doCommand(command, aChain, aCallback);
+}
+
+void NetworkUtils::getConfig(CommandChain* aChain,
+                             CommandCallback aCallback,
+                             NetworkResultOptions& aResult)
+{
+  char command[MAX_COMMAND_SIZE];
+  snprintf(command, MAX_COMMAND_SIZE - 1, "interface getcfg %s", GET_CHAR(mIfname));
+
+  doCommand(command, aChain, aCallback);
+}
+
+void NetworkUtils::setConfig(CommandChain* aChain,
+                             CommandCallback aCallback,
+                             NetworkResultOptions& aResult)
+{
+  char command[MAX_COMMAND_SIZE];
+  if (SDK_VERSION >= 16) {
+    snprintf(command, MAX_COMMAND_SIZE - 1, "interface setcfg %s %s %s %s",
+                      GET_CHAR(mIfname),
+                      GET_CHAR(mIp),
+                      GET_CHAR(mPrefix),
+                      GET_CHAR(mLink));
+  } else {
+    snprintf(command, MAX_COMMAND_SIZE - 1, "interface setcfg %s %s %s [%s]",
+                      GET_CHAR(mIfname),
+                      GET_CHAR(mIp),
+                      GET_CHAR(mPrefix),
+                      GET_CHAR(mLink));
+  }
   doCommand(command, aChain, aCallback);
 }
 
@@ -1615,6 +1661,80 @@ void NetworkUtils::defaultAsyncFailureHandler(NetworkParams& aOptions, NetworkRe
   postMessage(aOptions, aResult);
 }
 
+void NetworkUtils::getInterfacesFail(NetworkParams& aOptions, NetworkResultOptions& aResult)
+{
+  postMessage(aOptions, aResult);
+}
+
+void NetworkUtils::getInterfacesSuccess(CommandChain* aChain,
+                                        CommandCallback aCallback,
+                                        NetworkResultOptions& aResult)
+{
+  char buf[BUF_SIZE];
+  NS_ConvertUTF16toUTF8 reason(aResult.mResultReason);
+  memcpy(buf, reason.get(), strlen(reason.get()));
+
+  nsTArray<nsCString> result;
+  split(buf, INTERFACE_DELIMIT, result);
+
+  nsTArray<nsString> interfaceList;
+  uint32_t length = result.Length();
+  convertUTF8toUTF16(result, interfaceList, length);
+
+  aResult.mInterfaceList.Construct();
+  for (uint32_t i = 0; i < length; i++) {
+    aResult.mInterfaceList.Value().AppendElement(interfaceList[i], fallible_t());
+  }
+
+  postMessage(aChain->getParams(), aResult);
+  finalizeSuccess(aChain, aResult);
+}
+
+void NetworkUtils::getInterfaceConfigFail(NetworkParams& aOptions,
+                                          NetworkResultOptions& aResult)
+{
+  postMessage(aOptions, aResult);
+}
+
+void NetworkUtils::getInterfaceConfigSuccess(CommandChain* aChain,
+                                             CommandCallback aCallback,
+                                             NetworkResultOptions& aResult)
+{
+  char buf[BUF_SIZE];
+  NS_ConvertUTF16toUTF8 reason(aResult.mResultReason);
+  memcpy(buf, reason.get(), strlen(reason.get()));
+
+  nsTArray<nsCString> result;
+  split(buf, NETD_MESSAGE_DELIMIT, result);
+
+  ASSIGN_FIELD_VALUE(mMacAddr, NS_ConvertUTF8toUTF16(result[0]))
+  ASSIGN_FIELD_VALUE(mIpAddr, NS_ConvertUTF8toUTF16(result[1]))
+  ASSIGN_FIELD_VALUE(mPrefixLength, atol(result[2].get()))
+
+  if (result[3].Find("up")) {
+    ASSIGN_FIELD_VALUE(mFlag, NS_ConvertUTF8toUTF16("up"))
+  } else {
+    ASSIGN_FIELD_VALUE(mFlag, NS_ConvertUTF8toUTF16("down"))
+  }
+
+  postMessage(aChain->getParams(), aResult);
+  finalizeSuccess(aChain, aResult);
+}
+
+void NetworkUtils::setInterfaceConfigFail(NetworkParams& aOptions,
+                                          NetworkResultOptions& aResult)
+{
+  postMessage(aOptions, aResult);
+}
+
+void NetworkUtils::setInterfaceConfigSuccess(CommandChain* aChain,
+                                             CommandCallback aCallback,
+                                             NetworkResultOptions& aResult)
+{
+  postMessage(aChain->getParams(), aResult);
+  finalizeSuccess(aChain, aResult);
+}
+
 #undef ASSIGN_FIELD
 #undef ASSIGN_FIELD_VALUE
 
@@ -1623,11 +1743,11 @@ NetworkUtils::NetworkUtils(MessageCallback aCallback)
 {
   mNetUtils = new NetUtils();
 
-  char value[PROPERTY_VALUE_MAX];
-  property_get("ro.build.version.sdk", value, nullptr);
+  char value[Property::VALUE_MAX_LENGTH];
+  Property::Get("ro.build.version.sdk", value, nullptr);
   SDK_VERSION = atoi(value);
 
-  property_get(IPV6_TETHERING, value, "0");
+  Property::Get(IPV6_TETHERING, value, "0");
   SUPPORT_IPV6_TETHERING = atoi(value);
 
   gNetworkUtils = this;
@@ -1687,6 +1807,9 @@ void NetworkUtils::ExecuteCommand(NetworkParams aOptions)
     BUILD_ENTRY(createNetwork),
     BUILD_ENTRY(destroyNetwork),
     BUILD_ENTRY(getNetId),
+    BUILD_ENTRY(getInterfaces),
+    BUILD_ENTRY(getInterfaceConfig),
+    BUILD_ENTRY(setInterfaceConfig),
     BUILD_ENTRY(setMtu),
 
     #undef BUILD_ENTRY
@@ -1831,26 +1954,26 @@ CommandResult NetworkUtils::setDNS(NetworkParams& aOptions)
     for (uint32_t i = 0; i < length; i++) {
       NS_ConvertUTF16toUTF8 autoDns(aOptions.mDnses[i]);
 
-      char dns_prop_key[PROPERTY_VALUE_MAX];
+      char dns_prop_key[Property::VALUE_MAX_LENGTH];
       PR_snprintf(dns_prop_key, sizeof dns_prop_key, "net.dns%d", i+1);
-      property_set(dns_prop_key, autoDns.get());
+      Property::Set(dns_prop_key, autoDns.get());
     }
   } else {
     // Set dnses from system properties.
     IFProperties interfaceProperties;
     getIFProperties(GET_CHAR(mIfname), interfaceProperties);
 
-    property_set("net.dns1", interfaceProperties.dns1);
-    property_set("net.dns2", interfaceProperties.dns2);
+    Property::Set("net.dns1", interfaceProperties.dns1);
+    Property::Set("net.dns2", interfaceProperties.dns2);
   }
 
   // Bump the DNS change property.
-  char dnschange[PROPERTY_VALUE_MAX];
-  property_get("net.dnschange", dnschange, "0");
+  char dnschange[Property::VALUE_MAX_LENGTH];
+  Property::Get("net.dnschange", dnschange, "0");
 
-  char num[PROPERTY_VALUE_MAX];
-  PR_snprintf(num, PROPERTY_VALUE_MAX - 1, "%d", atoi(dnschange) + 1);
-  property_set("net.dnschange", num);
+  char num[Property::VALUE_MAX_LENGTH];
+  PR_snprintf(num, Property::VALUE_MAX_LENGTH - 1, "%d", atoi(dnschange) + 1);
+  Property::Set("net.dnschange", num);
 
   // DNS needs to be set through netd since JellyBean (4.3).
   if (SDK_VERSION >= 20) {
@@ -1909,14 +2032,14 @@ CommandResult NetworkUtils::dhcpRequest(NetworkParams& aOptions) {
     mozilla::dom::NetworkResultOptions result;
 
     NS_ConvertUTF16toUTF8 autoIfname(aOptions.mIfname);
-    char ipaddr[PROPERTY_VALUE_MAX];
-    char gateway[PROPERTY_VALUE_MAX];
+    char ipaddr[Property::VALUE_MAX_LENGTH];
+    char gateway[Property::VALUE_MAX_LENGTH];
     uint32_t prefixLength;
-    char dns1[PROPERTY_VALUE_MAX];
-    char dns2[PROPERTY_VALUE_MAX];
-    char server[PROPERTY_VALUE_MAX];
+    char dns1[Property::VALUE_MAX_LENGTH];
+    char dns2[Property::VALUE_MAX_LENGTH];
+    char server[Property::VALUE_MAX_LENGTH];
     uint32_t lease;
-    char vendorinfo[PROPERTY_VALUE_MAX];
+    char vendorinfo[Property::VALUE_MAX_LENGTH];
     int32_t ret = mNetUtils->do_dhcp_do_request(autoIfname.get(),
                                                 ipaddr,
                                                 gateway,
@@ -1936,6 +2059,7 @@ CommandResult NetworkUtils::dhcpRequest(NetworkParams& aOptions) {
     result.mServer_str = NS_ConvertUTF8toUTF16(server);
     result.mVendor_str = NS_ConvertUTF8toUTF16(vendorinfo);
     result.mLease = lease;
+    result.mPrefixLength = prefixLength;
     result.mMask = makeMask(prefixLength);
 
     uint32_t inet4; // only support IPv4 for now.
@@ -2037,11 +2161,11 @@ CommandResult NetworkUtils::setDefaultRouteLegacy(NetworkParams& aOptions)
     }
   } else {
     // Set default froute from system properties.
-    char key[PROPERTY_KEY_MAX];
-    char gateway[PROPERTY_KEY_MAX];
+    char key[Property::KEY_MAX_LENGTH];
+    char gateway[Property::KEY_MAX_LENGTH];
 
     PR_snprintf(key, sizeof key - 1, "net.%s.gw", autoIfname.get());
-    property_get(key, gateway, "");
+    Property::Get(key, gateway, "");
 
     int type = getIpType(gateway);
     if (type != AF_INET && type != AF_INET6) {
@@ -2538,8 +2662,8 @@ CommandResult NetworkUtils::checkUsbRndisState(NetworkParams& aOptions)
 {
   static uint32_t retry = 0;
 
-  char currentState[PROPERTY_VALUE_MAX];
-  property_get(SYS_USB_STATE_PROPERTY, currentState, nullptr);
+  char currentState[Property::VALUE_MAX_LENGTH];
+  Property::Get(SYS_USB_STATE_PROPERTY, currentState, nullptr);
 
   nsTArray<nsCString> stateFuncs;
   split(currentState, USB_CONFIG_DELIMIT, stateFuncs);
@@ -2588,14 +2712,14 @@ CommandResult NetworkUtils::enableUsbRndis(NetworkParams& aOptions)
   //
   // and when rndis is disabled, it should revert to persist.sys.usb.config
 
-  char currentConfig[PROPERTY_VALUE_MAX];
-  property_get(SYS_USB_CONFIG_PROPERTY, currentConfig, nullptr);
+  char currentConfig[Property::VALUE_MAX_LENGTH];
+  Property::Get(SYS_USB_CONFIG_PROPERTY, currentConfig, nullptr);
 
   nsTArray<nsCString> configFuncs;
   split(currentConfig, USB_CONFIG_DELIMIT, configFuncs);
 
-  char persistConfig[PROPERTY_VALUE_MAX];
-  property_get(PERSIST_SYS_USB_CONFIG_PROPERTY, persistConfig, nullptr);
+  char persistConfig[Property::VALUE_MAX_LENGTH];
+  Property::Get(PERSIST_SYS_USB_CONFIG_PROPERTY, persistConfig, nullptr);
 
   nsTArray<nsCString> persistFuncs;
   split(persistConfig, USB_CONFIG_DELIMIT, persistFuncs);
@@ -2613,11 +2737,11 @@ CommandResult NetworkUtils::enableUsbRndis(NetworkParams& aOptions)
     configFuncs = persistFuncs;
   }
 
-  char newConfig[PROPERTY_VALUE_MAX] = "";
-  property_get(SYS_USB_CONFIG_PROPERTY, currentConfig, nullptr);
-  join(configFuncs, USB_CONFIG_DELIMIT, PROPERTY_VALUE_MAX, newConfig);
+  char newConfig[Property::VALUE_MAX_LENGTH] = "";
+  Property::Get(SYS_USB_CONFIG_PROPERTY, currentConfig, nullptr);
+  join(configFuncs, USB_CONFIG_DELIMIT, Property::VALUE_MAX_LENGTH, newConfig);
   if (strcmp(currentConfig, newConfig)) {
-    property_set(SYS_USB_CONFIG_PROPERTY, newConfig);
+    Property::Set(SYS_USB_CONFIG_PROPERTY, newConfig);
   }
 
   // Trigger the timer to check usb state and report the result to NetworkManager.
@@ -2724,6 +2848,33 @@ CommandResult NetworkUtils::getNetId(NetworkParams& aOptions)
   }
   result.mNetId.AppendInt(netIdInfo.mNetId, 10);
   return result;
+}
+
+/**
+ * Get existing network interfaces.
+ */
+CommandResult NetworkUtils::getInterfaces(NetworkParams& aOptions)
+{
+  runChain(aOptions, sGetInterfacesChain, getInterfacesFail);
+  return CommandResult::Pending();
+}
+
+/**
+ * Get network config of a specified interface.
+ */
+CommandResult NetworkUtils::getInterfaceConfig(NetworkParams& aOptions)
+{
+  runChain(aOptions, sGetInterfaceConfigChain, getInterfaceConfigFail);
+  return CommandResult::Pending();
+}
+
+/**
+ * Set network config for a specified interface.
+ */
+CommandResult NetworkUtils::setInterfaceConfig(NetworkParams& aOptions)
+{
+  runChain(aOptions, sSetInterfaceConfigChain, setInterfaceConfigFail);
+  return CommandResult::Pending();
 }
 
 CommandResult NetworkUtils::setMtu(NetworkParams& aOptions)

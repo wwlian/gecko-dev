@@ -1,7 +1,7 @@
-/*
- * Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/
- */
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 // Whitelisting this test.
 // As part of bug 1077403, the leaking uncaught rejections should be fixed.
@@ -56,7 +56,7 @@ var inputTests = [
   {
     input: "testNodeList()",
     output: "NodeList [ <html>, <head>, <meta>, <title>, " +
-            "<body#body-id.body-class>, <p>, <iframe>, " +
+            "<body#body-id.body-class>, <p>, <p#lots-of-attributes>, <iframe>, " +
             "<div.some.classname.here.with.more.classnames.here>, <script> ]",
     printOutput: "[object NodeList]",
     inspectable: true,
@@ -67,6 +67,15 @@ var inputTests = [
   {
     input: "testNodeInIframe()",
     output: "<p>",
+    printOutput: "[object HTMLParagraphElement]",
+    inspectable: true,
+    noClick: true,
+    inspectorIcon: true
+  },
+
+  {
+    input: "testLotsOfAttributes()",
+    output: '<p n="" m="" l="" k="" j="" i="" h="" g="" f="" e="" d="" c="" b="" a="" id="lots-of-attributes">',
     printOutput: "[object HTMLParagraphElement]",
     inspectable: true,
     noClick: true,
@@ -98,7 +107,7 @@ var inputTests = [
     inspectable: true,
     noClick: true,
     inspectorIcon: false
-  }
+  },
 ];
 
 function test() {

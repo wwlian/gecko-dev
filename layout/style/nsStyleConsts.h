@@ -120,8 +120,9 @@ enum class StyleBoxSizing : uint8_t {
 #define NS_STYLE_USER_MODIFY_WRITE_ONLY  2
 
 // -moz-window-dragging
-#define NS_STYLE_WINDOW_DRAGGING_DRAG    0
-#define NS_STYLE_WINDOW_DRAGGING_NO_DRAG 1
+#define NS_STYLE_WINDOW_DRAGGING_DEFAULT 0
+#define NS_STYLE_WINDOW_DRAGGING_DRAG    1
+#define NS_STYLE_WINDOW_DRAGGING_NO_DRAG 2
 
 // box-align
 #define NS_STYLE_BOX_ALIGN_STRETCH     0
@@ -260,51 +261,57 @@ enum class FillMode : uint32_t;
 #define NS_STYLE_ANIMATION_PLAY_STATE_RUNNING     0
 #define NS_STYLE_ANIMATION_PLAY_STATE_PAUSED      1
 
-// See nsStyleBackground
-#define NS_STYLE_BG_ATTACHMENT_SCROLL     0
-#define NS_STYLE_BG_ATTACHMENT_FIXED      1
-#define NS_STYLE_BG_ATTACHMENT_LOCAL      2
+// See nsStyleImageLayers
+#define NS_STYLE_IMAGELAYER_ATTACHMENT_SCROLL        0
+#define NS_STYLE_IMAGELAYER_ATTACHMENT_FIXED         1
+#define NS_STYLE_IMAGELAYER_ATTACHMENT_LOCAL         2
 
-// See nsStyleBackground
+// See nsStyleImageLayers
 // Code depends on these constants having the same values as BG_ORIGIN_*
-#define NS_STYLE_BG_CLIP_BORDER           0
-#define NS_STYLE_BG_CLIP_PADDING          1
-#define NS_STYLE_BG_CLIP_CONTENT          2
+#define NS_STYLE_IMAGELAYER_CLIP_BORDER              0
+#define NS_STYLE_IMAGELAYER_CLIP_PADDING             1
+#define NS_STYLE_IMAGELAYER_CLIP_CONTENT             2
+
 // A magic value that we use for our "pretend that background-clip is
 // 'padding' when we have a solid border" optimization.  This isn't
-// actually equal to NS_STYLE_BG_CLIP_PADDING because using that
+// actually equal to NS_STYLE_IMAGELAYER_CLIP_PADDING because using that
 // causes antialiasing seams between the background and border.  This
 // is a backend-only value.
-#define NS_STYLE_BG_CLIP_MOZ_ALMOST_PADDING 127
+#define NS_STYLE_IMAGELAYER_CLIP_MOZ_ALMOST_PADDING  127
+
+// See nsStyleImageLayers
+// Code depends on these constants having the same values as BG_CLIP_*
+#define NS_STYLE_IMAGELAYER_ORIGIN_BORDER            0
+#define NS_STYLE_IMAGELAYER_ORIGIN_PADDING           1
+#define NS_STYLE_IMAGELAYER_ORIGIN_CONTENT           2
+
+// See nsStyleImageLayers
+// The parser code depends on |ing these values together.
+#define NS_STYLE_IMAGELAYER_POSITION_CENTER          (1<<0)
+#define NS_STYLE_IMAGELAYER_POSITION_TOP             (1<<1)
+#define NS_STYLE_IMAGELAYER_POSITION_BOTTOM          (1<<2)
+#define NS_STYLE_IMAGELAYER_POSITION_LEFT            (1<<3)
+#define NS_STYLE_IMAGELAYER_POSITION_RIGHT           (1<<4)
+
+// See nsStyleImageLayers
+#define NS_STYLE_IMAGELAYER_REPEAT_NO_REPEAT         0x00
+#define NS_STYLE_IMAGELAYER_REPEAT_REPEAT_X          0x01
+#define NS_STYLE_IMAGELAYER_REPEAT_REPEAT_Y          0x02
+#define NS_STYLE_IMAGELAYER_REPEAT_REPEAT            0x03
+
+// See nsStyleImageLayers
+#define NS_STYLE_IMAGELAYER_SIZE_CONTAIN             0
+#define NS_STYLE_IMAGELAYER_SIZE_COVER               1
+
+// Mask mode
+#define NS_STYLE_MASK_MODE_ALPHA                0
+#define NS_STYLE_MASK_MODE_LUMINANCE            1
+#define NS_STYLE_MASK_MODE_MATCH_SOURCE         2
 
 // See nsStyleBackground
 #define NS_STYLE_BG_INLINE_POLICY_EACH_BOX      0
 #define NS_STYLE_BG_INLINE_POLICY_CONTINUOUS    1
 #define NS_STYLE_BG_INLINE_POLICY_BOUNDING_BOX  2
-
-// See nsStyleBackground
-// Code depends on these constants having the same values as BG_CLIP_*
-#define NS_STYLE_BG_ORIGIN_BORDER         0
-#define NS_STYLE_BG_ORIGIN_PADDING        1
-#define NS_STYLE_BG_ORIGIN_CONTENT        2
-
-// See nsStyleBackground
-// The parser code depends on |ing these values together.
-#define NS_STYLE_BG_POSITION_CENTER  (1<<0)
-#define NS_STYLE_BG_POSITION_TOP     (1<<1)
-#define NS_STYLE_BG_POSITION_BOTTOM  (1<<2)
-#define NS_STYLE_BG_POSITION_LEFT    (1<<3)
-#define NS_STYLE_BG_POSITION_RIGHT   (1<<4)
-
-// See nsStyleBackground
-#define NS_STYLE_BG_REPEAT_NO_REPEAT                0x00
-#define NS_STYLE_BG_REPEAT_REPEAT_X                 0x01
-#define NS_STYLE_BG_REPEAT_REPEAT_Y                 0x02
-#define NS_STYLE_BG_REPEAT_REPEAT                   0x03
-
-// See nsStyleBackground
-#define NS_STYLE_BG_SIZE_CONTAIN  0
-#define NS_STYLE_BG_SIZE_COVER    1
 
 // See nsStyleTable
 #define NS_STYLE_BORDER_COLLAPSE                0
@@ -473,29 +480,31 @@ enum class FillMode : uint32_t;
 
 // Shared constants for all align/justify properties (nsStylePosition):
 #define NS_STYLE_ALIGN_AUTO             0
-#define NS_STYLE_ALIGN_START            1
-#define NS_STYLE_ALIGN_END              2
-#define NS_STYLE_ALIGN_FLEX_START       3
-#define NS_STYLE_ALIGN_FLEX_END         4
-#define NS_STYLE_ALIGN_CENTER           5
-#define NS_STYLE_ALIGN_LEFT             6
-#define NS_STYLE_ALIGN_RIGHT            7
-#define NS_STYLE_ALIGN_BASELINE         8
-#define NS_STYLE_ALIGN_LAST_BASELINE    9
-#define NS_STYLE_ALIGN_STRETCH          10
-#define NS_STYLE_ALIGN_SELF_START       11
-#define NS_STYLE_ALIGN_SELF_END         12
-#define NS_STYLE_ALIGN_SPACE_BETWEEN    13
-#define NS_STYLE_ALIGN_SPACE_AROUND     14
-#define NS_STYLE_ALIGN_SPACE_EVENLY     15
-#define NS_STYLE_ALIGN_LEGACY        0x10 // mutually exclusive w. SAFE & TRUE
-#define NS_STYLE_ALIGN_SAFE          0x20
-#define NS_STYLE_ALIGN_TRUE          0x40 // mutually exclusive w. SAFE
-#define NS_STYLE_ALIGN_FLAG_BITS     0xF0
+#define NS_STYLE_ALIGN_NORMAL           1
+#define NS_STYLE_ALIGN_START            2
+#define NS_STYLE_ALIGN_END              3
+#define NS_STYLE_ALIGN_FLEX_START       4
+#define NS_STYLE_ALIGN_FLEX_END         5
+#define NS_STYLE_ALIGN_CENTER           6
+#define NS_STYLE_ALIGN_LEFT             7
+#define NS_STYLE_ALIGN_RIGHT            8
+#define NS_STYLE_ALIGN_BASELINE         9
+#define NS_STYLE_ALIGN_LAST_BASELINE    10
+#define NS_STYLE_ALIGN_STRETCH          11
+#define NS_STYLE_ALIGN_SELF_START       12
+#define NS_STYLE_ALIGN_SELF_END         13
+#define NS_STYLE_ALIGN_SPACE_BETWEEN    14
+#define NS_STYLE_ALIGN_SPACE_AROUND     15
+#define NS_STYLE_ALIGN_SPACE_EVENLY     16
+#define NS_STYLE_ALIGN_LEGACY        0x20 // mutually exclusive w. SAFE & UNSAFE
+#define NS_STYLE_ALIGN_SAFE          0x40
+#define NS_STYLE_ALIGN_UNSAFE        0x80 // mutually exclusive w. SAFE
+#define NS_STYLE_ALIGN_FLAG_BITS     0xE0
 #define NS_STYLE_ALIGN_ALL_BITS      0xFF
 #define NS_STYLE_ALIGN_ALL_SHIFT        8
 
 #define NS_STYLE_JUSTIFY_AUTO             NS_STYLE_ALIGN_AUTO
+#define NS_STYLE_JUSTIFY_NORMAL           NS_STYLE_ALIGN_NORMAL
 #define NS_STYLE_JUSTIFY_START            NS_STYLE_ALIGN_START
 #define NS_STYLE_JUSTIFY_END              NS_STYLE_ALIGN_END
 #define NS_STYLE_JUSTIFY_FLEX_START       NS_STYLE_ALIGN_FLEX_START
@@ -513,7 +522,7 @@ enum class FillMode : uint32_t;
 #define NS_STYLE_JUSTIFY_SPACE_EVENLY     NS_STYLE_ALIGN_SPACE_EVENLY
 #define NS_STYLE_JUSTIFY_LEGACY           NS_STYLE_ALIGN_LEGACY
 #define NS_STYLE_JUSTIFY_SAFE             NS_STYLE_ALIGN_SAFE
-#define NS_STYLE_JUSTIFY_TRUE             NS_STYLE_ALIGN_TRUE
+#define NS_STYLE_JUSTIFY_UNSAFE           NS_STYLE_ALIGN_UNSAFE
 #define NS_STYLE_JUSTIFY_FLAG_BITS        NS_STYLE_ALIGN_FLAG_BITS
 #define NS_STYLE_JUSTIFY_ALL_BITS         NS_STYLE_ALIGN_ALL_BITS
 #define NS_STYLE_JUSTIFY_ALL_SHIFT        NS_STYLE_ALIGN_ALL_SHIFT
@@ -636,6 +645,10 @@ enum class FillMode : uint32_t;
 // Should not overlap with NS_STYLE_GRID_TEMPLATE_SUBGRID
 #define NS_STYLE_GRID_TRACK_BREADTH_MAX_CONTENT 1
 #define NS_STYLE_GRID_TRACK_BREADTH_MIN_CONTENT 2
+
+// CSS Grid keywords for <auto-repeat>
+#define NS_STYLE_GRID_REPEAT_AUTO_FILL          0
+#define NS_STYLE_GRID_REPEAT_AUTO_FIT           1
 
 // defaults per MathML spec
 #define NS_MATHML_DEFAULT_SCRIPT_SIZE_MULTIPLIER 0.71f
@@ -796,7 +809,7 @@ enum class FillMode : uint32_t;
 // NS_STYLE_TEXT_ALIGN_MOZ_CENTER_OR_INHERIT is only used in data structs; it
 // is never present in stylesheets or computed data.
 #define NS_STYLE_TEXT_ALIGN_MOZ_CENTER_OR_INHERIT 11
-#define NS_STYLE_TEXT_ALIGN_TRUE                  12
+#define NS_STYLE_TEXT_ALIGN_UNSAFE                12
 #define NS_STYLE_TEXT_ALIGN_MATCH_PARENT          13
 // Note: make sure that the largest NS_STYLE_TEXT_ALIGN_* value is smaller than
 // the smallest NS_STYLE_VERTICAL_ALIGN_* value below!
@@ -1144,6 +1157,12 @@ enum class FillMode : uint32_t;
 #define NS_STYLE_BLEND_COLOR                        14
 #define NS_STYLE_BLEND_LUMINOSITY                   15
 
+// composite
+#define NS_STYLE_MASK_COMPOSITE_ADD                 0
+#define NS_STYLE_MASK_COMPOSITE_SUBSTRACT           1
+#define NS_STYLE_MASK_COMPOSITE_INTERSECT           2
+#define NS_STYLE_MASK_COMPOSITE_EXCLUDE             3
+
 // See nsStyleText::mControlCharacterVisibility
 #define NS_STYLE_CONTROL_CHARACTER_VISIBILITY_HIDDEN  0
 #define NS_STYLE_CONTROL_CHARACTER_VISIBILITY_VISIBLE 1
@@ -1185,6 +1204,12 @@ enum class FillMode : uint32_t;
 // scan
 #define NS_STYLE_SCAN_PROGRESSIVE               0
 #define NS_STYLE_SCAN_INTERLACE                 1
+
+// display-mode
+#define NS_STYLE_DISPLAY_MODE_BROWSER           0
+#define NS_STYLE_DISPLAY_MODE_MINIMAL_UI        1
+#define NS_STYLE_DISPLAY_MODE_STANDALONE        2
+#define NS_STYLE_DISPLAY_MODE_FULLSCREEN        3
 
 } // namespace mozilla
 

@@ -155,7 +155,7 @@ protected:
   nsCOMPtr<nsINode> mCommonParent;
 
   // used by nsContentIterator to cache indices
-  nsAutoTArray<int32_t, 8> mIndexes;
+  AutoTArray<int32_t, 8> mIndexes;
 
   // used by nsSubtreeIterator to cache indices.  Why put them in the base
   // class?  Because otherwise I have to duplicate the routines GetNextSibling
@@ -405,8 +405,8 @@ nsContentIterator::Init(nsIDOMRange* aDOMRange)
       // 'degenerate', i.e., not collapsed but still contain no content.
 
       if (mFirst &&
-          NS_WARN_IF(!NodeIsInTraversalRange(mFirst, mPre, startNode, startIndx,
-                                             endNode, endIndx))) {
+          !NodeIsInTraversalRange(mFirst, mPre, startNode, startIndx,
+                                  endNode, endIndx)) {
         mFirst = nullptr;
       }
     }
@@ -448,9 +448,9 @@ nsContentIterator::Init(nsIDOMRange* aDOMRange)
         mLast = GetPrevSibling(endNode);
         NS_WARN_IF(!mLast);
 
-        if (NS_WARN_IF(!NodeIsInTraversalRange(mLast, mPre,
-                                               startNode, startIndx,
-                                               endNode, endIndx))) {
+        if (!NodeIsInTraversalRange(mLast, mPre,
+                                    startNode, startIndx,
+                                    endNode, endIndx)) {
           mLast = nullptr;
         }
       } else {
@@ -485,7 +485,7 @@ nsContentIterator::Init(nsIDOMRange* aDOMRange)
 
   // If either first or last is null, they both have to be null!
 
-  if (NS_WARN_IF(!mFirst) || NS_WARN_IF(!mLast)) {
+  if (!mFirst || !mLast) {
     mFirst = nullptr;
     mLast  = nullptr;
   }
@@ -1058,8 +1058,8 @@ nsContentIterator::PositionAt(nsINode* aCurNode)
 
   // We can be at ANY node in the sequence.  Need to regenerate the array of
   // indexes back to the root or common parent!
-  nsAutoTArray<nsINode*, 8>     oldParentStack;
-  nsAutoTArray<int32_t, 8>      newIndexes;
+  AutoTArray<nsINode*, 8>     oldParentStack;
+  AutoTArray<int32_t, 8>      newIndexes;
 
   // Get a list of the parents up to the root, then compare the new node with
   // entries in that array until we find a match (lowest common ancestor).  If
@@ -1213,8 +1213,8 @@ protected:
   RefPtr<nsRange> mRange;
 
   // these arrays all typically are used and have elements
-  nsAutoTArray<nsIContent*, 8> mEndNodes;
-  nsAutoTArray<int32_t, 8>     mEndOffsets;
+  AutoTArray<nsIContent*, 8> mEndNodes;
+  AutoTArray<int32_t, 8>     mEndOffsets;
 };
 
 NS_IMPL_ADDREF_INHERITED(nsContentSubtreeIterator, nsContentIterator)

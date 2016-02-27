@@ -112,6 +112,7 @@ namespace mozilla {
 namespace gfx {
 class Matrix;
 class DrawTarget;
+class DataSourceSurface;
 } // namespace gfx
 
 namespace layers {
@@ -119,6 +120,7 @@ namespace layers {
 struct Effect;
 struct EffectChain;
 class Image;
+class ImageHostOverlay;
 class Layer;
 class TextureSource;
 class DataTextureSource;
@@ -191,6 +193,10 @@ public:
   }
 
   virtual already_AddRefed<DataTextureSource> CreateDataTextureSource(TextureFlags aFlags = TextureFlags::NO_FLAGS) = 0;
+
+  virtual already_AddRefed<DataTextureSource>
+  CreateDataTextureSourceAround(gfx::DataSourceSurface* aSurface) { return nullptr; }
+
   virtual bool Initialize() = 0;
   virtual void Destroy() = 0;
 
@@ -357,10 +363,14 @@ public:
    * If aRenderBoundsOut is non-null, it will be set to the render bounds
    * actually used by the compositor in window space. If aRenderBoundsOut
    * is returned empty, composition should be aborted.
+   *
+   * If aOpaque is true, then all of aInvalidRegion will be drawn to with
+   * opaque content.
    */
   virtual void BeginFrame(const nsIntRegion& aInvalidRegion,
                           const gfx::Rect* aClipRectIn,
                           const gfx::Rect& aRenderBounds,
+                          bool aOpaque,
                           gfx::Rect* aClipRectOut = nullptr,
                           gfx::Rect* aRenderBoundsOut = nullptr) = 0;
 
@@ -449,9 +459,17 @@ public:
    */
   virtual bool Ready() { return true; }
 
+  virtual void ForcePresent() { }
+
   // XXX I expect we will want to move mWidget into this class and implement
   // these methods properly.
   virtual nsIWidget* GetWidget() const { return nullptr; }
+
+  virtual bool HasImageHostOverlays() { return false; }
+
+  virtual void AddImageHostOverlay(ImageHostOverlay* aOverlay) {}
+
+  virtual void RemoveImageHostOverlay(ImageHostOverlay* aOverlay) {}
 
   /**
    * Debug-build assertion that can be called to ensure code is running on the
@@ -508,6 +526,21 @@ protected:
   bool ShouldDrawDiagnostics(DiagnosticFlags);
 
   /**
+   * Given a layer rect, clip, and transform, compute the area of the backdrop that
+   * needs to be copied for mix-blending. The output transform translates from 0..1
+   * space into the backdrop rect space.
+   *
+   * The transformed layer quad is also optionally returned - this is the same as
+   * the result rect, before rounding.
+   */
+  gfx::IntRect ComputeBackdropCopyRect(
+    const gfx::Rect& aRect,
+    const gfx::Rect& aClipRect,
+    const gfx::Matrix4x4& aTransform,
+    gfx::Matrix4x4* aOutTransform,
+    gfx::Rect* aOutLayerQuad = nullptr);
+
+  /**
    * Render time for the current composition.
    */
   TimeStamp mCompositionTime;
@@ -532,8 +565,6 @@ protected:
 
   ScreenRotation mScreenRotation;
 
-  virtual gfx::IntSize GetWidgetSize() const = 0;
-
   RefPtr<gfx::DrawTarget> mTarget;
   gfx::IntRect mTargetBounds;
 
@@ -552,6 +583,31 @@ size_t DecomposeIntoNoRepeatRects(const gfx::Rect& aRect,
                                   const gfx::Rect& aTexCoordRect,
                                   decomposedRectArrayT* aLayerRects,
                                   decomposedRectArrayT* aTextureRects);
+
+static inline bool
+BlendOpIsMixBlendMode(gfx::CompositionOp aOp)
+{
+  switch (aOp) {
+  case gfx::CompositionOp::OP_MULTIPLY:
+  case gfx::CompositionOp::OP_SCREEN:
+  case gfx::CompositionOp::OP_OVERLAY:
+  case gfx::CompositionOp::OP_DARKEN:
+  case gfx::CompositionOp::OP_LIGHTEN:
+  case gfx::CompositionOp::OP_COLOR_DODGE:
+  case gfx::CompositionOp::OP_COLOR_BURN:
+  case gfx::CompositionOp::OP_HARD_LIGHT:
+  case gfx::CompositionOp::OP_SOFT_LIGHT:
+  case gfx::CompositionOp::OP_DIFFERENCE:
+  case gfx::CompositionOp::OP_EXCLUSION:
+  case gfx::CompositionOp::OP_HUE:
+  case gfx::CompositionOp::OP_SATURATION:
+  case gfx::CompositionOp::OP_COLOR:
+  case gfx::CompositionOp::OP_LUMINOSITY:
+    return true;
+  default:
+    return false;
+  }
+}
 
 } // namespace layers
 } // namespace mozilla

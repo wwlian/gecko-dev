@@ -30,9 +30,7 @@ public:
 
   virtual already_AddRefed<gfx::DrawTarget> BorrowDrawTarget() override;
 
-  virtual bool UpdateFromSurface(gfx::SourceSurface* aSurface) override;
-
-  virtual bool HasInternalBuffer() const override { return true; }
+  virtual bool HasIntermediateBuffer() const override { return true; }
 
   static
   DIBTextureData* Create(gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
@@ -82,7 +80,7 @@ public:
 
   virtual void Unlock() override;
 
-  virtual bool HasInternalBuffer() const { return true; }
+  virtual bool HasIntermediateBuffer() const { return true; }
 
   virtual bool BindTextureSource(CompositableTextureSourceRef& aTexture) override;
 

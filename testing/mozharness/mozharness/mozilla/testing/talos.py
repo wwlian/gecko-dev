@@ -16,10 +16,10 @@ import json
 
 from mozharness.base.config import parse_config_file
 from mozharness.base.errors import PythonErrorList
-from mozharness.base.log import OutputParser, DEBUG, ERROR, CRITICAL, FATAL
+from mozharness.base.log import OutputParser, DEBUG, ERROR, CRITICAL
 from mozharness.base.log import INFO, WARNING
 from mozharness.mozilla.blob_upload import BlobUploadMixin, blobupload_config_options
-from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options, INSTALLER_SUFFIXES
+from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 from mozharness.base.vcs.vcsbase import MercurialScript
 from mozharness.mozilla.testing.errors import TinderBoxPrintRe
 from mozharness.mozilla.buildbot import TBPL_SUCCESS, TBPL_WORST_LEVEL_TUPLE
@@ -192,7 +192,6 @@ class Talos(TestingMixin, MercurialScript, BlobUploadMixin):
         return sps_results
 
     def query_abs_dirs(self):
-        c = self.config
         if self.abs_dirs:
             return self.abs_dirs
         abs_dirs = super(Talos, self).query_abs_dirs()
@@ -274,7 +273,7 @@ class Talos(TestingMixin, MercurialScript, BlobUploadMixin):
         if self.query_pagesets_url():
             self.info("Downloading pageset...")
             src_talos_pageset = os.path.join(src_talos_webdir, 'tests')
-            self._download_unzip(self.pagesets_url, src_talos_pageset)
+            self.download_unzip(self.pagesets_url, src_talos_pageset)
 
     # Action methods. {{{1
     # clobber defined in BaseScript
@@ -382,7 +381,18 @@ class Talos(TestingMixin, MercurialScript, BlobUploadMixin):
         output_timeout = self.config.get('talos_output_timeout', 3600)
         # run talos tests
         run_tests = os.path.join(self.talos_path, 'talos', 'run_tests.py')
-        command = [python, run_tests, '--debug'] + options
+
+        mozlog_opts = ['--log-tbpl-level=debug']
+        if not self.run_local and 'suite' in self.config:
+            fname_pattern = '%s_%%s.log' % self.config['suite']
+            mozlog_opts.append('--log-errorsummary=%s'
+                               % os.path.join(env['MOZ_UPLOAD_DIR'],
+                                              fname_pattern % 'errorsummary'))
+            mozlog_opts.append('--log-raw=%s'
+                               % os.path.join(env['MOZ_UPLOAD_DIR'],
+                                              fname_pattern % 'raw'))
+
+        command = [python, run_tests] + options + mozlog_opts
         self.return_code = self.run_command(command, cwd=self.workdir,
                                             output_timeout=output_timeout,
                                             output_parser=parser,

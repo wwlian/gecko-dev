@@ -54,6 +54,7 @@ enum class SurfaceFormat : int8_t {
   // These ones are their own special cases.
   YUV,
   NV12,
+  YUV422,
 
   // This represents the unknown format.
   UNKNOWN,
@@ -80,6 +81,7 @@ inline bool IsOpaque(SurfaceFormat aFormat)
   case SurfaceFormat::R5G6B5_UINT16:
   case SurfaceFormat::YUV:
   case SurfaceFormat::NV12:
+  case SurfaceFormat::YUV422:
     return true;
   default:
     return false;
@@ -123,7 +125,7 @@ enum class DrawTargetType : int8_t {
 
 enum class BackendType : int8_t {
   NONE = 0,
-  DIRECT2D,
+  DIRECT2D, // Used for version independent D2D objects.
   COREGRAPHICS,
   COREGRAPHICS_ACCELERATED,
   CAIRO,
@@ -143,7 +145,6 @@ enum class FontType : int8_t {
 
 enum class NativeSurfaceType : int8_t {
   D3D10_TEXTURE,
-  CAIRO_SURFACE,
   CAIRO_CONTEXT,
   CGCONTEXT,
   CGCONTEXT_ACCELERATED,
@@ -342,6 +343,9 @@ enum class JobStatus {
 
 } // namespace gfx
 } // namespace mozilla
+
+// XXX: temporary
+typedef mozilla::gfx::SurfaceFormat gfxImageFormat;
 
 #if defined(XP_WIN) && defined(MOZ_GFX)
 #ifdef GFX2D_INTERNAL

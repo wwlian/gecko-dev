@@ -53,11 +53,20 @@ inline bool ThrowException(const char *aMessage)
     return ThrowException(GetEnvForThread(), aMessage);
 }
 
-void HandleUncaughtException(JNIEnv *aEnv);
+bool HandleUncaughtException(JNIEnv* aEnv);
+
+#define MOZ_CATCH_JNI_EXCEPTION(env) \
+    do { \
+        if (mozilla::jni::HandleUncaughtException((env))) { \
+            MOZ_CRASH("JNI exception"); \
+        } \
+    } while (0)
 
 uintptr_t GetNativeHandle(JNIEnv* env, jobject instance);
 
 void SetNativeHandle(JNIEnv* env, jobject instance, uintptr_t handle);
+
+jclass GetClassGlobalRef(JNIEnv* aEnv, const char* aClassName);
 
 } // jni
 } // mozilla

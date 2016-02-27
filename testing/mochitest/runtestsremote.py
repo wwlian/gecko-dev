@@ -16,7 +16,7 @@ from remoteautomation import RemoteAutomation, fennecLogcatFilters
 from runtests import MochitestDesktop, MessageLogger
 from mochitest_options import MochitestArgumentParser
 
-import devicemanager
+import mozdevice
 import mozinfo
 
 SCRIPT_DIR = os.path.abspath(os.path.realpath(os.path.dirname(__file__)))
@@ -169,7 +169,8 @@ class MochiRemote(MochitestDesktop):
         if options.testingModulesDir:
             try:
                 self._dm.pushDir(options.testingModulesDir, self.remoteModulesDir)
-            except devicemanager.DMError:
+                self._dm.chmodDir(self.remoteModulesDir)
+            except mozdevice.DMError:
                 self.log.error(
                     "Automation Error: Unable to copy test modules to device.")
                 raise
@@ -185,13 +186,28 @@ class MochiRemote(MochitestDesktop):
 
         try:
             self._dm.pushDir(options.profilePath, self.remoteProfile)
-        except devicemanager.DMError:
+            self._dm.chmodDir(self.remoteProfile)
+        except mozdevice.DMError:
             self.log.error(
                 "Automation Error: Unable to copy profile to device.")
             raise
 
         restoreRemotePaths()
         options.profilePath = self.remoteProfile
+        return manifest
+
+    def addChromeToProfile(self, options):
+        manifest = MochitestDesktop.addChromeToProfile(self, options)
+
+        # Support Firefox (browser), B2G (shell), SeaMonkey (navigator), and Webapp
+        # Runtime (webapp).
+        if options.chrome:
+            # append overlay to chrome.manifest
+            chrome = "overlay chrome://browser/content/browser.xul chrome://mochikit/content/browser-test-overlay.xul"
+            path = os.path.join(options.profilePath, 'extensions', 'staged',
+                                'mochikit@mozilla.org', 'chrome.manifest')
+            with open(path, "a") as f:
+                f.write(chrome)
         return manifest
 
     def buildURLOptions(self, options, env):
@@ -205,7 +221,8 @@ class MochiRemote(MochitestDesktop):
         # we really need testConfig.js (for browser chrome)
         try:
             self._dm.pushDir(options.profilePath, self.remoteProfile)
-        except devicemanager.DMError:
+            self._dm.chmodDir(self.remoteProfile)
+        except mozdevice.DMError:
             self.log.error(
                 "Automation Error: Unable to copy profile to device.")
             raise
@@ -246,7 +263,7 @@ class MochiRemote(MochitestDesktop):
                 else:
                     self.log.info("  %s: %s" % (category, devinfo[category]))
             self.log.info("Test root: %s" % self._dm.deviceRoot)
-        except devicemanager.DMError:
+        except mozdevice.DMError:
             self.log.warning("Error getting device information")
 
     def getGMPPluginPath(self, options):
@@ -278,8 +295,9 @@ class MochiRemote(MochitestDesktop):
         if 'profileDir' not in kwargs and 'profile' in kwargs:
             kwargs['profileDir'] = kwargs.pop('profile').profile
 
-        if 'quiet' in kwargs:
-            kwargs.pop('quiet')
+        # remove args not supported by automation.py
+        kwargs.pop('marionette_args', None)
+        kwargs.pop('quiet', None)
 
         return self._automation.runApp(*args, **kwargs)
 
@@ -355,7 +373,7 @@ def run_test_harness(options):
         mochitest.stopServers()
         try:
             mochitest.cleanup(options)
-        except devicemanager.DMError:
+        except mozdevice.DMError:
             # device error cleaning up... oh well!
             pass
         retVal = 1

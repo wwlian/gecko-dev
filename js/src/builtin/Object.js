@@ -57,15 +57,18 @@ function Object_toLocaleString() {
     var O = this;
 
     // Step 2.
-    return callFunction(O.toString, O);
+    return callContentFunction(O.toString, O);
 }
 
 function ObjectDefineSetter(name, setter) {
     var object;
-    if (this === null || this === undefined)
+    if (this === null || this === undefined) {
+        AddContentTelemetry(JS_TELEMETRY_DEFINE_GETTER_SETTER_THIS_NULL_UNDEFINED, 1);
         object = global;
-    else
+    } else {
+        AddContentTelemetry(JS_TELEMETRY_DEFINE_GETTER_SETTER_THIS_NULL_UNDEFINED, 0);
         object = ToObject(this);
+    }
 
     if (!IsCallable(setter))
         ThrowTypeError(JSMSG_BAD_GETTER_OR_SETTER, "setter");
@@ -84,10 +87,13 @@ function ObjectDefineSetter(name, setter) {
 
 function ObjectDefineGetter(name, getter) {
     var object;
-    if (this === null || this === undefined)
+    if (this === null || this === undefined) {
+        AddContentTelemetry(JS_TELEMETRY_DEFINE_GETTER_SETTER_THIS_NULL_UNDEFINED, 1);
         object = global;
-    else
+    } else {
+        AddContentTelemetry(JS_TELEMETRY_DEFINE_GETTER_SETTER_THIS_NULL_UNDEFINED, 0);
         object = ToObject(this);
+    }
 
     if (!IsCallable(getter))
         ThrowTypeError(JSMSG_BAD_GETTER_OR_SETTER, "getter");

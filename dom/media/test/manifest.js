@@ -154,6 +154,14 @@ var gPlayTests = [
   { name:"r11025_s16_c1_trailing.wav", type:"audio/x-wav", duration:1.0 },
   // file with list chunk
   { name:"r16000_u8_c1_list.wav", type:"audio/x-wav", duration:4.2 },
+  // file with 2 extra bytes of metadata
+  { name:"16bit_wave_extrametadata.wav", type:"audio/x-wav", duration:1.108 },
+  // 24-bit samples
+  { name:"wavedata_s24.wav", type:"audio/x-wav", duration:1.0 },
+  // aLaw compressed wave file
+  { name:"wavedata_alaw.wav", type:"audio/x-wav", duration:1.0 },
+  // uLaw compressed wave file
+  { name:"wavedata_ulaw.wav", type:"audio/x-wav", duration:1.0 },
 
   // Ogg stream without eof marker
   { name:"bug461281.ogg", type:"application/ogg", duration:2.208 },
@@ -476,7 +484,10 @@ var gSeekTests = [
   { name:"detodos.opus", type:"audio/ogg; codecs=opus", duration:2.9135 },
   { name:"gizmo.mp4", type:"video/mp4", duration:5.56 },
   { name:"owl.mp3", type:"audio/mpeg", duration:3.343 },
-  { name:"bogus.duh", type:"bogus/duh", duration:123 }
+  { name:"bogus.duh", type:"bogus/duh", duration:123 },
+
+  // Bug 1242338: hit a numerical problem while seeking to the duration.
+  { name:"bug482461-theora.ogv", type:"video/ogg", duration:4.138 },
 ];
 
 var gFastSeekTests = [
@@ -503,7 +514,8 @@ var gUnseekableTests = [
 ];
 
 var androidVersion = -1; // non-Android platforms
-if (manifestNavigator().userAgent.indexOf("Mobile") != -1) {
+if (manifestNavigator().userAgent.indexOf("Mobile") != -1 ||
+    manifestNavigator().userAgent.indexOf("Tablet") != -1) {
   // See nsSystemInfo.cpp, the getProperty('version') returns different value
   // on each platforms, so we need to distinguish the android and B2G platform.
   var versionString = manifestNavigator().userAgent.indexOf("Android") != -1 ?
@@ -673,6 +685,7 @@ var gMetadataTests = [
   { name:"wave_metadata_bad_len.wav", tags: {
       name:"Track Title",
       artist:"Artist Name",
+      comments:"Comments",
     }
   },
   { name:"wave_metadata_bad_no_null.wav", tags: {
@@ -1349,8 +1362,8 @@ function removeNodeAndSource(n) {
 
 function once(target, name, cb) {
   var p = new Promise(function(resolve, reject) {
-    target.addEventListener(name, function() {
-      target.removeEventListener(name, cb);
+    target.addEventListener(name, function onceEvent() {
+      target.removeEventListener(name, onceEvent);
       resolve();
     });
   });
@@ -1556,4 +1569,8 @@ function isSlowPlatform() {
   return SpecialPowers.Services.appinfo.name == "B2G" || getAndroidVersion() == 10;
 }
 
-SimpleTest.requestFlakyTimeout("untriaged");
+// Could be undefined in a page opened by the parent test page
+// like file_access_controls.html.
+if ("SimpleTest" in window) {
+  SimpleTest.requestFlakyTimeout("untriaged");
+}

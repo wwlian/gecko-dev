@@ -1,7 +1,10 @@
- /* Any copyright is dedicated to the Public Domain.
-  * http://creativecommons.org/publicdomain/zero/1.0/ */
-/* Tests that errors about invalid HSTS security headers are logged
- *  to the web console */
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
+
+// Tests that errors about invalid HSTS security headers are logged
+//  to the web console.
 
 "use strict";
 
@@ -12,7 +15,7 @@ const SJS_URL = "https://example.com/browser/devtools/client/webconsole/" +
 const LEARN_MORE_URI = "https://developer.mozilla.org/docs/Security/" +
                        "HTTP_Strict_Transport_Security";
 
-var test = asyncTest(function* () {
+add_task(function* () {
   yield loadTab(TEST_URI);
 
   let hud = yield openConsole();

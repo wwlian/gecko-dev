@@ -66,9 +66,8 @@
 
   <color name="dark_transparent_overlay">#99000000</color>
 
-  <!-- Firstrun tour-->
-  <color name="firstrun_tabstrip">#1193CB</color>
-  <color name="firstrun_pager_background">#16A3DF</color>
+  <!-- Firstrun tour -->
+  <color name="firstrun_pager_header">#E8E8E8</color>
 
   <!-- Tab Queue -->
   <color name="tab_queue_dismiss_button_foreground">#16A3DF</color>
@@ -98,7 +97,7 @@
   <color name="text_color_link">#22629E</color>
 
   <!-- Divider colors -->
-  <color name="divider_light">#FFD7D9DB</color>
+  <color name="toolbar_divider_grey">#D7D9DB</color>
 
   <color name="doorhanger_link">#FF2AA1FE</color>
 
@@ -111,9 +110,6 @@
   <color name="textbox_stroke">#000</color>
   <color name="textbox_stroke_disabled">#666</color>
 
-  <color name="url_bar_urltext">#A6A6A6</color>
-  <color name="url_bar_domaintext">#000</color>
-  <color name="url_bar_domaintext_private">#FFF</color>
   <color name="url_bar_blockedtext">#b14646</color>
   <color name="url_bar_shadow">#12000000</color>
 
@@ -141,9 +137,6 @@
   <color name="tab_history_favicon_border">#D7D9DB</color>
   <color name="tab_history_favicon_background">#FFFFFF</color>
   <color name="tab_history_border_color">#DADADF</color>
-
-  <!-- Colour used for Find-In-Page dialog -->
-  <color name="find_matchcase_off">#D02626</color>
 
   <!-- Canvas delegate paint color -->
   <color name="canvas_delegate_paint">#FFFF0000</color>

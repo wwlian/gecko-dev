@@ -55,7 +55,6 @@ using namespace js::gc;
 using mozilla::DebugOnly;
 using mozilla::PodArrayZero;
 using mozilla::PointerRangeSize;
-using mozilla::UniquePtr;
 
 bool
 js::AutoCycleDetector::init()
@@ -153,7 +152,7 @@ js::DestroyContext(JSContext* cx, DestroyContextMode mode)
         MOZ_CRASH("Attempted to destroy a context while it is in a request.");
 
     cx->roots.checkNoGCRooters();
-    FinishPersistentRootedChains(cx->roots);
+    cx->roots.finishPersistentRoots();
 
     if (mode != DCM_NEW_FAILED) {
         if (JSContextCallback cxCallback = rt->cxCallback) {
@@ -187,8 +186,9 @@ js::DestroyContext(JSContext* cx, DestroyContextMode mode)
 void
 RootLists::checkNoGCRooters() {
 #ifdef DEBUG
-    for (int i = 0; i < THING_ROOT_LIMIT; ++i)
-        MOZ_ASSERT(stackRoots_[i] == nullptr);
+    for (auto const& stackRootPtr : stackRoots_) {
+        MOZ_ASSERT(stackRootPtr == nullptr);
+    }
 #endif
 }
 
@@ -260,7 +260,7 @@ PopulateReportBlame(JSContext* cx, JSErrorReport* report)
     if (iter.done())
         return;
 
-    report->filename = iter.scriptFilename();
+    report->filename = iter.filename();
     report->lineno = iter.computeLine(&report->column);
     // XXX: Make the column 1-based as in other browsers, instead of 0-based
     // which is how SpiderMonkey stores it internally. This will be
@@ -291,18 +291,17 @@ js::ReportOutOfMemory(ExclusiveContext* cxArg)
 #endif
 
     if (!cxArg->isJSContext())
-        return;
+        return cxArg->addPendingOutOfMemory();
 
     JSContext* cx = cxArg->asJSContext();
     cx->runtime()->hadOutOfMemory = true;
+    AutoSuppressGC suppressGC(cx);
 
     /* Report the oom. */
-    if (JS::OutOfMemoryCallback oomCallback = cx->runtime()->oomCallback) {
-        AutoSuppressGC suppressGC(cx);
+    if (JS::OutOfMemoryCallback oomCallback = cx->runtime()->oomCallback)
         oomCallback(cx, cx->runtime()->oomCallbackData);
-    }
 
-    if (JS_IsRunning(cx)) {
+    if (cx->options().autoJSAPIOwnsErrorReporting() || JS_IsRunning(cx)) {
         cx->setPendingException(StringValue(cx->names().outOfMemory));
         return;
     }
@@ -318,10 +317,8 @@ js::ReportOutOfMemory(ExclusiveContext* cxArg)
     PopulateReportBlame(cx, &report);
 
     /* Report the error. */
-    if (JSErrorReporter onError = cx->runtime()->errorReporter) {
-        AutoSuppressGC suppressGC(cx);
+    if (JSErrorReporter onError = cx->runtime()->errorReporter)
         onError(cx, msg, &report);
-    }
 
     /*
      * We would like to enforce the invariant that any exception reported
@@ -398,13 +395,13 @@ checkReportFlags(JSContext* cx, unsigned* flags)
         JSScript* script = cx->currentScript(&pc);
         if (script && IsCheckStrictOp(JSOp(*pc)))
             *flags &= ~JSREPORT_WARNING;
-        else if (cx->compartment()->options().extraWarnings(cx))
+        else if (cx->compartment()->behaviors().extraWarnings(cx))
             *flags |= JSREPORT_WARNING;
         else
             return true;
     } else if (JSREPORT_IS_STRICT(*flags)) {
         /* Warning/error only when JSOPTION_STRICT is set. */
-        if (!cx->compartment()->options().extraWarnings(cx))
+        if (!cx->compartment()->behaviors().extraWarnings(cx))
             return true;
     }
 
@@ -645,7 +642,6 @@ js::ExpandErrorArgumentsVA(ExclusiveContext* cx, JSErrorCallback callback,
                 */
                 reportp->ucmessage = out = cx->pod_malloc<char16_t>(expandedLength + 1);
                 if (!out) {
-                    ReportOutOfMemory(cx);
                     js_free(buffer);
                     goto error;
                 }
@@ -844,8 +840,7 @@ js::ReportIsNullOrUndefined(JSContext* cx, int spindex, HandleValue v,
 {
     bool ok;
 
-    UniquePtr<char[], JS::FreePolicy> bytes =
-        DecompileValueGenerator(cx, spindex, v, fallback);
+    UniqueChars bytes = DecompileValueGenerator(cx, spindex, v, fallback);
     if (!bytes)
         return false;
 
@@ -875,7 +870,7 @@ void
 js::ReportMissingArg(JSContext* cx, HandleValue v, unsigned arg)
 {
     char argbuf[11];
-    UniquePtr<char[], JS::FreePolicy> bytes;
+    UniqueChars bytes;
     RootedAtom atom(cx);
 
     JS_snprintf(argbuf, sizeof argbuf, "%u", arg);
@@ -895,7 +890,7 @@ js::ReportValueErrorFlags(JSContext* cx, unsigned flags, const unsigned errorNum
                           int spindex, HandleValue v, HandleString fallback,
                           const char* arg1, const char* arg2)
 {
-    UniquePtr<char[], JS::FreePolicy> bytes;
+    UniqueChars bytes;
     bool ok;
 
     MOZ_ASSERT(js_ErrorFormatString[errorNumber].argCount >= 1);
@@ -937,13 +932,16 @@ ExclusiveContext::ExclusiveContext(JSRuntime* rt, PerThreadData* pt, ContextKind
 void
 ExclusiveContext::recoverFromOutOfMemory()
 {
-    // If this is not a JSContext, there's nothing to do.
     if (JSContext* maybecx = maybeJSContext()) {
         if (maybecx->isExceptionPending()) {
             MOZ_ASSERT(maybecx->isThrowingOutOfMemory());
             maybecx->clearPendingException();
         }
+        return;
     }
+    // Keep in sync with addPendingOutOfMemory.
+    if (ParseTask* task = helperThread()->parseTask())
+        task->outOfMemory = false;
 }
 
 JSContext::JSContext(JSRuntime* rt)
@@ -1001,6 +999,15 @@ bool
 JSContext::isClosingGenerator()
 {
     return throwing && unwrappedException_.isMagic(JS_GENERATOR_CLOSING);
+}
+
+bool
+JSContext::isThrowingDebuggeeWouldRun()
+{
+    return throwing &&
+           unwrappedException_.isObject() &&
+           unwrappedException_.toObject().is<ErrorObject>() &&
+           unwrappedException_.toObject().as<ErrorObject>().type() == JSEXN_DEBUGGEEWOULDRUN;
 }
 
 bool
@@ -1160,8 +1167,8 @@ JSContext::findVersion() const
     if (JSScript* script = currentScript(nullptr, ALLOW_CROSS_COMPARTMENT))
         return script->getVersion();
 
-    if (compartment() && compartment()->options().version() != JSVERSION_UNKNOWN)
-        return compartment()->options().version();
+    if (compartment() && compartment()->behaviors().version() != JSVERSION_UNKNOWN)
+        return compartment()->behaviors().version();
 
     return runtime()->defaultVersion();
 }

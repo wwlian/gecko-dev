@@ -159,7 +159,16 @@ public:
   void TakeCensus(JSContext* cx, JS::HandleObject options,
                   JS::MutableHandleValue rval, ErrorResult& rv);
 
+  void DescribeNode(JSContext* cx, JS::HandleObject breakdown, uint64_t nodeId,
+                    JS::MutableHandleValue rval, ErrorResult& rv);
+
   already_AddRefed<DominatorTree> ComputeDominatorTree(ErrorResult& rv);
+
+  void ComputeShortestPaths(JSContext*cx, uint64_t start,
+                            const dom::Sequence<uint64_t>& targets,
+                            uint64_t maxNumPaths,
+                            JS::MutableHandleObject results,
+                            ErrorResult& rv);
 
   dom::Nullable<uint64_t> GetCreationTime() {
     static const uint64_t maxTime = uint64_t(1) << 53;
@@ -220,6 +229,9 @@ WriteHeapGraph(JSContext* cx,
   return WriteHeapGraph(cx, node, writer, wantNames, zones, noGC,
                         ignoreNodeCount, ignoreEdgeCount);
 }
+
+// Get the mozilla::MallocSizeOf for the current thread's JSRuntime.
+MallocSizeOf GetCurrentThreadDebuggerMallocSizeOf();
 
 } // namespace devtools
 } // namespace mozilla

@@ -230,13 +230,24 @@ class CrashInfo(object):
         err = None
         retcode = None
         if (self.symbols_path and self.stackwalk_binary and
-            os.path.exists(self.stackwalk_binary)):
+            os.path.exists(self.stackwalk_binary) and
+            os.access(self.stackwalk_binary, os.X_OK)):
+
+            command = [
+                self.stackwalk_binary,
+                path,
+                self.symbols_path
+            ]
+            self.logger.info('Copy/paste: ' + ' '.join(command))
             # run minidump_stackwalk
-            p = subprocess.Popen([self.stackwalk_binary, path, self.symbols_path],
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE)
+            p = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
             (out, err) = p.communicate()
             retcode = p.returncode
+
             if len(out) > 3:
                 # minidump_stackwalk is chatty,
                 # so ignore stderr when it succeeds.
@@ -255,6 +266,7 @@ class CrashInfo(object):
                         break
             else:
                 include_stderr = True
+
         else:
             if not self.symbols_path:
                 errors.append("No symbols path given, can't process dump.")
@@ -262,6 +274,8 @@ class CrashInfo(object):
                 errors.append("MINIDUMP_STACKWALK not set, can't process dump.")
             elif self.stackwalk_binary and not os.path.exists(self.stackwalk_binary):
                 errors.append("MINIDUMP_STACKWALK binary not found: %s" % self.stackwalk_binary)
+            elif not os.access(self.stackwalk_binary, os.X_OK):
+                errors.append('This user cannot execute the MINIDUMP_STACKWALK binary.')
 
         if self.dump_save_path:
             self._save_dump_file(path, extra)
@@ -350,7 +364,7 @@ if mozinfo.isWin:
     OpenProcess = kernel32.OpenProcess
     CloseHandle = kernel32.CloseHandle
 
-    def write_minidump(pid, dump_directory):
+    def write_minidump(pid, dump_directory, utility_path):
         """
         Write a minidump for a process.
 
@@ -365,13 +379,38 @@ if mozinfo.isWin:
         FILE_ATTRIBUTE_NORMAL = 0x80
         INVALID_HANDLE_VALUE = -1
 
+        file_name = os.path.join(dump_directory,
+                                 str(uuid.uuid4()) + ".dmp")
+
+        if (mozinfo.info['bits'] != ctypes.sizeof(ctypes.c_voidp) * 8 and
+            utility_path):
+            # We're not going to be able to write a minidump with ctypes if our
+            # python process was compiled for a different architecture than
+            # firefox, so we invoke the minidumpwriter utility program.
+
+            log = get_logger()
+            minidumpwriter = os.path.normpath(os.path.join(utility_path,
+                                                           "minidumpwriter.exe"))
+            log.info("Using %s to write a dump to %s for [%d]" %
+                     (minidumpwriter, file_name, pid))
+            if not os.path.exists(minidumpwriter):
+                log.error("minidumpwriter not found in %s" % utility_path)
+                return
+
+            if isinstance(file_name, unicode):
+                # Convert to a byte string before sending to the shell.
+                file_name = file_name.encode(sys.getfilesystemencoding())
+
+            status = subprocess.Popen([minidumpwriter, str(pid), file_name]).wait()
+            if status:
+                log.error("minidumpwriter exited with status: %d" % status)
+            return
+
         proc_handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
                                   0, pid)
         if not proc_handle:
             return
 
-        file_name = os.path.join(dump_directory,
-                                 str(uuid.uuid4()) + ".dmp")
         if not isinstance(file_name, unicode):
             # Convert to unicode explicitly so our path will be valid as input
             # to CreateFileW
@@ -419,7 +458,7 @@ else:
         """
         os.kill(pid, signal.SIGKILL)
 
-def kill_and_get_minidump(pid, dump_directory=None):
+def kill_and_get_minidump(pid, dump_directory, utility_path=None):
     """
     Attempt to kill a process and leave behind a minidump describing its
     execution state.
@@ -439,9 +478,24 @@ def kill_and_get_minidump(pid, dump_directory=None):
     """
     needs_killing = True
     if mozinfo.isWin:
-        write_minidump(pid, dump_directory)
+        write_minidump(pid, dump_directory, utility_path)
     elif mozinfo.isLinux or mozinfo.isMac:
         os.kill(pid, signal.SIGABRT)
         needs_killing = False
     if needs_killing:
         kill_pid(pid)
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--stackwalk-binary', '-b')
+    parser.add_argument('--dump-save-path', '-o')
+    parser.add_argument('--test-name', '-n')
+    parser.add_argument('dump_directory')
+    parser.add_argument('symbols_path')
+    args = parser.parse_args()
+
+    check_for_crashes(args.dump_directory, args.symbols_path,
+                      stackwalk_binary=args.stackwalk_binary,
+                      dump_save_path=args.dump_save_path,
+                      test_name=args.test_name)

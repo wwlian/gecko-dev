@@ -13,9 +13,9 @@ MOZ_BRANDING_DIRECTORY=mobile/android/branding/unofficial
 MOZ_OFFICIAL_BRANDING_DIRECTORY=mobile/android/branding/official
 # MOZ_APP_DISPLAYNAME is set by branding/configure.sh
 
-# We support Android SDK version 9 and up by default.
+# We support Android SDK version 15 and up by default.
 # See the --enable-android-min-sdk and --enable-android-max-sdk arguments in configure.in.
-MOZ_ANDROID_MIN_SDK_VERSION=9
+MOZ_ANDROID_MIN_SDK_VERSION=15
 
 # There are several entry points into the Firefox application.  These are the names of some of the classes that are
 # listed in the Android manifest.  They are specified in here to avoid hard-coding them in source code files.
@@ -93,8 +93,8 @@ MOZ_ANDROID_MLS_STUMBLER=1
 # Enable adding to the system downloads list.
 MOZ_ANDROID_DOWNLOADS_INTEGRATION=1
 
-# Enable Tab Queue
-MOZ_ANDROID_TAB_QUEUE=1
+# Build and package the install bouncer APK by default.
+MOZ_ANDROID_PACKAGE_INSTALL_BOUNCER=1
 
 # Use the low-memory GC tuning.
 export JS_GC_SMALL_CHUNK_SIZE=1
@@ -117,5 +117,8 @@ MOZ_ADDON_SIGNING=1
 # usage of the framework.
 MOZ_SWITCHBOARD=1
 
-# Disable GeckoView by default.
-export MOZ_DISABLE_GECKOVIEW=1
+# Enable DLC background service and stop shipping fonts in Nightly
+if test "$NIGHTLY_BUILD"; then
+  MOZ_ANDROID_DOWNLOAD_CONTENT_SERVICE=1
+  MOZ_ANDROID_EXCLUDE_FONTS=1
+fi

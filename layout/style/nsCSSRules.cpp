@@ -90,14 +90,6 @@ Rule::GetCSSRule()
   return this;
 }
 
-size_t
-Rule::SizeOfCOMArrayElementIncludingThis(css::Rule* aElement,
-                                         MallocSizeOf aMallocSizeOf,
-                                         void* aData)
-{
-  return aElement->SizeOfIncludingThis(aMallocSizeOf);
-}
-
 // -------------------------------
 // Style Rule List for group rules
 //
@@ -573,12 +565,15 @@ GroupRule::DeleteRule(uint32_t aIndex)
 /* virtual */ size_t
 GroupRule::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
 {
-  return mRules.SizeOfExcludingThis(Rule::SizeOfCOMArrayElementIncludingThis,
-                                    aMallocSizeOf);
+  size_t n = mRules.ShallowSizeOfExcludingThis(aMallocSizeOf);
+  for (size_t i = 0; i < mRules.Length(); i++) {
+    n += mRules[i]->SizeOfIncludingThis(aMallocSizeOf);
+  }
 
   // Measurement of the following members may be added later if DMD finds it is
   // worthwhile:
   // - mRuleCollection
+  return n;
 }
 
 
@@ -1300,6 +1295,13 @@ nsCSSFontFaceStyleDecl::GetPropertyValue(nsCSSFontDesc aFontDescID,
   case eCSSFontDesc_FontLanguageOverride:
     val.AppendToString(eCSSProperty_font_language_override, aResult,
                        nsCSSValue::eNormalized);
+    return NS_OK;
+
+  case eCSSFontDesc_Display:
+    NS_ASSERTION(val.GetUnit() == eCSSUnit_Enumerated,
+                 "unknown unit for font-display descriptor");
+    AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(val.GetIntValue(),
+                                       nsCSSProps::kFontDisplayKTable), aResult);
     return NS_OK;
 
   case eCSSFontDesc_Src:

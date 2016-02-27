@@ -24,6 +24,7 @@
 #include "nsITextToSubURI.h"
 #include "nsXPIDLString.h"
 #include <algorithm>
+#include "nsIChannel.h"
 
 NS_IMPL_ISUPPORTS(nsIndexedToHTML,
                   nsIDirIndexListener,
@@ -533,6 +534,38 @@ nsIndexedToHTML::DoOnStartRequest(nsIRequest* request, nsISupports *aContext,
 
     buffer.AppendLiteral("</title>\n");    
 
+    // If there is a quote character in the baseUri, then
+    // lets not add a base URL.  The reason for this is that
+    // if we stick baseUri containing a quote into a quoted
+    // string, the quote character will prematurely close
+    // the base href string.  This is a fall-back check;
+    // that's why it is OK to not use a base rather than
+    // trying to play nice and escaping the quotes.  See bug
+    // 358128.
+
+    if (!baseUri.Contains('"'))
+    {
+        // Great, the baseUri does not contain a char that
+        // will prematurely close the string.  Go ahead an
+        // add a base href, but only do so if we're not
+        // dealing with a resource URI.
+        nsCOMPtr<nsIURI> originalUri;
+        rv = channel->GetOriginalURI(getter_AddRefs(originalUri));
+        bool wasResource = false;
+        if (NS_FAILED(rv) ||
+            NS_FAILED(originalUri->SchemeIs("resource", &wasResource)) ||
+            !wasResource) {
+            buffer.AppendLiteral("<base href=\"");
+            nsAdoptingCString htmlEscapedUri(nsEscapeHTML(baseUri.get()));
+            buffer.Append(htmlEscapedUri);
+            buffer.AppendLiteral("\" />\n");
+        }
+    }
+    else
+    {
+        NS_ERROR("broken protocol handler didn't escape double-quote.");
+    }
+
     nsCString direction(NS_LITERAL_CSTRING("ltr"));
     nsCOMPtr<nsIXULChromeRegistry> reg =
       mozilla::services::GetXULChromeRegistryService();
@@ -727,8 +760,10 @@ nsIndexedToHTML::OnIndexAvailable(nsIRequest *aRequest,
     // for some protocols, we expect the location to be absolute.
     // if so, and if the location indeed appears to be a valid URI, then go
     // ahead and treat it like one.
+
+    nsAutoCString scheme;
     if (mExpectAbsLoc &&
-        NS_SUCCEEDED(net_ExtractURLScheme(loc, nullptr, nullptr, nullptr))) {
+        NS_SUCCEEDED(net_ExtractURLScheme(loc, scheme))) {
         // escape as absolute 
         escFlags = esc_Forced | esc_AlwaysCopy | esc_Minimal;
     }
@@ -794,7 +829,7 @@ nsIndexedToHTML::OnIndexAvailable(nsIRequest *aRequest,
     PRTime t;
     aIndex->GetLastModified(&t);
 
-    if (t == -1) {
+    if (t == -1LL) {
         pushBuffer.AppendLiteral("></td>\n <td>");
     } else {
         pushBuffer.AppendLiteral(" sortable-data=\"");

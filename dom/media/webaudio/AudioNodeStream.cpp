@@ -74,7 +74,6 @@ AudioNodeStream::Create(AudioContext* aCtx, AudioNodeEngine* aEngine,
   // MediaRecorders use an AudioNodeStream, but no AudioNode
   AudioNode* node = aEngine->NodeMainThread();
   MediaStreamGraph* graph = aGraph ? aGraph : aCtx->Graph();
-  MOZ_ASSERT(graph->GraphRate() == aCtx->SampleRate());
 
   RefPtr<AudioNodeStream> stream =
     new AudioNodeStream(aEngine, aFlags, graph->GraphRate());
@@ -138,7 +137,7 @@ AudioNodeStream::SetStreamTimeParameter(uint32_t aIndex, AudioContext* aContext,
       : ControlMessage(aStream), mStreamTime(aStreamTime),
         mRelativeToStream(aRelativeToStream), mIndex(aIndex)
     {}
-    virtual void Run() override
+    void Run() override
     {
       static_cast<AudioNodeStream*>(mStream)->
           SetStreamTimeParameterImpl(mIndex, mRelativeToStream, mStreamTime);
@@ -148,9 +147,9 @@ AudioNodeStream::SetStreamTimeParameter(uint32_t aIndex, AudioContext* aContext,
     uint32_t mIndex;
   };
 
-  GraphImpl()->AppendMessage(new Message(this, aIndex,
-                                         aContext->DestinationStream(),
-                                         aStreamTime));
+  GraphImpl()->AppendMessage(MakeUnique<Message>(this, aIndex,
+                                                 aContext->DestinationStream(),
+                                                 aStreamTime));
 }
 
 void
@@ -170,7 +169,7 @@ AudioNodeStream::SetDoubleParameter(uint32_t aIndex, double aValue)
     Message(AudioNodeStream* aStream, uint32_t aIndex, double aValue)
       : ControlMessage(aStream), mValue(aValue), mIndex(aIndex)
     {}
-    virtual void Run() override
+    void Run() override
     {
       static_cast<AudioNodeStream*>(mStream)->Engine()->
           SetDoubleParameter(mIndex, mValue);
@@ -179,7 +178,7 @@ AudioNodeStream::SetDoubleParameter(uint32_t aIndex, double aValue)
     uint32_t mIndex;
   };
 
-  GraphImpl()->AppendMessage(new Message(this, aIndex, aValue));
+  GraphImpl()->AppendMessage(MakeUnique<Message>(this, aIndex, aValue));
 }
 
 void
@@ -191,7 +190,7 @@ AudioNodeStream::SetInt32Parameter(uint32_t aIndex, int32_t aValue)
     Message(AudioNodeStream* aStream, uint32_t aIndex, int32_t aValue)
       : ControlMessage(aStream), mValue(aValue), mIndex(aIndex)
     {}
-    virtual void Run() override
+    void Run() override
     {
       static_cast<AudioNodeStream*>(mStream)->Engine()->
           SetInt32Parameter(mIndex, mValue);
@@ -200,7 +199,7 @@ AudioNodeStream::SetInt32Parameter(uint32_t aIndex, int32_t aValue)
     uint32_t mIndex;
   };
 
-  GraphImpl()->AppendMessage(new Message(this, aIndex, aValue));
+  GraphImpl()->AppendMessage(MakeUnique<Message>(this, aIndex, aValue));
 }
 
 void
@@ -217,7 +216,7 @@ AudioNodeStream::SendTimelineEvent(uint32_t aIndex,
         mSampleRate(aStream->SampleRate()),
         mIndex(aIndex)
     {}
-    virtual void Run() override
+    void Run() override
     {
       static_cast<AudioNodeStream*>(mStream)->Engine()->
           RecvTimelineEvent(mIndex, mEvent);
@@ -226,7 +225,7 @@ AudioNodeStream::SendTimelineEvent(uint32_t aIndex,
     TrackRate mSampleRate;
     uint32_t mIndex;
   };
-  GraphImpl()->AppendMessage(new Message(this, aIndex, aEvent));
+  GraphImpl()->AppendMessage(MakeUnique<Message>(this, aIndex, aEvent));
 }
 
 void
@@ -238,7 +237,7 @@ AudioNodeStream::SetThreeDPointParameter(uint32_t aIndex, const ThreeDPoint& aVa
     Message(AudioNodeStream* aStream, uint32_t aIndex, const ThreeDPoint& aValue)
       : ControlMessage(aStream), mValue(aValue), mIndex(aIndex)
     {}
-    virtual void Run() override
+    void Run() override
     {
       static_cast<AudioNodeStream*>(mStream)->Engine()->
           SetThreeDPointParameter(mIndex, mValue);
@@ -247,7 +246,7 @@ AudioNodeStream::SetThreeDPointParameter(uint32_t aIndex, const ThreeDPoint& aVa
     uint32_t mIndex;
   };
 
-  GraphImpl()->AppendMessage(new Message(this, aIndex, aValue));
+  GraphImpl()->AppendMessage(MakeUnique<Message>(this, aIndex, aValue));
 }
 
 void
@@ -260,7 +259,7 @@ AudioNodeStream::SetBuffer(already_AddRefed<ThreadSharedFloatArrayBufferList>&& 
             already_AddRefed<ThreadSharedFloatArrayBufferList>& aBuffer)
       : ControlMessage(aStream), mBuffer(aBuffer)
     {}
-    virtual void Run() override
+    void Run() override
     {
       static_cast<AudioNodeStream*>(mStream)->Engine()->
           SetBuffer(mBuffer.forget());
@@ -268,7 +267,7 @@ AudioNodeStream::SetBuffer(already_AddRefed<ThreadSharedFloatArrayBufferList>&& 
     RefPtr<ThreadSharedFloatArrayBufferList> mBuffer;
   };
 
-  GraphImpl()->AppendMessage(new Message(this, aBuffer));
+  GraphImpl()->AppendMessage(MakeUnique<Message>(this, aBuffer));
 }
 
 void
@@ -283,14 +282,14 @@ AudioNodeStream::SetRawArrayData(nsTArray<float>& aData)
     {
       mData.SwapElements(aData);
     }
-    virtual void Run() override
+    void Run() override
     {
       static_cast<AudioNodeStream*>(mStream)->Engine()->SetRawArrayData(mData);
     }
     nsTArray<float> mData;
   };
 
-  GraphImpl()->AppendMessage(new Message(this, aData));
+  GraphImpl()->AppendMessage(MakeUnique<Message>(this, aData));
 }
 
 void
@@ -310,7 +309,7 @@ AudioNodeStream::SetChannelMixingParameters(uint32_t aNumberOfChannels,
         mChannelCountMode(aChannelCountMode),
         mChannelInterpretation(aChannelInterpretation)
     {}
-    virtual void Run() override
+    void Run() override
     {
       static_cast<AudioNodeStream*>(mStream)->
         SetChannelMixingParametersImpl(mNumberOfChannels, mChannelCountMode,
@@ -321,9 +320,9 @@ AudioNodeStream::SetChannelMixingParameters(uint32_t aNumberOfChannels,
     ChannelInterpretation mChannelInterpretation;
   };
 
-  GraphImpl()->AppendMessage(new Message(this, aNumberOfChannels,
-                                         aChannelCountMode,
-                                         aChannelInterpretation));
+  GraphImpl()->AppendMessage(MakeUnique<Message>(this, aNumberOfChannels,
+                                                 aChannelCountMode,
+                                                 aChannelInterpretation));
 }
 
 void
@@ -335,14 +334,14 @@ AudioNodeStream::SetPassThrough(bool aPassThrough)
     Message(AudioNodeStream* aStream, bool aPassThrough)
       : ControlMessage(aStream), mPassThrough(aPassThrough)
     {}
-    virtual void Run() override
+    void Run() override
     {
       static_cast<AudioNodeStream*>(mStream)->mPassThrough = mPassThrough;
     }
     bool mPassThrough;
   };
 
-  GraphImpl()->AppendMessage(new Message(this, aPassThrough));
+  GraphImpl()->AppendMessage(MakeUnique<Message>(this, aPassThrough));
 }
 
 void
@@ -382,7 +381,7 @@ class AudioNodeStream::AdvanceAndResumeMessage final : public ControlMessage {
 public:
   AdvanceAndResumeMessage(AudioNodeStream* aStream, StreamTime aAdvance) :
     ControlMessage(aStream), mAdvance(aAdvance) {}
-  virtual void Run() override
+  void Run() override
   {
     auto ns = static_cast<AudioNodeStream*>(mStream);
     ns->mBufferStartTime -= mAdvance;
@@ -400,7 +399,7 @@ void
 AudioNodeStream::AdvanceAndResume(StreamTime aAdvance)
 {
   mMainThreadCurrentTime += aAdvance;
-  GraphImpl()->AppendMessage(new AdvanceAndResumeMessage(this, aAdvance));
+  GraphImpl()->AppendMessage(MakeUnique<AdvanceAndResumeMessage>(this, aAdvance));
 }
 
 void
@@ -409,7 +408,7 @@ AudioNodeStream::ObtainInputBlock(AudioBlock& aTmpChunk,
 {
   uint32_t inputCount = mInputs.Length();
   uint32_t outputChannelCount = 1;
-  nsAutoTArray<const AudioBlock*,250> inputChunks;
+  AutoTArray<const AudioBlock*,250> inputChunks;
   for (uint32_t i = 0; i < inputCount; ++i) {
     if (aPortIndex != mInputs[i]->InputNumber()) {
       // This input is connected to a different port
@@ -455,7 +454,7 @@ AudioNodeStream::ObtainInputBlock(AudioBlock& aTmpChunk,
 
   aTmpChunk.AllocateChannels(outputChannelCount);
   // The static storage here should be 1KB, so it's fine
-  nsAutoTArray<float, GUESS_AUDIO_CHANNELS*WEBAUDIO_BLOCK_SIZE> downmixBuffer;
+  AutoTArray<float, GUESS_AUDIO_CHANNELS*WEBAUDIO_BLOCK_SIZE> downmixBuffer;
 
   for (uint32_t i = 0; i < inputChunkCount; ++i) {
     AccumulateInputChunk(i, *inputChunks[i], &aTmpChunk, &downmixBuffer);
@@ -468,7 +467,7 @@ AudioNodeStream::AccumulateInputChunk(uint32_t aInputIndex,
                                       AudioBlock* aBlock,
                                       nsTArray<float>* aDownmixBuffer)
 {
-  nsAutoTArray<const float*,GUESS_AUDIO_CHANNELS> channels;
+  AutoTArray<const float*,GUESS_AUDIO_CHANNELS> channels;
   UpMixDownMixChunk(&aChunk, aBlock->ChannelCount(), channels, *aDownmixBuffer);
 
   for (uint32_t c = 0; c < channels.Length(); ++c) {
@@ -510,7 +509,7 @@ AudioNodeStream::UpMixDownMixChunk(const AudioBlock* aChunk,
     }
   } else if (aOutputChannels.Length() > aOutputChannelCount) {
     if (mChannelInterpretation == ChannelInterpretation::Speakers) {
-      nsAutoTArray<float*,GUESS_AUDIO_CHANNELS> outputChannels;
+      AutoTArray<float*,GUESS_AUDIO_CHANNELS> outputChannels;
       outputChannels.SetLength(aOutputChannelCount);
       aDownmixBuffer.SetLength(aOutputChannelCount * WEBAUDIO_BLOCK_SIZE);
       for (uint32_t j = 0; j < aOutputChannelCount; ++j) {
@@ -718,7 +717,7 @@ class AudioNodeStream::CheckForInactiveMessage final : public ControlMessage
 public:
   explicit CheckForInactiveMessage(AudioNodeStream* aStream) :
     ControlMessage(aStream) {}
-  virtual void Run() override
+  void Run() override
   {
     auto ns = static_cast<AudioNodeStream*>(mStream);
     ns->CheckForInactive();
@@ -732,7 +731,7 @@ AudioNodeStream::ScheduleCheckForInactive()
     return;
   }
 
-  nsAutoPtr<CheckForInactiveMessage> message(new CheckForInactiveMessage(this));
+  auto message = MakeUnique<CheckForInactiveMessage>(this);
   GraphImpl()->RunMessageAfterProcessing(Move(message));
 }
 

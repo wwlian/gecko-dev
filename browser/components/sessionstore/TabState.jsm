@@ -27,20 +27,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "Utils",
  * Module that contains tab state collection methods.
  */
 this.TabState = Object.freeze({
-  setSyncHandler: function (browser, handler) {
-    TabStateInternal.setSyncHandler(browser, handler);
-  },
-
   update: function (browser, data) {
     TabStateInternal.update(browser, data);
-  },
-
-  flushAsync: function (browser) {
-    TabStateInternal.flushAsync(browser);
-  },
-
-  flushWindow: function (window) {
-    TabStateInternal.flushWindow(window);
   },
 
   collect: function (tab) {
@@ -53,62 +41,15 @@ this.TabState = Object.freeze({
 
   copyFromCache(browser, tabData, options) {
     TabStateInternal.copyFromCache(browser, tabData, options);
-  }
+  },
 });
 
 var TabStateInternal = {
-  // A map (xul:browser -> handler) that maps a tab to the
-  // synchronous collection handler object for that tab.
-  // See SyncHandler in content-sessionStore.js.
-  _syncHandlers: new WeakMap(),
-
-  // A map (xul:browser -> int) that maps a browser to the
-  // last "SessionStore:update" message ID we received for it.
-  _latestMessageID: new WeakMap(),
-
-  /**
-   * Install the sync handler object from a given tab.
-   */
-  setSyncHandler: function (browser, handler) {
-    this._syncHandlers.set(browser.permanentKey, handler);
-    this._latestMessageID.set(browser.permanentKey, 0);
-  },
-
   /**
    * Processes a data update sent by the content script.
    */
-  update: function (browser, {id, data}) {
-    // Only ever process messages that have an ID higher than the last one we
-    // saw. This ensures we don't use stale data that has already been received
-    // synchronously.
-    if (id > this._latestMessageID.get(browser.permanentKey)) {
-      this._latestMessageID.set(browser.permanentKey, id);
-      TabStateCache.update(browser, data);
-    }
-  },
-
-  /**
-   * DO NOT USE - DEBUGGING / TESTING ONLY
-   *
-   * This function is used to simulate certain situations where race conditions
-   * can occur by sending data shortly before flushing synchronously.
-   */
-  flushAsync: function(browser) {
-    if (this._syncHandlers.has(browser.permanentKey)) {
-      this._syncHandlers.get(browser.permanentKey).flushAsync();
-    }
-  },
-
-  /**
-   * Flushes queued content script data for all browsers of a given window.
-   */
-  flushWindow: function (window) {
-    for (let browser of window.gBrowser.browsers) {
-      if (this._syncHandlers.has(browser.permanentKey)) {
-        let lastID = this._latestMessageID.get(browser.permanentKey);
-        this._syncHandlers.get(browser.permanentKey).flush(lastID);
-      }
-    }
+  update: function (browser, {data}) {
+    TabStateCache.update(browser, data);
   },
 
   /**
@@ -151,26 +92,26 @@ var TabStateInternal = {
    * @returns {object} An object with the basic data for this tab.
    */
   _collectBaseTabData: function (tab, options) {
-    let tabData = {entries: [], lastAccessed: tab.lastAccessed };
+    let tabData = { entries: [], lastAccessed: tab.lastAccessed };
     let browser = tab.linkedBrowser;
 
-    if (tab.pinned)
+    if (tab.pinned) {
       tabData.pinned = true;
-    else
-      delete tabData.pinned;
+    }
+
     tabData.hidden = tab.hidden;
-    if (browser.audioMuted)
+
+    if (browser.audioMuted) {
       tabData.muted = true;
-    else
-      delete tabData.muted;
+      tabData.muteReason = tab.muteReason;
+    }
 
     // Save tab attributes.
     tabData.attributes = TabAttributes.get(tab);
 
-    if (tab.__SS_extdata)
+    if (tab.__SS_extdata) {
       tabData.extData = tab.__SS_extdata;
-    else if (tabData.extData)
-      delete tabData.extData;
+    }
 
     // Copy data from the tab state cache only if the tab has fully finished
     // restoring. We don't want to overwrite data contained in __SS_data.
@@ -225,14 +166,18 @@ var TabStateInternal = {
       // Filter sensitive data according to the current privacy level.
       if (!includePrivateData) {
         if (key === "storage") {
-          value = PrivacyFilter.filterSessionStorageData(value, isPinned);
+          value = PrivacyFilter.filterSessionStorageData(value);
         } else if (key === "formdata") {
-          value = PrivacyFilter.filterFormData(value, isPinned);
+          value = PrivacyFilter.filterFormData(value);
         }
       }
 
       if (key === "history") {
         tabData.entries = value.entries;
+
+        if (value.hasOwnProperty("userContextId")) {
+          tabData.userContextId = value.userContextId;
+        }
 
         if (value.hasOwnProperty("index")) {
           tabData.index = value.index;

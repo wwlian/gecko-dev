@@ -19,6 +19,7 @@
 #include "mozilla/layers/CompositorTypes.h"  // for TextureFlags, etc
 #include "mozilla/layers/FenceUtils.h"  // for FenceHandle
 #include "mozilla/layers/LayersTypes.h"  // for LayerRenderState, etc
+#include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/mozalloc.h"           // for operator delete
 #include "mozilla/UniquePtr.h"          // for UniquePtr
 #include "nsCOMPtr.h"                   // for already_AddRefed
@@ -37,6 +38,7 @@ class Shmem;
 
 namespace layers {
 
+class BufferDescriptor;
 class Compositor;
 class CompositableParentManager;
 class SurfaceDescriptor;
@@ -85,6 +87,8 @@ public:
   TextureSource();
 
   virtual ~TextureSource();
+
+  virtual const char* Name() const = 0;
 
   /**
    * Should be overridden in order to deallocate the data that is associated
@@ -228,8 +232,11 @@ class DataTextureSource : public TextureSource
 {
 public:
   DataTextureSource()
-    : mUpdateSerial(0)
+    : mOwner(0)
+    , mUpdateSerial(0)
   {}
+
+  virtual const char* Name() const override { return "DataTextureSource"; }
 
   virtual DataTextureSource* AsDataTextureSource() override { return this; }
 
@@ -271,7 +278,23 @@ public:
   virtual already_AddRefed<gfx::DataSourceSurface> ReadBack() { return nullptr; };
 #endif
 
+  void SetOwner(TextureHost* aOwner)
+  {
+    auto newOwner = (uintptr_t)aOwner;
+    if (newOwner != mOwner) {
+      mOwner = newOwner;
+      SetUpdateSerial(0);
+    }
+  }
+
+  bool IsOwnedBy(TextureHost* aOwner) const { return mOwner == (uintptr_t)aOwner; }
+
+  bool HasOwner() const { return !IsOwnedBy(nullptr); }
+
 private:
+  // We store mOwner as an integer rather than as a pointer to make it clear
+  // it is not intended to be dereferenced.
+  uintptr_t mOwner;
   uint32_t mUpdateSerial;
 };
 
@@ -357,6 +380,11 @@ public:
    * format and produce 3 "alpha" textures sources.
    */
   virtual gfx::SurfaceFormat GetFormat() const = 0;
+  /**
+   * Return the format used for reading the texture.
+   * Apple's YCBCR_422 is R8G8B8X8.
+   */
+  virtual gfx::SurfaceFormat GetReadFormat() const { return GetFormat(); }
 
   /**
    * Called during the transaction. The TextureSource may or may not be composited.
@@ -461,6 +489,8 @@ public:
    */
   static bool SendDeleteIPDLActor(PTextureParent* actor);
 
+  static void ReceivedDestroy(PTextureParent* actor);
+
   /**
    * Get the TextureHost corresponding to the actor passed in parameter.
    */
@@ -500,7 +530,7 @@ public:
    * in-memory buffer. The consequence of this is that locking the
    * TextureHost does not contend with locking the texture on the client side.
    */
-  virtual bool HasInternalBuffer() const { return false; }
+  virtual bool HasIntermediateBuffer() const { return false; }
 
   void AddCompositableRef() { ++mCompositableCount; }
 
@@ -567,8 +597,7 @@ protected:
 class BufferTextureHost : public TextureHost
 {
 public:
-  BufferTextureHost(gfx::SurfaceFormat aFormat,
-                    TextureFlags aFlags);
+  BufferTextureHost(const BufferDescriptor& aDescriptor, TextureFlags aFlags);
 
   ~BufferTextureHost();
 
@@ -579,6 +608,8 @@ public:
   virtual bool Lock() override;
 
   virtual void Unlock() override;
+
+  virtual void PrepareTextureSource(CompositableTextureSourceRef& aTexture) override;
 
   virtual bool BindTextureSource(CompositableTextureSourceRef& aTexture) override;
 
@@ -599,25 +630,25 @@ public:
 
   virtual already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override;
 
-  virtual bool HasInternalBuffer() const override { return true; }
+  virtual bool HasIntermediateBuffer() const override { return mHasIntermediateBuffer; }
 
 protected:
   bool Upload(nsIntRegion *aRegion = nullptr);
   bool MaybeUpload(nsIntRegion *aRegion = nullptr);
-
-  void InitSize();
+  bool EnsureWrappingTextureSource();
 
   virtual void UpdatedInternal(const nsIntRegion* aRegion = nullptr) override;
 
+  BufferDescriptor mDescriptor;
   RefPtr<Compositor> mCompositor;
   RefPtr<DataTextureSource> mFirstSource;
   nsIntRegion mMaybeUpdatedRegion;
   gfx::IntSize mSize;
-  // format of the data that is shared with the content process.
   gfx::SurfaceFormat mFormat;
   uint32_t mUpdateSerial;
   bool mLocked;
   bool mNeedsFullUpdate;
+  bool mHasIntermediateBuffer;
 };
 
 /**
@@ -629,7 +660,7 @@ class ShmemTextureHost : public BufferTextureHost
 {
 public:
   ShmemTextureHost(const mozilla::ipc::Shmem& aShmem,
-                   gfx::SurfaceFormat aFormat,
+                   const BufferDescriptor& aDesc,
                    ISurfaceAllocator* aDeallocator,
                    TextureFlags aFlags);
 
@@ -664,7 +695,7 @@ class MemoryTextureHost : public BufferTextureHost
 {
 public:
   MemoryTextureHost(uint8_t* aBuffer,
-                    gfx::SurfaceFormat aFormat,
+                    const BufferDescriptor& aDesc,
                     TextureFlags aFlags);
 
 protected:
@@ -722,6 +753,8 @@ public:
     , mHasComplexProjection(false)
   {}
   virtual ~CompositingRenderTarget() {}
+
+  virtual const char* Name() const override { return "CompositingRenderTarget"; }
 
 #ifdef MOZ_DUMP_PAINTING
   virtual already_AddRefed<gfx::DataSourceSurface> Dump(Compositor* aCompositor) { return nullptr; }

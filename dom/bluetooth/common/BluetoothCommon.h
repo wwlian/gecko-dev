@@ -11,6 +11,7 @@
 #include "mozilla/Compiler.h"
 #include "mozilla/Endian.h"
 #include "mozilla/Observer.h"
+#include "mozilla/UniquePtr.h"
 #include "nsAutoPtr.h"
 #include "nsPrintfCString.h"
 #include "nsString.h"
@@ -517,7 +518,7 @@ struct BluetoothAddress {
 struct BluetoothConfigurationParameter {
   uint8_t mType;
   uint16_t mLength;
-  nsAutoArrayPtr<uint8_t> mValue;
+  mozilla::UniquePtr<uint8_t[]> mValue;
 };
 
 /*
@@ -549,11 +550,13 @@ enum BluetoothServiceClass {
 };
 
 struct BluetoothUuid {
+  static const BluetoothUuid ZERO;
+  static const BluetoothUuid BASE;
 
-  uint8_t mUuid[16];
+  uint8_t mUuid[16];  // store 128-bit UUID value in big-endian order
 
   BluetoothUuid()
-    : BluetoothUuid(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    : BluetoothUuid(ZERO)
   { }
 
   MOZ_IMPLICIT BluetoothUuid(const BluetoothUuid&) = default;
@@ -607,7 +610,7 @@ struct BluetoothUuid {
    */
   void Clear()
   {
-    operator=(BluetoothUuid());
+    operator=(ZERO);
   }
 
   /**
@@ -616,7 +619,7 @@ struct BluetoothUuid {
    */
   bool IsCleared() const
   {
-    return operator==(BluetoothUuid());
+    return operator==(ZERO);
   }
 
   bool operator==(const BluetoothUuid& aRhs) const
@@ -630,30 +633,25 @@ struct BluetoothUuid {
     return !operator==(aRhs);
   }
 
+  /* This less-than operator is used for sorted insertion of nsTArray */
+  bool operator<(const BluetoothUuid& aUuid) const
+  {
+    return memcmp(mUuid, aUuid.mUuid, sizeof(aUuid.mUuid)) < 0;
+  };
+
   /*
    * Getter-setter methods for short UUIDS. The first 4 bytes in the
    * UUID are represented by the short notation UUID32, and bytes 3
    * and 4 (indices 2 and 3) are represented by UUID16. The rest of
-   * the UUID is filled with the SDP base UUID.
+   * the UUID is filled with the Bluetooth Base UUID.
    *
    * Below are helpers for accessing these values.
    */
 
   void SetUuid32(uint32_t aUuid32)
   {
+    operator=(BASE);
     BigEndian::writeUint32(&mUuid[0], aUuid32);
-    mUuid[4] = 0x00;
-    mUuid[5] = 0x00;
-    mUuid[6] = 0x10;
-    mUuid[7] = 0x00;
-    mUuid[8] = 0x80;
-    mUuid[9] = 0x00;
-    mUuid[10] = 0x00;
-    mUuid[11] = 0x80;
-    mUuid[12] = 0x5f;
-    mUuid[13] = 0x9b;
-    mUuid[14] = 0x34;
-    mUuid[15] = 0xfb;
   }
 
   uint32_t GetUuid32() const
@@ -663,7 +661,8 @@ struct BluetoothUuid {
 
   void SetUuid16(uint16_t aUuid16)
   {
-    SetUuid32(aUuid16); // MSB is 0x0000
+    operator=(BASE);
+    BigEndian::writeUint16(&mUuid[2], aUuid16);
   }
 
   uint16_t GetUuid16() const
@@ -713,6 +712,52 @@ struct BluetoothRemoteInfo {
 
 struct BluetoothRemoteName {
   uint8_t mName[248]; /* not \0-terminated */
+  uint8_t mLength;
+
+  BluetoothRemoteName()
+    : mLength(0)
+  { }
+
+  explicit BluetoothRemoteName(const nsACString_internal& aString)
+    : mLength(0)
+  {
+    MOZ_ASSERT(aString.Length() <= MOZ_ARRAY_LENGTH(mName));
+    memcpy(mName, aString.Data(), aString.Length());
+    mLength = aString.Length();
+  }
+
+  BluetoothRemoteName(const BluetoothRemoteName&) = default;
+
+  BluetoothRemoteName& operator=(const BluetoothRemoteName&) = default;
+
+  bool operator==(const BluetoothRemoteName& aRhs) const
+  {
+    MOZ_ASSERT(mLength <= MOZ_ARRAY_LENGTH(mName));
+    return (mLength == aRhs.mLength) &&
+            std::equal(aRhs.mName, aRhs.mName + aRhs.mLength, mName);
+  }
+
+  bool operator!=(const BluetoothRemoteName& aRhs) const
+  {
+    return !operator==(aRhs);
+  }
+
+  void Assign(const uint8_t* aName, size_t aLength)
+  {
+    MOZ_ASSERT(aLength <= MOZ_ARRAY_LENGTH(mName));
+    memcpy(mName, aName, aLength);
+    mLength = aLength;
+  }
+
+  void Clear()
+  {
+    mLength = 0;
+  }
+
+  bool IsCleared() const
+  {
+    return !mLength;
+  }
 };
 
 struct BluetoothProperty {
@@ -725,8 +770,10 @@ struct BluetoothProperty {
   /* PROPERTY_BDADDR */
   BluetoothAddress mBdAddress;
 
-  /* PROPERTY_BDNAME
-     PROPERTY_REMOTE_FRIENDLY_NAME */
+  /* PROPERTY_BDNAME */
+  BluetoothRemoteName mRemoteName;
+
+  /* PROPERTY_REMOTE_FRIENDLY_NAME */
   nsString mString;
 
   /* PROPERTY_UUIDS */
@@ -762,6 +809,12 @@ struct BluetoothProperty {
                              const BluetoothAddress& aBdAddress)
     : mType(aType)
     , mBdAddress(aBdAddress)
+  { }
+
+  explicit BluetoothProperty(BluetoothPropertyType aType,
+                             const BluetoothRemoteName& aRemoteName)
+    : mType(aType)
+    , mRemoteName(aRemoteName)
   { }
 
   explicit BluetoothProperty(BluetoothPropertyType aType,
@@ -1071,7 +1124,10 @@ enum BluetoothGattStatus {
   GATT_STATUS_INSUFFICIENT_ENCRYPTION,
   GATT_STATUS_UNSUPPORTED_GROUP_TYPE,
   GATT_STATUS_INSUFFICIENT_RESOURCES,
-  GATT_STATUS_UNKNOWN_ERROR
+  GATT_STATUS_UNKNOWN_ERROR,
+  GATT_STATUS_BEGIN_OF_APPLICATION_ERROR = 0x80,
+  GATT_STATUS_END_OF_APPLICATION_ERROR = 0x9f,
+  GATT_STATUS_END_OF_ERROR = 0x100
 };
 
 enum BluetoothGattAuthReq {
@@ -1250,6 +1306,62 @@ enum BluetoothGapDataType {
   GAP_COMPLETE_UUID128   = 0X07, // Complete List of 128-bit Service Class UUIDs
   GAP_SHORTENED_NAME     = 0X08, // Shortened Local Name
   GAP_COMPLETE_NAME      = 0X09, // Complete Local Name
+};
+
+struct BluetoothGattAdvertisingData {
+  /**
+   * Uuid value of Appearance characteristic of the GAP service which can be
+   * mapped to an icon or string that describes the physical representation of
+   * the device during the device discovery procedure.
+   */
+  uint16_t mAppearance;
+
+  /**
+   * Whether to broadcast with device name or not.
+   */
+  bool mIncludeDevName;
+
+  /**
+   * Whether to broadcast with TX power or not.
+   */
+  bool mIncludeTxPower;
+
+  /**
+   * Byte array of custom manufacturer specific data.
+   *
+   * The first 2 octets contain the Company Identifier Code followed by
+   * additional manufacturer specific data. See Core Specification Supplement
+   * (CSS) v6 1.4 for more details.
+   */
+  nsTArray<uint8_t> mManufacturerData;
+
+  /**
+   * Consists of a service UUID with the data associated with that service.
+   * Please see Core Specification Supplement (CSS) v6 1.11 for more details.
+   */
+  nsTArray<uint8_t> mServiceData;
+
+  /**
+   * A list of Service or Service Class UUIDs.
+   * Please see Core Specification Supplement (CSS) v6 1.1 for more details.
+   */
+  nsTArray<BluetoothUuid> mServiceUuids;
+
+  BluetoothGattAdvertisingData()
+    : mAppearance(0)
+    , mIncludeDevName(false)
+    , mIncludeTxPower(false)
+  { }
+
+  bool operator==(const BluetoothGattAdvertisingData& aOther) const
+  {
+    return mIncludeDevName == aOther.mIncludeDevName &&
+           mIncludeTxPower == aOther.mIncludeTxPower &&
+           mAppearance == aOther.mAppearance &&
+           mManufacturerData == aOther.mManufacturerData &&
+           mServiceData == aOther.mServiceData &&
+           mServiceUuids == aOther.mServiceUuids;
+  }
 };
 
 END_BLUETOOTH_NAMESPACE

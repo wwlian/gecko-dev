@@ -5,12 +5,12 @@
 "use strict";
 
 const { Ci, Cu } = require("chrome");
-const Services = require("Services");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const { assert, fetch } = DevToolsUtils;
 const EventEmitter = require("devtools/shared/event-emitter");
 const { OriginalLocation, GeneratedLocation } = require("devtools/server/actors/common");
 const { resolve } = require("promise");
+const URL = require("URL");
 
 loader.lazyRequireGetter(this, "SourceActor", "devtools/server/actors/script", true);
 loader.lazyRequireGetter(this, "isEvalSource", "devtools/server/actors/script", true);
@@ -34,6 +34,7 @@ function TabSources(threadActor, allowSourceFn=() => true) {
 
   this.blackBoxedSources = new Set();
   this.prettyPrintedSources = new Map();
+  this.neverAutoBlackBoxSources = new Set();
 
   // generated Debugger.Source -> promise of SourceMapConsumer
   this._sourceMaps = new Map();
@@ -56,16 +57,22 @@ TabSources.prototype = {
   /**
    * Update preferences and clear out existing sources
    */
-  reconfigure: function(options) {
+  setOptions: function(options) {
+    let shouldReset = false;
+
     if ('useSourceMaps' in options) {
+      shouldReset = true;
       this._useSourceMaps = options.useSourceMaps;
     }
 
     if ('autoBlackBox' in options) {
+      shouldReset = true;
       this._autoBlackBox = options.autoBlackBox;
     }
 
-    this.reset();
+    if (shouldReset) {
+      this.reset();
+    }
   },
 
   /**
@@ -169,8 +176,12 @@ TabSources.prototype = {
     this._thread.threadLifetimePool.addActor(actor);
     sourceActorStore.setReusableActorId(source, originalUrl, actor.actorID);
 
-    if (this._autoBlackBox && this._isMinifiedURL(actor.url)) {
+    if (this._autoBlackBox &&
+        !this.neverAutoBlackBoxSources.has(actor.url) &&
+        this._isMinifiedURL(actor.url)) {
+
       this.blackBox(actor.url);
+      this.neverAutoBlackBoxSources.add(actor.url);
     }
 
     if (source) {
@@ -247,9 +258,9 @@ TabSources.prototype = {
    */
   _isMinifiedURL: function (aURL) {
     try {
-      let url = Services.io.newURI(aURL, null, null)
-                           .QueryInterface(Ci.nsIURL);
-      return MINIFIED_SOURCE_REGEXP.test(url.fileName);
+      let url = new URL(aURL);
+      let pathname = url.pathname;
+      return MINIFIED_SOURCE_REGEXP.test(pathname.slice(pathname.lastIndexOf("/") + 1));
     } catch (e) {
       // Not a valid URL so don't try to parse out the filename, just test the
       // whole thing with the minified source regexp.
@@ -290,22 +301,28 @@ TabSources.prototype = {
       spec.isInlineSource = true;
     } else {
       if (url) {
-        try {
-          let urlInfo = Services.io.newURI(url, null, null).QueryInterface(Ci.nsIURL);
-          if (urlInfo.fileExtension === "xml") {
-            // XUL inline scripts may not correctly have the
-            // `source.element` property, so do a blunt check here if
-            // it's an xml page.
-            spec.isInlineSource = true;
-          }
-          else if (urlInfo.fileExtension === "js") {
-            spec.contentType = "text/javascript";
-          }
-        } catch(ex) {
-          // There are a few special URLs that we know are JavaScript:
-          // inline `javascript:` and code coming from the console
-          if (url.indexOf("javascript:") === 0 || url === 'debugger eval code') {
-            spec.contentType = "text/javascript";
+        // There are a few special URLs that we know are JavaScript:
+        // inline `javascript:` and code coming from the console
+        if (url.indexOf("javascript:") === 0 || url === 'debugger eval code') {
+          spec.contentType = "text/javascript";
+        } else {
+          try {
+            let pathname = new URL(url).pathname;
+            let filename = pathname.slice(pathname.lastIndexOf("/") + 1);
+            let index = filename.lastIndexOf(".");
+            let extension = index >= 0 ? filename.slice(index + 1) : "";
+            if (extension === "xml") {
+              // XUL inline scripts may not correctly have the
+              // `source.element` property, so do a blunt check here if
+              // it's an xml page.
+              spec.isInlineSource = true;
+            }
+            else if (extension === "js") {
+              spec.contentType = "text/javascript";
+            }
+          } catch (e) {
+            // This only needs to be here because URL is not yet exposed to
+            // workers.
           }
         }
       }
@@ -387,7 +404,8 @@ TabSources.prototype = {
     let result = this._fetchSourceMap(sourceMapURL, aSource.url);
 
     // The promises in `_sourceMaps` must be the exact same instances
-    // as returned by `_fetchSourceMap` for `clearSourceMapCache` to work.
+    // as returned by `_fetchSourceMap` for `clearSourceMapCache` to
+    // work.
     this._sourceMaps.set(aSource, result);
     return result;
   },
@@ -466,8 +484,9 @@ TabSources.prototype = {
   },
 
   _dirname: function (aPath) {
-    return Services.io.newURI(
-      ".", null, Services.io.newURI(aPath, null, null)).spec;
+    let url = new URL(aPath);
+    let href = url.href;
+    return href.slice(0, href.lastIndexOf("/"));
   },
 
   /**
@@ -620,8 +639,8 @@ TabSources.prototype = {
       originalColumn
     } = originalLocation;
 
-    let source = originalSourceActor.source ||
-                 originalSourceActor.generatedSource;
+    let source = (originalSourceActor.source ||
+                  originalSourceActor.generatedSource);
 
     return this.fetchSourceMap(source).then((map) => {
       if (map) {
@@ -766,12 +785,12 @@ TabSources.prototype = {
    */
   _normalize: function (...aURLs) {
     assert(aURLs.length > 1, "Should have more than 1 URL");
-    let base = Services.io.newURI(aURLs.pop(), null, null);
+    let base = new URL(aURLs.pop());
     let url;
     while ((url = aURLs.pop())) {
-      base = Services.io.newURI(url, null, base);
+      base = new URL(url, base);
     }
-    return base.spec;
+    return base.href;
   },
 
   iter: function () {

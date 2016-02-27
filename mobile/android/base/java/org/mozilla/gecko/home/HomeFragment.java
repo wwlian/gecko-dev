@@ -7,6 +7,7 @@ package org.mozilla.gecko.home;
 
 import java.util.EnumSet;
 
+import android.os.AsyncTask;
 import org.mozilla.gecko.EditBookmarkDialog;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoEvent;
@@ -14,6 +15,7 @@ import org.mozilla.gecko.GeckoProfile;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.ReaderModeUtils;
 import org.mozilla.gecko.Restrictions;
+import org.mozilla.gecko.SnackbarHelper;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
 import org.mozilla.gecko.db.BrowserDB;
@@ -35,6 +37,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.os.Bundle;
+import android.support.design.widget.Snackbar;
 import android.support.v4.app.Fragment;
 import android.text.TextUtils;
 import android.util.Log;
@@ -43,7 +46,6 @@ import android.view.ContextMenu.ContextMenuInfo;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
-import android.widget.Toast;
 
 /**
  * HomeFragment is an empty fragment that can be added to the HomePager.
@@ -218,7 +220,15 @@ public abstract class HomeFragment extends Fragment {
             }
 
             // Fetch an icon big enough for use as a home screen icon.
-            Favicons.getPreferredSizeFaviconForPage(context, info.url, new GeckoAppShell.CreateShortcutFaviconLoadedListener(info.url, info.getDisplayTitle()));
+            final String displayTitle = info.getDisplayTitle();
+            ThreadUtils.postToBackgroundThread(new Runnable() {
+                @Override
+                public void run() {
+                    GeckoAppShell.createShortcut(displayTitle, info.url);
+
+                }
+            });
+
             return true;
         }
 
@@ -384,6 +394,7 @@ public abstract class HomeFragment extends Fragment {
 
             switch(mType) {
                 case BOOKMARKS:
+                    Telemetry.sendUIEvent(TelemetryContract.Event.UNSAVE, TelemetryContract.Method.CONTEXT_MENU, "bookmark");
                     mDB.removeBookmarksWithURL(cr, mUrl);
                     break;
 
@@ -392,6 +403,7 @@ public abstract class HomeFragment extends Fragment {
                     break;
 
                 case READING_LIST:
+                    Telemetry.sendUIEvent(TelemetryContract.Event.UNSAVE, TelemetryContract.Method.CONTEXT_MENU, "reading_list");
                     mDB.getReadingListAccessor().removeReadingListItemWithURL(cr, mUrl);
                     GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Reader:Removed", mUrl));
                     break;
@@ -405,7 +417,9 @@ public abstract class HomeFragment extends Fragment {
 
         @Override
         public void onPostExecute(Void result) {
-            Toast.makeText(mContext, R.string.page_removed, Toast.LENGTH_SHORT).show();
+            SnackbarHelper.showSnackbar((Activity) mContext,
+                    mContext.getString(R.string.page_removed),
+                    Snackbar.LENGTH_LONG);
         }
     }
 }

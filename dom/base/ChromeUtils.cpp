@@ -70,5 +70,35 @@ ChromeUtils::OriginAttributesMatchPattern(dom::GlobalObject& aGlobal,
   return pattern.Matches(attrs);
 }
 
+/* static */ void
+ChromeUtils::CreateOriginAttributesWithUserContextId(dom::GlobalObject& aGlobal,
+                                                     const nsAString& aOrigin,
+                                                     uint32_t aUserContextId,
+                                                     dom::OriginAttributesDictionary& aAttrs,
+                                                     ErrorResult& aRv)
+{
+  GenericOriginAttributes attrs;
+  nsAutoCString suffix;
+  if (!attrs.PopulateFromOrigin(NS_ConvertUTF16toUTF8(aOrigin), suffix)) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  attrs.mUserContextId = aUserContextId;
+  aAttrs = attrs;
+}
+
+/* static */ bool
+ChromeUtils::IsOriginAttributesEqual(dom::GlobalObject& aGlobal,
+                                     const dom::OriginAttributesDictionary& aA,
+                                     const dom::OriginAttributesDictionary& aB)
+{
+  return aA.mAddonId == aB.mAddonId &&
+         aA.mAppId == aB.mAppId &&
+         aA.mInBrowser == aB.mInBrowser &&
+         aA.mSignedPkg == aB.mSignedPkg &&
+         aA.mUserContextId == aB.mUserContextId;
+}
+
 } // namespace dom
 } // namespace mozilla

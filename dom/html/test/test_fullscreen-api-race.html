@@ -16,6 +16,15 @@ function Deferred() {
 }
 
 SimpleTest.waitForExplicitFinish();
+// XXX This actually exposes a true race condition, but it could rarely
+// happen in real world, because it only happens when requestFullscreen
+// is called immediately after exiting fullscreen in certain condition,
+// and in real life, requestFullscreen can only be called inside a user
+// event handler. But we want to fix this race condition at some point,
+// via queuing all exiting request as well as entering request together
+// which we may eventually need to do for bug 1188256.
+SimpleTest.requestFlakyTimeout(
+  "Need to wait for potential fullscreen transition");
 addLoadEvent(function () {
   SpecialPowers.pushPrefEnv({
     "set": [["full-screen-api.allow-trusted-requests-only", false]]
@@ -54,19 +63,19 @@ const ACTION_FUNCS = [
     info("About to cancel fullscreen");
     var deferred = new Deferred();
     function listener() {
-      win.removeEventListener("mozfullscreenchange", listener);
-      ok(!win.document.mozFullScreen, "Should exit fullscreen");
+      win.removeEventListener("fullscreenchange", listener);
+      ok(!win.document.fullscreenElement, "Should exit fullscreen");
       ok(!win.fullScreen, "The window should no longer be in fullscreen");
       win.close();
       deferred.resolve();
     }
-    win.addEventListener("mozfullscreenchange", listener);
-    win.document.mozCancelFullScreen();
+    win.addEventListener("fullscreenchange", listener);
+    win.document.exitFullscreen();
     return deferred.promise;
   },
   function exitAndClose(win) {
     info("About to cancel fullscreen and close the window");
-    win.document.mozCancelFullScreen();
+    win.document.exitFullscreen();
     win.close();
     return Promise.resolve();
   }
@@ -89,18 +98,18 @@ function runTest(test) {
     return new Promise((resolve, reject) => {
       var retried = false;
       function listener(evt) {
-        if (!retried && evt.type == "mozfullscreenerror") {
+        if (!retried && evt.type == "fullscreenerror") {
           todo(false, "Failed to enter fullscreen, but try again");
           retried = true;
           SimpleTest.waitForFocus(() => {
-            win.document.documentElement.mozRequestFullScreen();
+            win.document.documentElement.requestFullscreen();
           }, win, true);
           return;
         }
-        win.removeEventListener("mozfullscreenchange", listener);
-        win.removeEventListener("mozfullscreenerror", listener);
-        is(evt.type, "mozfullscreenchange", "Should get fullscreenchange");
-        ok(win.document.mozFullScreen, "Should have entered fullscreen");
+        win.removeEventListener("fullscreenchange", listener);
+        win.removeEventListener("fullscreenerror", listener);
+        is(evt.type, "fullscreenchange", "Should get fullscreenchange");
+        ok(win.document.fullscreenElement, "Should have entered fullscreen");
         ok(win.fullScreen, "The window should be in fullscreen");
         test.actionFunc(win).then(resolve);
       }
@@ -111,9 +120,9 @@ function runTest(test) {
         return;
       }
       info("About to enter fullscreen");
-      win.addEventListener("mozfullscreenchange", listener);
-      win.addEventListener("mozfullscreenerror", listener);
-      win.document.documentElement.mozRequestFullScreen();
+      win.addEventListener("fullscreenchange", listener);
+      win.addEventListener("fullscreenerror", listener);
+      win.document.documentElement.requestFullscreen();
     });
   }).then(() => {
     ok(win.closed, "The window should have been closed");
@@ -132,7 +141,9 @@ function next() {
     }).catch(() => {
       ok(false, "Fail to run test " +
          `${test.openWinFunc.name}, ${test.actionFunc.name}`);
-    }).then(() => SimpleTest.waitForFocus(next));
+    }).then(() => {
+      setTimeout(() => SimpleTest.waitForFocus(next), 1000);
+    });
   } else {
     SimpleTest.finish();
     return;

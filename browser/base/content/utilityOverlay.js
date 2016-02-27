@@ -10,6 +10,9 @@ Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 Components.utils.import("resource:///modules/RecentWindow.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "ShellService",
+                                  "resource:///modules/ShellService.jsm");
+
 XPCOMUtils.defineLazyServiceGetter(this, "aboutNewTabService",
                                    "@mozilla.org/browser/aboutnewtab-service;1",
                                    "nsIAboutNewTabService");
@@ -111,8 +114,8 @@ function openUILink(url, event, aIgnoreButton, aIgnoreAlt, aAllowThirdPartyFixup
  *
  * Middle-clicking is the same as Ctrl+clicking (it opens a new tab).
  *
- * Exceptions: 
- * - Alt is ignored for menu items selected using the keyboard so you don't accidentally save stuff.  
+ * Exceptions:
+ * - Alt is ignored for menu items selected using the keyboard so you don't accidentally save stuff.
  *    (Currently, the Alt isn't sent here at all for menu items, but that will change in bug 126189.)
  * - Alt is hard to use in context menus, because pressing Alt closes the menu.
  * - Alt can't be used on the bookmarks toolbar because Alt is used for "treat this as something draggable".
@@ -413,7 +416,7 @@ function closeMenus(node)
 }
 
 // Gather all descendent text under given document node.
-function gatherTextUnder ( root ) 
+function gatherTextUnder ( root )
 {
   var text = "";
   var node = root.firstChild;
@@ -454,15 +457,10 @@ function gatherTextUnder ( root )
   return text;
 }
 
+// This function exists for legacy reasons.
 function getShellService()
 {
-  var shell = null;
-  try {
-    shell = Components.classes["@mozilla.org/browser/shell-service;1"]
-      .getService(Components.interfaces.nsIShellService);
-  } catch (e) {
-  }
-  return shell;
+  return ShellService;
 }
 
 function isBidiEnabled() {
@@ -675,7 +673,7 @@ function makeURLAbsolute(aBase, aUrl)
  *        This will be used as the referrer. There will be no security check.
  * @param [optional] aReferrerPolicy
  *        Referrer policy - Ci.nsIHttpChannel.REFERRER_POLICY_*.
- */ 
+ */
 function openNewTabWith(aURL, aDocument, aPostData, aEvent,
                         aAllowThirdPartyFixup, aReferrer, aReferrerPolicy) {
 
@@ -730,7 +728,7 @@ function openHelpLink(aHelpTopic, aCalledFromModal, aWhere) {
 }
 
 function openPrefsHelp() {
-  // non-instant apply prefwindows are usually modal, so we can't open in the topmost window, 
+  // non-instant apply prefwindows are usually modal, so we can't open in the topmost window,
   // since its probably behind the window.
   var instantApply = getBoolPref("browser.preferences.instantApply");
 

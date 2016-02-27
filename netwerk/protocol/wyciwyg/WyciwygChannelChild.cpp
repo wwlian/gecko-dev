@@ -56,12 +56,7 @@ WyciwygChannelChild::~WyciwygChannelChild()
 {
   LOG(("Destroying WyciwygChannelChild @%x\n", this));
   if (mLoadInfo) {
-    nsCOMPtr<nsIThread> mainThread;
-    NS_GetMainThread(getter_AddRefs(mainThread));
-
-    nsILoadInfo *forgetableLoadInfo;
-    mLoadInfo.forget(&forgetableLoadInfo);
-    NS_ProxyRelease(mainThread, forgetableLoadInfo, false);
+    NS_ReleaseOnMainThread(mLoadInfo.forget());
   }
 }
 
@@ -433,6 +428,8 @@ WyciwygChannelChild::SetLoadGroup(nsILoadGroup * aLoadGroup)
                                 mLoadGroup,
                                 NS_GET_IID(nsIProgressEventSink),
                                 getter_AddRefs(mProgressSink));
+
+  UpdatePrivateBrowsing();
   return NS_OK;
 }
 
@@ -525,6 +522,7 @@ WyciwygChannelChild::SetNotificationCallbacks(nsIInterfaceRequestor * aCallbacks
                                 mLoadGroup,
                                 NS_GET_IID(nsIProgressEventSink),
                                 getter_AddRefs(mProgressSink));
+  UpdatePrivateBrowsing();
   return NS_OK;
 }
 

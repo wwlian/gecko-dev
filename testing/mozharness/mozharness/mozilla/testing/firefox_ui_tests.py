@@ -14,7 +14,7 @@ import os
 import sys
 import urlparse
 
-from mozharness.base.log import FATAL
+from mozharness.base.log import FATAL, WARNING
 from mozharness.base.python import PostScriptRun, PreScriptAction
 from mozharness.mozilla.structuredlog import StructuredOutputParser
 from mozharness.mozilla.testing.testbase import (
@@ -99,7 +99,8 @@ firefox_ui_update_config_options = firefox_ui_update_harness_config_options \
 
 class FirefoxUITests(TestingMixin, VCSToolsScript):
 
-    cli_script = 'runtests.py'
+    # Needs to be overwritten in sub classes
+    cli_script = None
 
     def __init__(self, config_options=None,
                  all_actions=None, default_actions=None,
@@ -108,7 +109,6 @@ class FirefoxUITests(TestingMixin, VCSToolsScript):
         actions = [
             'clobber',
             'download-and-extract',
-            'checkout',  # keep until firefox-ui-tests are located in tree
             'create-virtualenv',
             'install',
             'run-tests',
@@ -121,53 +121,54 @@ class FirefoxUITests(TestingMixin, VCSToolsScript):
             default_actions=default_actions or actions,
             *args, **kwargs)
 
+        # As long as we don't run on buildbot the following properties have be set on our own
+        self.binary_path = self.config.get('binary_path')
+        self.installer_path = self.config.get('installer_path')
+        self.installer_url = self.config.get('installer_url')
+        self.test_packages_url = self.config.get('test_packages_url')
+        self.test_url = self.config.get('test_url')
+
         self.reports = {'html': 'report.html', 'xunit': 'report.xml'}
 
         self.firefox_ui_repo = self.config['firefox_ui_repo']
         self.firefox_ui_branch = self.config.get('firefox_ui_branch')
 
-        if not self.firefox_ui_branch:
+        if not self.test_url and not self.test_packages_url and not self.firefox_ui_branch:
             self.fatal(
-                'Please specify --firefox-ui-branch. Valid values can be found '
-                'in here https://github.com/mozilla/firefox-ui-tests/branches')
-
-        # As long as we don't run on buildbot the installers are not handled by TestingMixin
-        self.installer_url = self.config.get('installer_url')
-        self.installer_path = self.config.get('installer_path')
+                'You must use --test-url, --test-packages-url, or --firefox-ui-branch (valid '
+                'values can be found at: https://github.com/mozilla/firefox-ui-tests/branches)')
 
     @PreScriptAction('create-virtualenv')
     def _pre_create_virtualenv(self, action):
         dirs = self.query_abs_dirs()
 
-        # List of exact versions of mozbase packages which are known to work
-        requirements_file = os.path.join(dirs['fx_ui_dir'], 'requirements.txt')
-        if os.path.isfile(requirements_file):
-            self.register_virtualenv_module(requirements=[requirements_file])
+        # If tests are used from common.tests.zip install every Python package
+        # via the single requirements file
+        if self.test_packages_url or self.test_url:
+            test_install_dir = dirs.get('abs_test_install_dir',
+                                        os.path.join(dirs['abs_work_dir'], 'tests'))
+            requirements = os.path.join(test_install_dir,
+                                        'config', 'firefox_ui_requirements.txt')
+            self.register_virtualenv_module(requirements=[requirements], two_pass=True)
 
-        # Optional packages to be installed, e.g. for Jenkins
-        if self.config.get('virtualenv_modules'):
-            for module in self.config['virtualenv_modules']:
-                self.register_virtualenv_module(module)
-
-        self.register_virtualenv_module('firefox-ui-tests', url=dirs['fx_ui_dir'])
-
-    @PreScriptAction('checkout')
-    def _pre_checkout(self, action):
-        if not self.firefox_ui_branch:
-            self.fatal(
-                'Please specify --firefox-ui-branch. Valid values can be found '
-                'in here https://github.com/mozilla/firefox-ui-tests/branches')
+        # We have a non-packaged version of Firefox UI tests. So install requirements
+        # and the firefox-ui-tests package separately
+        # TODO - Can be removed when the github repository is no longer needed
+        else:
+            # Register all modules for firefox-ui-tests including all dependencies
+            # as strict versions to ensure newer releases won't break something
+            requirements = os.path.join(dirs.get('abs_test_install_dir',
+                                                 os.path.join(dirs['abs_work_dir'], 'tests')),
+                                        'requirements.txt')
+            self.register_virtualenv_module(requirements=[requirements])
 
     def checkout(self):
-        """
-        We checkout firefox_ui_tests and update to the right branch
-        for it.
-        """
+        """Clone the firefox-ui-tests repository."""
         dirs = self.query_abs_dirs()
 
         self.vcs_checkout(
             repo=self.firefox_ui_repo,
-            dest=dirs['fx_ui_dir'],
+            dest=dirs['abs_test_install_dir'],
             branch=self.firefox_ui_branch,
             vcs='gittool',
             env=self.query_env(),
@@ -181,37 +182,43 @@ class FirefoxUITests(TestingMixin, VCSToolsScript):
         dirs = self.query_abs_dirs()
         self.rmtree(dirs['abs_reports_dir'], error_level=FATAL)
 
-    def copy_reports_to_upload_dir(self):
-        self.info("Copying reports to upload dir...")
-
-        dirs = self.query_abs_dirs()
-        for report in self.reports:
-            self.copy_to_upload_dir(os.path.join(dirs['abs_reports_dir'], self.reports[report]),
-                                    dest=os.path.join('reports', self.reports[report]),
-                                    short_desc='%s log' % self.reports[report],
-                                    long_desc='%s log' % self.reports[report],
-                                    max_backups=self.config.get("log_max_rotate", 0))
-
     def download_and_extract(self):
-        """Overriding method from TestingMixin until firefox-ui-tests are in tree.
+        """Overriding method from TestingMixin for more specific behavior.
 
-        Right now we only care about the installer and symbolds.
+        We use the test_packages_url command line argument to check where to get the
+        harness, puppeteer, and tests from and how to set them up.
 
         """
-        self._download_installer()
+        if self.test_packages_url or self.test_url:
+            target_unzip_dirs = ['config/*',
+                                 'firefox-ui/*',
+                                 'marionette/*',
+                                 'mozbase/*',
+                                 'puppeteer/*',
+                                 'tools/wptserve/*',
+                                 ]
+            super(FirefoxUITests, self).download_and_extract(target_unzip_dirs=target_unzip_dirs)
 
-        if self.config.get('download_symbols'):
-            self._download_and_extract_symbols()
+        else:
+            self.checkout()
+            self._download_installer()
+
+            if self.config.get('download_symbols'):
+                self._download_and_extract_symbols()
 
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
 
-        abs_dirs = VCSToolsScript.query_abs_dirs(self)
-        abs_dirs.update({
+        abs_dirs = super(FirefoxUITests, self).query_abs_dirs()
+        dirs = {
             'abs_reports_dir': os.path.join(abs_dirs['base_work_dir'], 'reports'),
-            'fx_ui_dir': os.path.join(abs_dirs['abs_work_dir'], 'firefox_ui_tests'),
-        })
+            'abs_test_install_dir': os.path.join(abs_dirs['abs_work_dir'], 'tests'),
+        }
+
+        for key in dirs:
+            if key not in abs_dirs:
+                abs_dirs[key] = dirs[key]
         self.abs_dirs = abs_dirs
 
         return self.abs_dirs
@@ -238,14 +245,16 @@ class FirefoxUITests(TestingMixin, VCSToolsScript):
         return args
 
     def query_minidump_stackwalk(self):
-        """We don't have an extracted test package available to get the manifest file.
+        """Download the minidump stackwalk binary.
 
-        So we have to explicitely download the latest version of the manifest from the
-        mozilla-central repository and feed it into the query_minidump_stackwalk() method.
-
-        We can remove this whole method once our tests are part of the tree.
+        We can remove this whole method once we no longer need the github repository.
 
         """
+        # If the test package is available use it
+        if self.test_packages_url or self.test_url:
+            return super(FirefoxUITests, self).query_minidump_stackwalk()
+
+        # Otherwise grab the manifest file from hg.mozilla.org
         manifest_path = None
 
         if self.config.get('download_minidump_stackwalk'):
@@ -263,17 +272,33 @@ class FirefoxUITests(TestingMixin, VCSToolsScript):
         return super(FirefoxUITests, self).query_minidump_stackwalk(manifest=manifest_path)
 
     @PostScriptRun
-    def _upload_reports_post_run(self):
-        if self.config.get("copy_reports_post_run", True):
-            self.copy_reports_to_upload_dir()
+    def copy_logs_to_upload_dir(self):
+        """Overwrite this method so we also upload the other (e.g. report) files"""
+        # Copy logs and report files to the upload folder
+        super(FirefoxUITests, self).copy_logs_to_upload_dir()
+
+        dirs = self.query_abs_dirs()
+        self.info("Copying reports to upload dir...")
+        for report in self.reports:
+            self.copy_to_upload_dir(os.path.join(dirs['abs_reports_dir'], self.reports[report]),
+                                    dest=os.path.join('reports', self.reports[report]),
+                                    short_desc='%s log' % self.reports[report],
+                                    long_desc='%s log' % self.reports[report],
+                                    max_backups=self.config.get("log_max_rotate", 0),
+                                    error_level=WARNING,
+                                    )
 
     def run_test(self, binary_path, env=None, marionette_port=2828):
         """All required steps for running the tests against an installer."""
         dirs = self.query_abs_dirs()
 
+        # Import the harness to retrieve the location of the cli scripts
+        import firefox_ui_harness
+
         cmd = [
             self.query_python_path(),
-            os.path.join(dirs['fx_ui_dir'], 'firefox_ui_harness', self.cli_script),
+            os.path.join(os.path.dirname(firefox_ui_harness.__file__),
+                         self.cli_script),
             '--binary', binary_path,
             '--address', 'localhost:{}'.format(marionette_port),
 
@@ -329,6 +354,58 @@ class FirefoxUITests(TestingMixin, VCSToolsScript):
             env=self.query_env(),
         )
 
+    def download_unzip(self, url, parent_dir, target_unzip_dirs=None, halt_on_failure=True):
+        """Overwritten method from BaseScript until bug 1237706 is fixed.
+
+        The downloaded file will always be saved to the working directory and is not getting
+        deleted after extracting.
+
+        Args:
+            url (str): URL where the file to be downloaded is located.
+            parent_dir (str): directory where the downloaded file will
+                              be extracted to.
+            target_unzip_dirs (list, optional): directories inside the zip file to extract.
+                                                Defaults to `None`.
+            halt_on_failure (bool, optional): whether or not to redefine the
+                                              log level as `FATAL` on errors. Defaults to True.
+
+        """
+        import fnmatch
+        import itertools
+        import functools
+        import zipfile
+
+        def _filter_entries(namelist):
+            """Filter entries of the archive based on the specified list of extract_dirs."""
+            filter_partial = functools.partial(fnmatch.filter, namelist)
+            for entry in itertools.chain(*map(filter_partial, target_unzip_dirs or ['*'])):
+                yield entry
+
+        dirs = self.query_abs_dirs()
+        zip = self.download_file(url, parent_dir=dirs['abs_work_dir'],
+                                 error_level=FATAL)
+
+        try:
+            self.info('Using ZipFile to extract {} to {}'.format(zip, parent_dir))
+            with zipfile.ZipFile(zip) as bundle:
+                for entry in _filter_entries(bundle.namelist()):
+                    bundle.extract(entry, path=parent_dir)
+
+                    # ZipFile doesn't preserve permissions: http://bugs.python.org/issue15795
+                    fname = os.path.realpath(os.path.join(parent_dir, entry))
+                    mode = bundle.getinfo(entry).external_attr >> 16 & 0x1FF
+                    # Only set permissions if attributes are available.
+                    if mode:
+                        os.chmod(fname, mode)
+        except zipfile.BadZipfile as e:
+            self.log('%s (%s)' % (e.message, zip),
+                     level=FATAL, exit_code=2)
+
+
+class FirefoxUIFunctionalTests(FirefoxUITests):
+
+    cli_script = 'cli_functional.py'
+
 
 class FirefoxUIUpdateTests(FirefoxUITests):
 
@@ -337,10 +414,12 @@ class FirefoxUIUpdateTests(FirefoxUITests):
     def __init__(self, config_options=None, *args, **kwargs):
         config_options = config_options or firefox_ui_update_config_options
 
-        FirefoxUITests.__init__(self, config_options=config_options,
-                                *args, **kwargs)
+        super(FirefoxUIUpdateTests, self).__init__(
+            config_options=config_options,
+            *args, **kwargs
+        )
 
     def query_harness_args(self):
         """Collects specific update test related command line arguments."""
-        return FirefoxUITests.query_harness_args(self,
-                                                 firefox_ui_update_harness_config_options)
+        return super(FirefoxUIUpdateTests, self).query_harness_args(
+            firefox_ui_update_harness_config_options)

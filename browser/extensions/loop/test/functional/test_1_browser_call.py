@@ -12,7 +12,7 @@ sys.path.insert(1, os.path.dirname(os.path.abspath(__file__)))
 import pyperclip
 
 from serversetup import LoopTestServers
-from config import *
+from config import FIREFOX_PREFERENCES
 
 
 class Test1BrowserCall(MarionetteTestCase):
@@ -81,7 +81,7 @@ class Test1BrowserCall(MarionetteTestCase):
         # for Marionette bug 1094246 to be fixed.
         chatbox = self.wait_for_element_exists(By.TAG_NAME, 'chatbox')
         script = ("return document.getAnonymousElementByAttribute("
-                  "arguments[0], 'class', 'chat-frame');")
+                  "arguments[0], 'anonid', 'content');")
         frame = self.marionette.execute_script(script, [chatbox])
         self.marionette.switch_to_frame(frame)
 
@@ -130,7 +130,7 @@ class Test1BrowserCall(MarionetteTestCase):
     # Assumes the standalone or the conversation window is selected first.
     def check_video(self, selector):
         video = self.wait_for_element_displayed(By.CSS_SELECTOR,
-                                                        selector, 20)
+                                                selector, 20)
         self.wait_for_element_attribute_to_be_false(video, "paused")
         self.assertEqual(video.get_attribute("ended"), "false")
 
@@ -216,8 +216,8 @@ class Test1BrowserCall(MarionetteTestCase):
         chatbox = self.wait_for_element_exists(By.TAG_NAME, 'chatbox')
         script = '''
             let chatBrowser = document.getAnonymousElementByAttribute(
-              arguments[0], 'class',
-              'chat-frame')
+              arguments[0], 'anonid',
+              'content')
 
             // note that using wrappedJSObject waives X-ray vision, which
             // has security implications, but because we trust the code
@@ -263,41 +263,41 @@ class Test1BrowserCall(MarionetteTestCase):
     def test_1_browser_call(self):
         self.switch_to_panel()
 
-        # self.local_start_a_conversation()
+        self.local_start_a_conversation()
 
-        # # Check the self video in the conversation window
-        # self.local_check_room_self_video()
+        # Check the self video in the conversation window
+        self.local_check_room_self_video()
 
-        # # make sure that the media start time is not initialized
-        # self.local_check_media_start_time_uninitialized()
+        # make sure that the media start time is not initialized
+        self.local_check_media_start_time_uninitialized()
 
-        # room_url = self.local_get_and_verify_room_url()
+        room_url = self.local_get_and_verify_room_url()
 
-        # # load the link clicker interface into the current content browser
-        # self.standalone_load_and_join_room(room_url)
+        # load the link clicker interface into the current content browser
+        self.standalone_load_and_join_room(room_url)
 
-        # # Check we get the video streams
-        # self.standalone_check_remote_video()
-        # self.local_check_remote_video()
+        # Check we get the video streams
+        self.standalone_check_remote_video()
+        self.local_check_remote_video()
 
-        # # Check text messaging
-        # self.check_text_messaging()
+        # Check text messaging
+        self.check_text_messaging()
 
-        # # since bi-directional media is connected, make sure we've set
-        # # the start time
-        # self.local_check_media_start_time_initialized()
+        # since bi-directional media is connected, make sure we've set
+        # the start time
+        self.local_check_media_start_time_initialized()
 
-        # # Check that screenshare was automatically started
-        # self.standalone_check_remote_screenshare()
+        # Check that screenshare was automatically started
+        self.standalone_check_remote_screenshare()
 
-        # # We hangup on the remote (standalone) side, because this also leaves
-        # # the local chatbox with the local publishing media still connected,
-        # # which means that the local_check_connection_length below
-        # # verifies that the connection is noted at the time the remote media
-        # # drops, rather than waiting until the window closes.
-        # self.remote_leave_room()
+        # We hangup on the remote (standalone) side, because this also leaves
+        # the local chatbox with the local publishing media still connected,
+        # which means that the local_check_connection_length below
+        # verifies that the connection is noted at the time the remote media
+        # drops, rather than waiting until the window closes.
+        self.remote_leave_room()
 
-        # self.local_check_connection_length_noted()
+        self.local_check_connection_length_noted()
 
     def tearDown(self):
         self.loop_test_servers.shutdown()

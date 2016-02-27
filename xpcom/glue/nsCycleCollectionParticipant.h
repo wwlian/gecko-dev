@@ -64,6 +64,8 @@ struct TraceCallbacks
                      void* aClosure) const = 0;
   virtual void Trace(JS::Heap<JSObject*>* aPtr, const char* aName,
                      void* aClosure) const = 0;
+  virtual void Trace(JSObject** aPtr, const char* aName,
+                     void* aClosure) const = 0;
   virtual void Trace(JS::TenuredHeap<JSObject*>* aPtr, const char* aName,
                      void* aClosure) const = 0;
   virtual void Trace(JS::Heap<JSString*>* aPtr, const char* aName,
@@ -76,7 +78,7 @@ struct TraceCallbacks
 
 /*
  * An implementation of TraceCallbacks that calls a single function for all JS
- * GC thing types encountered.
+ * GC thing types encountered. Implemented in nsCycleCollectorTraceJSHelpers.cpp.
  */
 struct TraceCallbackFunc : public TraceCallbacks
 {
@@ -89,6 +91,8 @@ struct TraceCallbackFunc : public TraceCallbacks
   virtual void Trace(JS::Heap<jsid>* aPtr, const char* aName,
                      void* aClosure) const override;
   virtual void Trace(JS::Heap<JSObject*>* aPtr, const char* aName,
+                     void* aClosure) const override;
+  virtual void Trace(JSObject** aPtr, const char* aName,
                      void* aClosure) const override;
   virtual void Trace(JS::TenuredHeap<JSObject*>* aPtr, const char* aName,
                      void* aClosure) const override;
@@ -184,6 +188,7 @@ public:
   NS_IMETHOD_(void) Trace(void* aPtr, const TraceCallbacks& aCb,
                           void* aClosure) override = 0;
 
+  // Implemented in nsCycleCollectorTraceJSHelpers.cpp.
   static void NoteJSChild(JS::GCCellPtr aGCThing, const char* aName,
                           void* aClosure);
 };
@@ -463,10 +468,6 @@ DowncastCCParticipant(void* aPtr)
     NS_CYCLE_COLLECTION_CLASSNAME(_base_class)::Trace(s, aCallbacks, aClosure);
 
 #define NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(_field)              \
-  if (tmp->_field)                                                             \
-    aCallbacks.Trace(&tmp->_field, #_field, aClosure);
-
-#define NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(_field)           \
   aCallbacks.Trace(&tmp->_field, #_field, aClosure);
 
 // NB: The (void)tmp; hack in the TRACE_END macro exists to support

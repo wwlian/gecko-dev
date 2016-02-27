@@ -13,19 +13,17 @@ DIRS += [
     'commandline',
     'debugger',
     'eyedropper',
-    'fontinspector',
     'framework',
     'inspector',
     'jsonview',
-    'layoutview',
     'locales',
-    'markupview',
     'memory',
     'netmonitor',
     'performance',
     'preferences',
     'projecteditor',
     'promisedebugger',
+    'responsive.html',
     'responsivedesign',
     'scratchpad',
     'shadereditor',
@@ -34,7 +32,6 @@ DIRS += [
     'sourceeditor',
     'storage',
     'styleeditor',
-    'styleinspector',
     'themes',
     'tilt',
     'webaudioeditor',
@@ -47,8 +44,8 @@ if CONFIG['MOZ_BUILD_APP'] == 'browser':
     DIRS += ['themes/shims']
 
 EXTRA_COMPONENTS += [
-    'devtools-clhandler.js',
-    'devtools-clhandler.manifest',
+    'devtools-startup.js',
+    'devtools-startup.manifest',
 ]
 
 JAR_MANIFESTS += ['jar.mn']

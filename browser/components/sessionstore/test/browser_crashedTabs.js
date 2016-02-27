@@ -3,6 +3,8 @@
 
 "use strict";
 
+requestLongerTimeout(10);
+
 const PAGE_1 = "data:text/html,<html><body>A%20regular,%20everyday,%20normal%20page.";
 const PAGE_2 = "data:text/html,<html><body>Another%20regular,%20everyday,%20normal%20page.";
 
@@ -14,9 +16,6 @@ registerCleanupFunction(() => {
 
 // Allow tabs to restore on demand so we can test pending states
 Services.prefs.clearUserPref("browser.sessionstore.restore_on_demand");
-
-// Running this test in ASAN is slow.
-requestLongerTimeout(2);
 
 function clickButton(browser, id) {
   info("Clicking " + id);

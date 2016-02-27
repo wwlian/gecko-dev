@@ -7,6 +7,7 @@
 
 #include "GLContext.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
+#include "nsPrintfCString.h"
 #include "WebGLContext.h"
 #include "WebGLContextUtils.h"
 #include "WebGLExtensions.h"
@@ -19,6 +20,8 @@ WebGLFBAttachPoint::WebGLFBAttachPoint(WebGLFramebuffer* fb, GLenum attachmentPo
     : mFB(fb)
     , mAttachmentPoint(attachmentPoint)
     , mTexImageTarget(LOCAL_GL_NONE)
+    , mTexImageLayer(0)
+    , mTexImageLevel(0)
 { }
 
 WebGLFBAttachPoint::~WebGLFBAttachPoint()
@@ -64,6 +67,17 @@ WebGLFBAttachPoint::Format() const
         return Renderbuffer()->Format();
 
     return nullptr;
+}
+
+uint32_t
+WebGLFBAttachPoint::Samples() const
+{
+    MOZ_ASSERT(IsDefined());
+
+    if (mRenderbufferPtr)
+        return mRenderbufferPtr->Samples();
+
+    return 0;
 }
 
 bool
@@ -218,48 +232,114 @@ WebGLFBAttachPoint::OnBackingStoreRespecified() const
     mFB->InvalidateFramebufferStatus();
 }
 
+void
+WebGLFBAttachPoint::AttachmentName(nsCString* out) const
+{
+    switch (mAttachmentPoint) {
+    case LOCAL_GL_DEPTH_ATTACHMENT:
+        out->AssignLiteral("DEPTH_ATTACHMENT");
+        return;
+
+    case LOCAL_GL_STENCIL_ATTACHMENT:
+        out->AssignLiteral("STENCIL_ATTACHMENT");
+        return;
+
+    case LOCAL_GL_DEPTH_STENCIL_ATTACHMENT:
+        out->AssignLiteral("DEPTH_STENCIL_ATTACHMENT");
+        return;
+
+    default:
+        MOZ_ASSERT(mAttachmentPoint >= LOCAL_GL_COLOR_ATTACHMENT0);
+        out->AssignLiteral("COLOR_ATTACHMENT");
+        const uint32_t n = mAttachmentPoint - LOCAL_GL_COLOR_ATTACHMENT0;
+        out->AppendInt(n);
+        return;
+    }
+}
+
 bool
-WebGLFBAttachPoint::IsComplete(WebGLContext* webgl) const
+WebGLFBAttachPoint::IsComplete(WebGLContext* webgl, nsCString* const out_info) const
 {
     MOZ_ASSERT(IsDefined());
 
-    if (!HasImage())
+    if (!HasImage()) {
+        AttachmentName(out_info);
+        out_info->AppendLiteral("'s image is not defined");
         return false;
+    }
 
     uint32_t width;
     uint32_t height;
     Size(&width, &height);
-    if (!width || !height)
+    if (!width || !height) {
+        AttachmentName(out_info);
+        out_info->AppendLiteral(" has no width or height");
         return false;
-
-    auto formatUsage = Format();
-    if (!formatUsage->isRenderable)
-        return false;
-
-    auto format = formatUsage->format;
-
-    if (webgl->IsWebGL2()) {
-      if (mAttachmentPoint == LOCAL_GL_DEPTH_ATTACHMENT)
-          return format->hasDepth;
-
-      if (mAttachmentPoint == LOCAL_GL_STENCIL_ATTACHMENT)
-          return format->hasStencil;
-
-      if (mAttachmentPoint == LOCAL_GL_DEPTH_STENCIL_ATTACHMENT)
-          MOZ_CRASH("No DEPTH_STENCIL_ATTACHMENT in WebGL 2.");
-    } else {
-        if (mAttachmentPoint == LOCAL_GL_DEPTH_ATTACHMENT)
-            return format->hasDepth && !format->hasStencil;
-
-        if (mAttachmentPoint == LOCAL_GL_STENCIL_ATTACHMENT)
-            return !format->hasDepth && format->hasStencil;
-
-        if (mAttachmentPoint == LOCAL_GL_DEPTH_STENCIL_ATTACHMENT)
-            return format->hasDepth && format->hasStencil;
     }
 
-    MOZ_ASSERT(mAttachmentPoint >= LOCAL_GL_COLOR_ATTACHMENT0);
-    return format->isColorFormat;
+    const auto formatUsage = Format();
+    if (!formatUsage->isRenderable) {
+        nsAutoCString attachName;
+        AttachmentName(&attachName);
+
+        *out_info = nsPrintfCString("%s has an effective format of %s, which is not"
+                                    " renderable",
+                                    attachName.BeginReading(), formatUsage->format->name);
+        return false;
+    }
+
+    const auto format = formatUsage->format;
+
+    bool hasRequiredBits;
+
+    switch (mAttachmentPoint) {
+    case LOCAL_GL_DEPTH_ATTACHMENT:
+        hasRequiredBits = format->hasDepth;
+        break;
+
+    case LOCAL_GL_STENCIL_ATTACHMENT:
+        hasRequiredBits = format->hasStencil;
+        break;
+
+    case LOCAL_GL_DEPTH_STENCIL_ATTACHMENT:
+        MOZ_ASSERT(!webgl->IsWebGL2());
+        hasRequiredBits = (format->hasDepth && format->hasStencil);
+        break;
+
+    default:
+        MOZ_ASSERT(mAttachmentPoint >= LOCAL_GL_COLOR_ATTACHMENT0);
+        hasRequiredBits = format->isColorFormat;
+        break;
+    }
+
+    if (!hasRequiredBits) {
+        AttachmentName(out_info);
+        out_info->AppendLiteral("'s format is missing required color/depth/stencil bits");
+        return false;
+    }
+
+    if (!webgl->IsWebGL2()) {
+        bool hasSurplusPlanes = false;
+
+        switch (mAttachmentPoint) {
+        case LOCAL_GL_DEPTH_ATTACHMENT:
+            hasSurplusPlanes = format->hasStencil;
+            break;
+
+        case LOCAL_GL_STENCIL_ATTACHMENT:
+            hasSurplusPlanes = format->hasDepth;
+            break;
+        }
+
+        if (hasSurplusPlanes) {
+            AttachmentName(out_info);
+            out_info->AppendLiteral("'s format has depth or stencil bits when it"
+                                    " shouldn't");
+            return false;
+        }
+    }
+
+    return true;
 }
 
 void
@@ -325,11 +405,11 @@ WebGLFBAttachPoint::FinalizeAttachment(gl::GLContext* gl, GLenum attachment) con
             }
             break;
         }
-        return ;
+        return;
     }
 
     if (Renderbuffer()) {
-        Renderbuffer()->FramebufferRenderbuffer(attachment);
+        Renderbuffer()->DoFramebufferRenderbuffer(attachment);
         return;
     }
 
@@ -409,9 +489,11 @@ WebGLFBAttachPoint::GetParameter(const char* funcName, WebGLContext* webgl, JSCo
         if (webgl->IsWebGL2() ||
             webgl->IsExtensionEnabled(WebGLExtensionID::EXT_sRGB))
         {
-            const auto format = Format()->format;
-            return JS::Int32Value(format->isSRGB ? LOCAL_GL_SRGB
-                                                 : LOCAL_GL_LINEAR);
+            const auto format = Format();
+            if (!format)
+                return JS::NullValue();
+            return JS::Int32Value(format->format->isSRGB ? LOCAL_GL_SRGB
+                                                         : LOCAL_GL_LINEAR);
         }
         break;
 
@@ -696,13 +778,13 @@ WebGLFramebuffer::HasDefinedAttachments() const
 }
 
 bool
-WebGLFramebuffer::HasIncompleteAttachments() const
+WebGLFramebuffer::HasIncompleteAttachments(nsCString* const out_info) const
 {
-    const auto fnIsIncomplete = [this](const WebGLFBAttachPoint& cur) {
+    const auto fnIsIncomplete = [this, out_info](const WebGLFBAttachPoint& cur) {
         if (!cur.IsDefined())
             return false; // Not defined, so can't count as incomplete.
 
-        return !cur.IsComplete(this->mContext);
+        return !cur.IsComplete(this->mContext, out_info);
     };
 
     bool hasIncomplete = false;
@@ -719,52 +801,95 @@ WebGLFramebuffer::HasIncompleteAttachments() const
     return hasIncomplete;
 }
 
-static bool
-MatchOrReplaceSize(const WebGLFBAttachPoint& cur, uint32_t* const out_width,
-                   uint32_t* const out_height)
-{
-    if (!cur.HasImage())
-        return true;
-
-    uint32_t width;
-    uint32_t height;
-    cur.Size(&width, &height);
-
-    if (!*out_width) {
-        MOZ_ASSERT(!*out_height);
-        *out_width = width;
-        *out_height = height;
-        return true;
-    }
-
-    return (width == *out_width &&
-            height == *out_height);
-}
-
 bool
 WebGLFramebuffer::AllImageRectsMatch() const
 {
     MOZ_ASSERT(HasDefinedAttachments());
-    MOZ_ASSERT(!HasIncompleteAttachments());
+    DebugOnly<nsCString> fbStatusInfo;
+    MOZ_ASSERT(!HasIncompleteAttachments(&fbStatusInfo));
 
+    bool needsInit = true;
     uint32_t width = 0;
     uint32_t height = 0;
-    bool imageRectsMatch = true;
 
-    imageRectsMatch &= MatchOrReplaceSize(mColorAttachment0,       &width, &height);
-    imageRectsMatch &= MatchOrReplaceSize(mDepthAttachment,        &width, &height);
-    imageRectsMatch &= MatchOrReplaceSize(mStencilAttachment,      &width, &height);
-    imageRectsMatch &= MatchOrReplaceSize(mDepthStencilAttachment, &width, &height);
+    const auto fnInitializeOrMatch = [&needsInit, &width,
+                                      &height](const WebGLFBAttachPoint& attach)
+    {
+        if (!attach.HasImage())
+            return true;
+
+        uint32_t curWidth;
+        uint32_t curHeight;
+        attach.Size(&curWidth, &curHeight);
+
+        if (needsInit) {
+            needsInit = false;
+            width = curWidth;
+            height = curHeight;
+            return true;
+        }
+
+        return (curWidth == width &&
+                curHeight == height);
+    };
+
+    bool matches = true;
+
+    matches &= fnInitializeOrMatch(mColorAttachment0      );
+    matches &= fnInitializeOrMatch(mDepthAttachment       );
+    matches &= fnInitializeOrMatch(mStencilAttachment     );
+    matches &= fnInitializeOrMatch(mDepthStencilAttachment);
 
     for (const auto& cur : mMoreColorAttachments) {
-        imageRectsMatch &= MatchOrReplaceSize(cur, &width, &height);
+        matches &= fnInitializeOrMatch(cur);
     }
 
-    return imageRectsMatch;
+    return matches;
+}
+
+bool
+WebGLFramebuffer::AllImageSamplesMatch() const
+{
+    MOZ_ASSERT(HasDefinedAttachments());
+    DebugOnly<nsCString> fbStatusInfo;
+    MOZ_ASSERT(!HasIncompleteAttachments(&fbStatusInfo));
+
+    bool needsInit = true;
+    uint32_t samples = 0;
+
+    const auto fnInitializeOrMatch = [&needsInit,
+                                      &samples](const WebGLFBAttachPoint& attach)
+    {
+        if (!attach.HasImage())
+          return true;
+
+        const uint32_t curSamples = attach.Samples();
+
+        if (needsInit) {
+            needsInit = false;
+            samples = curSamples;
+            return true;
+        }
+
+        return (curSamples == samples);
+    };
+
+    bool matches = true;
+
+    matches &= fnInitializeOrMatch(mColorAttachment0      );
+    matches &= fnInitializeOrMatch(mDepthAttachment       );
+    matches &= fnInitializeOrMatch(mStencilAttachment     );
+    matches &= fnInitializeOrMatch(mDepthStencilAttachment);
+
+    for (const auto& cur : mMoreColorAttachments) {
+        matches &= fnInitializeOrMatch(cur);
+    }
+
+    return matches;
 }
 
 FBStatus
-WebGLFramebuffer::PrecheckFramebufferStatus() const
+WebGLFramebuffer::PrecheckFramebufferStatus(nsCString* const out_info) const
 {
     MOZ_ASSERT(mContext->mBoundDrawFramebuffer == this ||
                mContext->mBoundReadFramebuffer == this);
@@ -772,14 +897,17 @@ WebGLFramebuffer::PrecheckFramebufferStatus() const
     if (!HasDefinedAttachments())
         return LOCAL_GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT; // No attachments
 
-    if (HasIncompleteAttachments())
+    if (HasIncompleteAttachments(out_info))
         return LOCAL_GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+
+    if (!AllImageRectsMatch())
+        return LOCAL_GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS; // Inconsistent sizes
+
+    if (!AllImageSamplesMatch())
+        return LOCAL_GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE; // Inconsistent samples
 
     if (!mContext->IsWebGL2()) {
         // INCOMPLETE_DIMENSIONS doesn't exist in GLES3.
-        if (!AllImageRectsMatch())
-            return LOCAL_GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS; // Inconsistent sizes
-
         const auto depthOrStencilCount = int(mDepthAttachment.IsDefined()) +
                                          int(mStencilAttachment.IsDefined()) +
                                          int(mDepthStencilAttachment.IsDefined());
@@ -791,12 +919,12 @@ WebGLFramebuffer::PrecheckFramebufferStatus() const
 }
 
 FBStatus
-WebGLFramebuffer::CheckFramebufferStatus() const
+WebGLFramebuffer::CheckFramebufferStatus(nsCString* const out_info) const
 {
     if (mIsKnownFBComplete)
         return LOCAL_GL_FRAMEBUFFER_COMPLETE;
 
-    FBStatus ret = PrecheckFramebufferStatus();
+    FBStatus ret = PrecheckFramebufferStatus(out_info);
     if (ret != LOCAL_GL_FRAMEBUFFER_COMPLETE)
         return ret;
 
@@ -809,46 +937,35 @@ WebGLFramebuffer::CheckFramebufferStatus() const
     // TODO: This should not be unconditionally GL_FRAMEBUFFER.
     ret = mContext->gl->fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER);
 
-    if (ret == LOCAL_GL_FRAMEBUFFER_COMPLETE)
+    if (ret == LOCAL_GL_FRAMEBUFFER_COMPLETE) {
         mIsKnownFBComplete = true;
+    } else {
+        out_info->AssignLiteral("Bad status according to the driver");
+    }
 
     return ret;
 }
 
 bool
-WebGLFramebuffer::HasCompletePlanes(GLbitfield mask)
-{
-    if (CheckFramebufferStatus() != LOCAL_GL_FRAMEBUFFER_COMPLETE)
-        return false;
-
-    MOZ_ASSERT(mContext->mBoundDrawFramebuffer == this ||
-               mContext->mBoundReadFramebuffer == this);
-
-    bool hasPlanes = true;
-    if (mask & LOCAL_GL_COLOR_BUFFER_BIT)
-        hasPlanes &= mColorAttachment0.IsDefined();
-
-    if (mask & LOCAL_GL_DEPTH_BUFFER_BIT) {
-        hasPlanes &= mDepthAttachment.IsDefined() ||
-                     mDepthStencilAttachment.IsDefined();
-    }
-
-    if (mask & LOCAL_GL_STENCIL_BUFFER_BIT) {
-        hasPlanes &= mStencilAttachment.IsDefined() ||
-                     mDepthStencilAttachment.IsDefined();
-    }
-
-    return hasPlanes;
-}
-
-bool
-WebGLFramebuffer::CheckAndInitializeAttachments()
+WebGLFramebuffer::ValidateAndInitAttachments(const char* funcName)
 {
     MOZ_ASSERT(mContext->mBoundDrawFramebuffer == this ||
                mContext->mBoundReadFramebuffer == this);
 
-    if (CheckFramebufferStatus() != LOCAL_GL_FRAMEBUFFER_COMPLETE)
+    nsCString fbStatusInfo;
+    const auto fbStatus = CheckFramebufferStatus(&fbStatusInfo);
+    if (fbStatus != LOCAL_GL_FRAMEBUFFER_COMPLETE) {
+        nsCString errorText = nsPrintfCString("Incomplete framebuffer: Status 0x%04x",
+                                              fbStatus.get());
+        if (fbStatusInfo.Length()) {
+            errorText += ": ";
+            errorText += fbStatusInfo;
+        }
+
+        mContext->ErrorInvalidFramebufferOperation("%s: %s.", funcName,
+                                                   errorText.BeginReading());
         return false;
+    }
 
     // Cool! We've checked out ok. Just need to initialize.
 
@@ -928,7 +1045,13 @@ WebGLFramebuffer::CheckAndInitializeAttachments()
     }
 
     // Clear!
-    mContext->ForceClearFramebufferWithDefaultValues(clearBits, false);
+    {
+        // This FB maybe bind to GL_READ_FRAMEBUFFER and glClear only
+        // clear GL_DRAW_FRAMEBUFFER. So bind FB to GL_DRAW_FRAMEBUFFER
+        // here.
+        gl::ScopedBindFramebuffer autoFB(mContext->gl, mGLName);
+        mContext->ForceClearFramebufferWithDefaultValues(clearBits, false);
+    }
 
     if (hasDrawBuffers) {
         fnDrawBuffers(mDrawBuffers);
@@ -1019,11 +1142,8 @@ WebGLFramebuffer::ValidateForRead(const char* funcName,
                                   const webgl::FormatUsageInfo** const out_format,
                                   uint32_t* const out_width, uint32_t* const out_height)
 {
-    if (!CheckAndInitializeAttachments()) {
-        mContext->ErrorInvalidFramebufferOperation("%s: Incomplete framebuffer.",
-                                                   funcName);
+    if (!ValidateAndInitAttachments(funcName))
         return false;
-    }
 
     if (mReadBufferMode == LOCAL_GL_NONE) {
         mContext->ErrorInvalidOperation("%s: Read buffer mode must not be"
@@ -1092,6 +1212,8 @@ WebGLFramebuffer::GetAttachmentParameter(const char* funcName, JSContext* cx,
 
         attachPoint = GetAttachPoint(LOCAL_GL_DEPTH_ATTACHMENT);
     }
+
+    FinalizeAttachments();
 
     return attachPoint->GetParameter(funcName, mContext, cx, target, attachment, pname,
                                      out_error);

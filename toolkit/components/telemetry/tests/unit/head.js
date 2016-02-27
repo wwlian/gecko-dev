@@ -22,8 +22,6 @@ const MILLISECONDS_PER_MINUTE = 60 * 1000;
 const MILLISECONDS_PER_HOUR = 60 * MILLISECONDS_PER_MINUTE;
 const MILLISECONDS_PER_DAY = 24 * MILLISECONDS_PER_HOUR;
 
-const HAS_DATAREPORTINGSERVICE = "@mozilla.org/datareporting/service;1" in Cc;
-
 const PREF_TELEMETRY_ENABLED = "toolkit.telemetry.enabled";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -168,6 +166,10 @@ function loadAddonManager(id, name, version, platformVersion) {
   let uri = ns.Services.io.newFileURI(file);
   ns.Services.scriptloader.loadSubScript(uri.spec, gGlobalScope);
   createAppInfo(id, name, version, platformVersion);
+  // As we're not running in application, we need to setup the features directory
+  // used by system add-ons.
+  const distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "app0"], true);
+  registerDirectory("XREAppFeat", distroDir);
   startupManager();
 }
 
@@ -284,11 +286,6 @@ function fakeGeneratePingId(func) {
 function fakeCachedClientId(uuid) {
   let module = Cu.import("resource://gre/modules/TelemetryController.jsm");
   module.Policy.getCachedClientID = () => uuid;
-}
-
-function fakeIsUnifiedOptin(isOptin) {
-  let module = Cu.import("resource://gre/modules/TelemetryController.jsm");
-  module.Policy.isUnifiedOptin = () => isOptin;
 }
 
 // Return a date that is |offset| ms in the future from |date|.

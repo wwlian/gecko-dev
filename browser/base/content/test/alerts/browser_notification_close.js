@@ -1,7 +1,6 @@
 "use strict";
 
 let tab;
-let notification;
 let notificationURL = "http://example.org/browser/browser/base/content/test/alerts/file_dom_notifications.html";
 
 add_task(function* test_notificationClose() {
@@ -12,23 +11,21 @@ add_task(function* test_notificationClose() {
     gBrowser,
     url: notificationURL
   }, function* dummyTabTask(aBrowser) {
-    let win = aBrowser.contentWindow.wrappedJSObject;
-    notification = win.showNotification2();
-    yield BrowserTestUtils.waitForEvent(notification, "show");
+    yield openNotification(aBrowser, "showNotification2");
 
     info("Notification alert showing");
 
     let alertWindow = Services.wm.getMostRecentWindow("alert:alert");
     if (!alertWindow) {
       ok(true, "Notifications don't use XUL windows on all platforms.");
-      notification.close();
+      yield closeNotification(aBrowser);
       return;
     }
 
     let alertTitleLabel = alertWindow.document.getElementById("alertTitleLabel");
     is(alertTitleLabel.value, "Test title", "Title text of notification should be present");
     let alertTextLabel = alertWindow.document.getElementById("alertTextLabel");
-    is(alertTextLabel.textContent, "Test body", "Body text of notification should be present");
+    is(alertTextLabel.textContent, "Test body 2", "Body text of notification should be present");
 
     let alertCloseButton = alertWindow.document.querySelector(".alertCloseButton");
     is(alertCloseButton.localName, "toolbarbutton", "close button found");

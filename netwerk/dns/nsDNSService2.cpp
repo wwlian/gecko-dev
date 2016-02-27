@@ -50,6 +50,7 @@ static const char kPrefDnsCacheGrace[]       = "network.dnsCacheExpirationGraceP
 static const char kPrefIPv4OnlyDomains[]     = "network.dns.ipv4OnlyDomains";
 static const char kPrefDisableIPv6[]         = "network.dns.disableIPv6";
 static const char kPrefDisablePrefetch[]     = "network.dns.disablePrefetch";
+static const char kPrefBlockDotOnion[]       = "network.dns.blockDotOnion";
 static const char kPrefDnsLocalDomains[]     = "network.dns.localDomains";
 static const char kPrefDnsOfflineLocalhost[] = "network.dns.offline-localhost";
 static const char kPrefDnsNotifyResolution[] = "network.dns.notifyResolution";
@@ -479,8 +480,11 @@ private:
 
 nsDNSService::nsDNSService()
     : mLock("nsDNSServer.mLock")
+    , mDisableIPv6(false)
+    , mDisablePrefetch(false)
     , mFirstTime(true)
-    , mOffline(false)
+    , mNotifyResolution(false)
+    , mOfflineLocalhost(false)
 {
 }
 
@@ -543,6 +547,7 @@ nsDNSService::Init()
     bool     disableIPv6      = false;
     bool     offlineLocalhost = true;
     bool     disablePrefetch  = false;
+    bool     blockDotOnion    = true;
     int      proxyType        = nsIProtocolProxyService::PROXYCONFIG_DIRECT;
     bool     notifyResolution = false;
 
@@ -566,6 +571,7 @@ nsDNSService::Init()
         prefs->GetCharPref(kPrefDnsLocalDomains, getter_Copies(localDomains));
         prefs->GetBoolPref(kPrefDnsOfflineLocalhost, &offlineLocalhost);
         prefs->GetBoolPref(kPrefDisablePrefetch, &disablePrefetch);
+        prefs->GetBoolPref(kPrefBlockDotOnion, &blockDotOnion);
 
         // If a manual proxy is in use, disable prefetch implicitly
         prefs->GetIntPref("network.proxy.type", &proxyType);
@@ -585,6 +591,7 @@ nsDNSService::Init()
             prefs->AddObserver(kPrefDisableIPv6, this, false);
             prefs->AddObserver(kPrefDnsOfflineLocalhost, this, false);
             prefs->AddObserver(kPrefDisablePrefetch, this, false);
+            prefs->AddObserver(kPrefBlockDotOnion, this, false);
             prefs->AddObserver(kPrefDnsNotifyResolution, this, false);
 
             // Monitor these to see if there is a change in proxy configuration
@@ -618,6 +625,7 @@ nsDNSService::Init()
         mIPv4OnlyDomains = ipv4OnlyDomains; // exchanges buffer ownership
         mOfflineLocalhost = offlineLocalhost;
         mDisableIPv6 = disableIPv6;
+        mBlockDotOnion = blockDotOnion;
 
         // Disable prefetching either by explicit preference or if a manual proxy is configured 
         mDisablePrefetch = disablePrefetch || (proxyType == nsIProtocolProxyService::PROXYCONFIG_MANUAL);
@@ -668,18 +676,15 @@ nsDNSService::Shutdown()
     return NS_OK;
 }
 
-NS_IMETHODIMP
-nsDNSService::GetOffline(bool *offline)
+bool
+nsDNSService::GetOffline() const
 {
-    *offline = mOffline;
-    return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDNSService::SetOffline(bool offline)
-{
-    mOffline = offline;
-    return NS_OK;
+    bool offline = false;
+    nsCOMPtr<nsIIOService> io = do_GetService(NS_IOSERVICE_CONTRACTID);
+    if (io) {
+        io->GetOffline(&offline);
+    }
+    return offline;
 }
 
 NS_IMETHODIMP
@@ -698,22 +703,32 @@ nsDNSService::SetPrefetchEnabled(bool inVal)
     return NS_OK;
 }
 
-static inline bool PreprocessHostname(bool              aLocalDomain,
-                                      const nsACString &aInput,
-                                      nsIIDNService    *aIDN,
-                                      nsACString       &aACE)
+nsresult
+nsDNSService::PreprocessHostname(bool              aLocalDomain,
+                                 const nsACString &aInput,
+                                 nsIIDNService    *aIDN,
+                                 nsACString       &aACE)
 {
+    // Enforce RFC 7686
+    if (mBlockDotOnion &&
+        StringEndsWith(aInput, NS_LITERAL_CSTRING(".onion"))) {
+        return NS_ERROR_UNKNOWN_HOST;
+    }
+
     if (aLocalDomain) {
         aACE.AssignLiteral("localhost");
-        return true;
+        return NS_OK;
     }
 
     if (!aIDN || IsASCII(aInput)) {
         aACE = aInput;
-        return true;
+        return NS_OK;
     }
 
-    return IsUTF8(aInput) && NS_SUCCEEDED(aIDN->ConvertUTF8toACE(aInput, aACE));
+    if (!(IsUTF8(aInput) && NS_SUCCEEDED(aIDN->ConvertUTF8toACE(aInput, aACE)))) {
+        return NS_ERROR_FAILURE;
+    }
+    return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -760,10 +775,12 @@ nsDNSService::AsyncResolveExtended(const nsACString  &aHostname,
         return NS_ERROR_OFFLINE;
 
     nsCString hostname;
-    if (!PreprocessHostname(localDomain, aHostname, idn, hostname))
-        return NS_ERROR_FAILURE;
+    nsresult rv = PreprocessHostname(localDomain, aHostname, idn, hostname);
+    if (NS_FAILED(rv)) {
+        return rv;
+    }
 
-    if (mOffline &&
+    if (GetOffline() &&
         (!mOfflineLocalhost || !hostname.LowerCaseEqualsASCII("localhost"))) {
         flags |= RESOLVE_OFFLINE;
     }
@@ -791,9 +808,8 @@ nsDNSService::AsyncResolveExtended(const nsACString  &aHostname,
 
     // addref for resolver; will be released when OnLookupComplete is called.
     NS_ADDREF(req);
-    nsresult rv = res->ResolveHost(req->mHost.get(), flags, af,
-                                   req->mNetworkInterface.get(),
-                                   req);
+    rv = res->ResolveHost(req->mHost.get(), flags, af,
+                          req->mNetworkInterface.get(), req);
     if (NS_FAILED(rv)) {
         NS_RELEASE(req);
         NS_RELEASE(*result);
@@ -837,8 +853,10 @@ nsDNSService::CancelAsyncResolveExtended(const nsACString  &aHostname,
         return NS_ERROR_OFFLINE;
 
     nsCString hostname;
-    if (!PreprocessHostname(localDomain, aHostname, idn, hostname))
-        return NS_ERROR_FAILURE;
+    nsresult rv = PreprocessHostname(localDomain, aHostname, idn, hostname);
+    if (NS_FAILED(rv)) {
+        return rv;
+    }
 
     uint16_t af = GetAFForLookup(hostname, aFlags);
 
@@ -872,10 +890,12 @@ nsDNSService::Resolve(const nsACString &aHostname,
     NS_ENSURE_TRUE(res, NS_ERROR_OFFLINE);
 
     nsCString hostname;
-    if (!PreprocessHostname(localDomain, aHostname, idn, hostname))
-        return NS_ERROR_FAILURE;
+    nsresult rv = PreprocessHostname(localDomain, aHostname, idn, hostname);
+    if (NS_FAILED(rv)) {
+        return rv;
+    }
 
-    if (mOffline &&
+    if (GetOffline() &&
         (!mOfflineLocalhost || !hostname.LowerCaseEqualsASCII("localhost"))) {
         flags |= RESOLVE_OFFLINE;
     }
@@ -897,7 +917,7 @@ nsDNSService::Resolve(const nsACString &aHostname,
 
     uint16_t af = GetAFForLookup(hostname, flags);
 
-    nsresult rv = res->ResolveHost(hostname.get(), flags, af, "", &syncReq);
+    rv = res->ResolveHost(hostname.get(), flags, af, "", &syncReq);
     if (NS_SUCCEEDED(rv)) {
         // wait for result
         while (!syncReq.mDone)

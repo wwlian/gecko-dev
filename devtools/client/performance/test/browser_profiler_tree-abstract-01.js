@@ -11,7 +11,7 @@ var { Heritage } = Cu.import("resource://devtools/client/shared/widgets/ViewHelp
 
 function* spawnTest() {
   let container = document.createElement("vbox");
-  gBrowser.selectedBrowser.parentNode.appendChild(container);
+  yield appendAndWaitForPaint(gBrowser.selectedBrowser.parentNode, container);
 
   // Populate the tree and test the root item...
 
@@ -44,11 +44,14 @@ function* spawnTest() {
   // Expand the root and test the child items...
 
   let receivedExpandEvent = treeRoot.once("expand");
+  let receivedInitialFocusEvent = treeRoot.once("focus");
   EventUtils.sendMouseEvent({ type: "mousedown" }, treeRoot.target.querySelector(".arrow"));
 
   let eventItem = yield receivedExpandEvent;
   is(eventItem, treeRoot,
     "The 'expand' event target is correct.");
+
+  yield receivedInitialFocusEvent;
   is(document.commandDispatcher.focusedElement, treeRoot.target,
     "The root node is now focused.");
 

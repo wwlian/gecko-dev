@@ -22,6 +22,8 @@ extern "C" {
 #include "MediaMetadataManager.h"
 #include "nsISeekableStream.h"
 #include "gfx2DGlue.h"
+#include "mozilla/Telemetry.h"
+#include "nsPrintfCString.h"
 
 using namespace mozilla::gfx;
 using namespace mozilla::media;
@@ -148,6 +150,17 @@ OggReader::~OggReader()
 {
   ogg_sync_clear(&mOggState);
   MOZ_COUNT_DTOR(OggReader);
+  if (HasAudio() || HasVideo()) {
+    // If we were able to initialize our decoders, report whether we encountered
+    // a chained stream or not.
+    ReentrantMonitorAutoEnter mon(mMonitor);
+    bool isChained = mIsChained;
+    nsCOMPtr<nsIRunnable> task = NS_NewRunnableFunction([=]() -> void {
+      LOG(LogLevel::Debug, (nsPrintfCString("Reporting telemetry MEDIA_OGG_LOADED_IS_CHAINED=%d", isChained).get()));
+      Telemetry::Accumulate(Telemetry::ID::MEDIA_OGG_LOADED_IS_CHAINED, isChained);
+    });
+    AbstractThread::MainThread()->Dispatch(task.forget());
+  }
 }
 
 nsresult OggReader::Init() {
@@ -283,7 +296,7 @@ void OggReader::SetupTargetSkeleton(SkeletonState* aSkeletonState)
     } else if (ReadHeaders(aSkeletonState) && aSkeletonState->HasIndex()) {
       // Extract the duration info out of the index, so we don't need to seek to
       // the end of resource to get it.
-      nsAutoTArray<uint32_t, 2> tracks;
+      AutoTArray<uint32_t, 2> tracks;
       BuildSerialList(tracks);
       int64_t duration = 0;
       if (NS_SUCCEEDED(aSkeletonState->GetDuration(tracks, duration))) {
@@ -382,7 +395,7 @@ nsresult OggReader::ReadMetadata(MediaInfo* aInfo,
   *aTags = nullptr;
 
   ogg_page page;
-  nsAutoTArray<OggCodecState*,4> bitstreams;
+  AutoTArray<OggCodecState*,4> bitstreams;
   nsTArray<uint32_t> serials;
   bool readAllBOS = false;
   while (!readAllBOS) {
@@ -704,10 +717,13 @@ bool OggReader::DecodeAudioData()
   return true;
 }
 
-void OggReader::SetChained(bool aIsChained) {
+void OggReader::SetChained() {
   {
     ReentrantMonitorAutoEnter mon(mMonitor);
-    mIsChained = aIsChained;
+    if (mIsChained) {
+      return;
+    }
+    mIsChained = true;
   }
   mOnMediaNotSeekable.Notify();
 }
@@ -800,7 +816,7 @@ bool OggReader::ReadOggChain()
   }
 
   if (chained) {
-    SetChained(true);
+    SetChained();
     {
       auto t = mDecodedAudioFrames * USECS_PER_S / mInfo.mAudio.mRate;
       mTimedMetadataEvent.Notify(
@@ -1139,7 +1155,7 @@ int64_t OggReader::RangeEndTime(int64_t aStartOffset,
       // This page is from a bitstream which we haven't encountered yet.
       // It's probably from a new "link" in a "chained" ogg. Don't
       // bother even trying to find a duration...
-      SetChained(true);
+      SetChained();
       endTime = -1;
       break;
     }
@@ -1238,7 +1254,7 @@ OggReader::IndexedSeekResult OggReader::SeekToKeyframeUsingIndex(int64_t aTarget
     return SEEK_INDEX_FAIL;
   }
   // We have an index from the Skeleton track, try to use it to seek.
-  nsAutoTArray<uint32_t, 2> tracks;
+  AutoTArray<uint32_t, 2> tracks;
   BuildSerialList(tracks);
   SkeletonState::nsSeekTarget keyframe;
   if (NS_FAILED(mSkeletonState->IndexedSeekTarget(aTarget,
@@ -1392,13 +1408,13 @@ nsresult OggReader::SeekInUnbuffered(int64_t aTarget,
 }
 
 RefPtr<MediaDecoderReader::SeekPromise>
-OggReader::Seek(int64_t aTarget, int64_t aEndTime)
+OggReader::Seek(SeekTarget aTarget, int64_t aEndTime)
 {
-  nsresult res = SeekInternal(aTarget, aEndTime);
+  nsresult res = SeekInternal(aTarget.GetTime().ToMicroseconds(), aEndTime);
   if (NS_FAILED(res)) {
     return SeekPromise::CreateAndReject(res, __func__);
   } else {
-    return SeekPromise::CreateAndResolve(aTarget, __func__);
+    return SeekPromise::CreateAndResolve(aTarget.GetTime(), __func__);
   }
 }
 
@@ -1433,7 +1449,7 @@ nsresult OggReader::SeekInternal(int64_t aTarget, int64_t aEndTime)
       // No index or other non-fatal index-related failure. Try to seek
       // using a bisection search. Determine the already downloaded data
       // in the media cache, so we can try to seek in the cached data first.
-      nsAutoTArray<SeekRange, 16> ranges;
+      AutoTArray<SeekRange, 16> ranges;
       res = GetSeekRanges(ranges);
       NS_ENSURE_SUCCESS(res,res);
 
@@ -1913,7 +1929,7 @@ media::TimeIntervals OggReader::GetBuffered()
         // ogg), return OK to abort the finding any further ranges. This
         // prevents us searching through the rest of the media when we
         // may not be able to extract timestamps from it.
-        SetChained(true);
+        SetChained();
         return buffered;
       }
     }

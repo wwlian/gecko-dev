@@ -29,6 +29,7 @@
 #include "mozilla/BasePrincipal.h"
 #include "nsProxyRelease.h"
 #include "nsContentSecurityManager.h"
+#include "nsContentUtils.h"
 
 typedef mozilla::net::LoadContextInfo LoadContextInfo;
 
@@ -39,13 +40,7 @@ public:
 
   ~nsWyciwygAsyncEvent()
   {
-    nsCOMPtr<nsIThread> thread = do_GetMainThread();
-    NS_WARN_IF_FALSE(thread, "Couldn't get the main thread!");
-    if (thread) {
-      nsIWyciwygChannel *chan = static_cast<nsIWyciwygChannel *>(mChannel);
-      mozilla::Unused << mChannel.forget();
-      NS_ProxyRelease(thread, chan);
-    }
+    NS_ReleaseOnMainThread(mChannel.forget());
   }
 protected:
   RefPtr<nsWyciwygChannel> mChannel;
@@ -108,12 +103,7 @@ nsWyciwygChannel::nsWyciwygChannel()
 nsWyciwygChannel::~nsWyciwygChannel() 
 {
   if (mLoadInfo) {
-    nsCOMPtr<nsIThread> mainThread;
-    NS_GetMainThread(getter_AddRefs(mainThread));
-
-    nsILoadInfo *forgetableLoadInfo;
-    mLoadInfo.forget(&forgetableLoadInfo);
-    NS_ProxyRelease(mainThread, forgetableLoadInfo, false);
+    NS_ReleaseOnMainThread(mLoadInfo.forget(), false);
   }
 }
 
@@ -231,7 +221,7 @@ nsWyciwygChannel::SetLoadGroup(nsILoadGroup* aLoadGroup)
                                 mLoadGroup,
                                 NS_GET_IID(nsIProgressEventSink),
                                 getter_AddRefs(mProgressSink));
-  mPrivateBrowsing = NS_UsePrivateBrowsing(this);
+  UpdatePrivateBrowsing();
   NS_GetOriginAttributes(this, mOriginAttributes);
 
   return NS_OK;
@@ -328,7 +318,7 @@ nsWyciwygChannel::SetNotificationCallbacks(nsIInterfaceRequestor* aNotificationC
                                 NS_GET_IID(nsIProgressEventSink),
                                 getter_AddRefs(mProgressSink));
 
-  mPrivateBrowsing = NS_UsePrivateBrowsing(this);
+  UpdatePrivateBrowsing();
   NS_GetOriginAttributes(this, mOriginAttributes);
 
   return NS_OK;

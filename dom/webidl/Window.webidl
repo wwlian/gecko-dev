@@ -69,7 +69,7 @@ typedef any Transferable;
 #ifdef HAVE_SIDEBAR
   [Replaceable, Throws] readonly attribute External external;
 #endif
-  [Throws] readonly attribute ApplicationCache applicationCache;
+  [Throws, Pref="browser.cache.offline.enable"] readonly attribute ApplicationCache applicationCache;
 
   // user prompts
   [Throws, UnsafeInPrerendering] void alert();
@@ -246,6 +246,9 @@ partial interface Window {
 // https://dvcs.w3.org/hg/webcrypto-api/raw-file/tip/spec/Overview.html
 Window implements GlobalCrypto;
 
+// https://fidoalliance.org/specifications/download/
+Window implements GlobalU2F;
+
 #ifdef MOZ_WEBSPEECH
 // http://dvcs.w3.org/hg/speech-api/raw-file/tip/speechapi.html
 [NoInterfaceObject]
@@ -354,6 +357,7 @@ partial interface Window {
 
            attribute EventHandler ondevicemotion;
            attribute EventHandler ondeviceorientation;
+           attribute EventHandler onabsolutedeviceorientation;
            attribute EventHandler ondeviceproximity;
            attribute EventHandler onuserproximity;
            attribute EventHandler ondevicelight;

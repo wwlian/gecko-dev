@@ -12,6 +12,7 @@ import platform
 import subprocess
 import sys
 import which
+from distutils.version import LooseVersion
 
 from mozbuild.base import (
     MachCommandBase,
@@ -34,7 +35,7 @@ and try again.
 '''.strip()
 
 NODE_NOT_FOUND_MESSAGE = '''
-nodejs is either not installed or is installed to a non-standard path.
+nodejs v4.2.3 is either not installed or is installed to a non-standard path.
 Please install nodejs from https://nodejs.org and try again.
 
 Valid installation paths:
@@ -46,21 +47,6 @@ non-standard path. Please install npm from https://nodejs.org (it comes as an
 option in the node installation) and try again.
 
 Valid installation paths:
-'''.strip()
-
-ESLINT_PROMPT = '''
-Would you like to use eslint
-'''.strip()
-
-ESLINT_PLUGIN_MOZILLA_PROMPT = '''
-eslint-plugin-mozilla is an eslint plugin containing rules that help enforce
-JavaScript coding standards in the Mozilla project. Would you like to use this
-plugin
-'''.strip()
-
-ESLINT_PLUGIN_REACT_PROMPT = '''
-eslint-plugin-react is an eslint plugin containing rules that help React
-developers follow strict guidelines. Would you like to install it
 '''.strip()
 
 
@@ -168,17 +154,18 @@ class MachCommands(MachCommandBase):
         description='Run eslint or help configure eslint for optimal development.')
     @CommandArgument('-s', '--setup', default=False, action='store_true',
         help='configure eslint for optimal development.')
-    @CommandArgument('path', nargs='?', default='.',
-        help='Path to files to lint, like "browser/components/loop" '
-            'or "mobile/android". '
-            'Defaults to the current directory if not given.')
-    @CommandArgument('-e', '--ext', default='[.js,.jsm,.jsx]',
-        help='Filename extensions to lint, default: "[.js,.jsm,.jsx]".')
+    @CommandArgument('-e', '--ext', default='[.js,.jsm,.jsx,.xml,.html]',
+        help='Filename extensions to lint, default: "[.js,.jsm,.jsx,.xml,.html]".')
     @CommandArgument('-b', '--binary', default=None,
         help='Path to eslint binary.')
     @CommandArgument('args', nargs=argparse.REMAINDER)  # Passed through to eslint.
-    def eslint(self, setup, path, ext=None, binary=None, args=[]):
+    def eslint(self, setup, ext=None, binary=None, args=None):
         '''Run eslint.'''
+
+        # eslint requires at least node 4.2.3
+        nodePath = self.getNodeOrNpmPath("node", LooseVersion("4.2.3"))
+        if not nodePath:
+            return 1
 
         if setup:
             return self.eslint_setup()
@@ -195,31 +182,30 @@ class MachCommands(MachCommandBase):
             print(ESLINT_NOT_FOUND_MESSAGE)
             return 1
 
-        # The cwd below is unfortunate.  eslint --config=PATH/TO/.eslintrc works,
-        # but --ignore-path=PATH/TO/.eslintignore treats paths as relative to
-        # the current directory, rather than as relative to the location of
-        # .eslintignore (see https://github.com/eslint/eslint/issues/1382).
-        # mach commands always execute in the topsrcdir, so we could make all
-        # paths in .eslint relative to the topsrcdir, but it's not clear if
-        # that's a good choice for future eslint and IDE integrations.
-        # Unfortunately, running after chdir does not print the full path to
-        # files (convenient for opening with copy-and-paste).  In the meantime,
-        # we just print the active path.
+        self.log(logging.INFO, 'eslint', {'binary': binary, 'args': args},
+            'Running {binary}')
 
-        self.log(logging.INFO, 'eslint', {'binary': binary, 'path': path},
-            'Running {binary} in {path}')
+        args = args or ['.']
 
         cmd_args = [binary,
-            '--ext', ext,  # This keeps ext as a single argument.
-        ] + args
-        # Path must come after arguments.
-        cmd_args += [path]
+                    # Enable the HTML plugin.
+                    # We can't currently enable this in the global config file
+                    # because it has bad interactions with the SublimeText
+                    # ESLint plugin (bug 1229874).
+                    '--plugin', 'html',
+                    '--ext', ext,  # This keeps ext as a single argument.
+                    ] + args
 
-        return self.run_process(cmd_args,
+        success = self.run_process(cmd_args,
             pass_thru=True,  # Allow user to run eslint interactively.
             ensure_exit_code=False,  # Don't throw on non-zero exit code.
             require_unix_environment=True # eslint is not a valid Win32 binary.
         )
+
+        self.log(logging.INFO, 'eslint', {'msg': ('No errors' if success == 0 else 'Errors')},
+            'Finished eslint. {msg} encountered.')
+        return success
+
     def eslint_setup(self, update_only=False):
         """Ensure eslint is optimally configured.
 
@@ -229,18 +215,15 @@ class MachCommands(MachCommandBase):
         """
         sys.path.append(os.path.dirname(__file__))
 
-        # At the very least we need node installed.
-        nodePath = self.getNodeOrNpmPath("node")
-        if not nodePath:
-            return 1
-
         npmPath = self.getNodeOrNpmPath("npm")
         if not npmPath:
             return 1
 
-        # Install eslint.
+        # Install eslint 1.10.3.
+        # Note that that's the version currently compatible with the mozilla
+        # eslint plugin.
         success = self.callProcess("eslint",
-                                   [npmPath, "install", "eslint", "-g"])
+                                   [npmPath, "install", "eslint@1.10.3", "-g"])
         if not success:
             return 1
 
@@ -248,6 +231,12 @@ class MachCommands(MachCommandBase):
         success = self.callProcess("eslint-plugin-mozilla",
                                    [npmPath, "link"],
                                    "testing/eslint-plugin-mozilla")
+        if not success:
+            return 1
+
+        # Install eslint-plugin-html.
+        success = self.callProcess("eslint-plugin-html",
+                                   [npmPath, "install", "eslint-plugin-html", "-g"])
         if not success:
             return 1
 
@@ -289,7 +278,7 @@ class MachCommands(MachCommandBase):
             os.path.join(os.environ.get("PROGRAMFILES"), "nodejs")
         })
 
-    def getNodeOrNpmPath(self, filename):
+    def getNodeOrNpmPath(self, filename, minversion=None):
         """
         Return the nodejs or npm path.
         """
@@ -298,13 +287,15 @@ class MachCommands(MachCommandBase):
                 try:
                     nodeOrNpmPath = which.which(filename + ext,
                                                 path=self.getPossibleNodePathsWin())
-                    if self.is_valid(nodeOrNpmPath):
+                    if self.is_valid(nodeOrNpmPath, minversion):
                         return nodeOrNpmPath
                 except which.WhichError:
                     pass
         else:
             try:
-                return which.which(filename)
+                nodeOrNpmPath = which.which(filename)
+                if self.is_valid(nodeOrNpmPath, minversion):
+                    return nodeOrNpmPath
             except which.WhichError:
                 pass
 
@@ -325,10 +316,14 @@ class MachCommands(MachCommandBase):
 
         return None
 
-    def is_valid(self, path):
+    def is_valid(self, path, minversion = None):
         try:
-            with open(os.devnull, "w") as fnull:
-                subprocess.check_call([path, "--version"], stdout=fnull)
-                return True
+            version_str = subprocess.check_output([path, "--version"],
+                                                  stderr=subprocess.STDOUT)
+            if minversion:
+                # nodejs prefixes its version strings with "v"
+                version = LooseVersion(version_str.lstrip('v'))
+                return version >= minversion
+            return True
         except (subprocess.CalledProcessError, WindowsError):
             return False

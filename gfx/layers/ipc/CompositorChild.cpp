@@ -95,7 +95,7 @@ CompositorChild::Destroy()
     mLayerManager = nullptr;
   }
 
-  nsAutoTArray<PLayerTransactionChild*, 16> transactions;
+  AutoTArray<PLayerTransactionChild*, 16> transactions;
   ManagedPLayerTransactionChild(transactions);
   for (int i = transactions.Length() - 1; i >= 0; --i) {
     RefPtr<LayerTransactionChild> layers =
@@ -234,10 +234,10 @@ static void CalculatePluginClip(const LayoutDeviceIntRect& aBounds,
   }
   // shift to plugin widget origin
   contentVisibleRegion.MoveBy(-aBounds.x, -aBounds.y);
-  LayoutDeviceIntRegion::RectIterator iter(contentVisibleRegion);
-  for (const LayoutDeviceIntRect* rgnRect = iter.Next(); rgnRect; rgnRect = iter.Next()) {
-    aResult.AppendElement(*rgnRect);
-    aVisibleBounds.UnionRect(aVisibleBounds, *rgnRect);
+  for (auto iter = contentVisibleRegion.RectIter(); !iter.Done(); iter.Next()) {
+    const LayoutDeviceIntRect& rect = iter.Get();
+    aResult.AppendElement(rect);
+    aVisibleBounds.UnionRect(aVisibleBounds, rect);
   }
 }
 #endif
@@ -323,7 +323,7 @@ CompositorChild::RecvUpdatePluginConfigurations(const LayoutDeviceIntPoint& aCon
   // Any plugins we didn't update need to be hidden, as they are
   // not associated with visible content.
   nsIWidget::UpdateRegisteredPluginWindowVisibility((uintptr_t)parent, visiblePluginIds);
-#if defined(XP_WIN)
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
   SendRemotePluginsReady();
 #endif
   return true;
@@ -341,7 +341,7 @@ CompositorChild::RecvHideAllPlugins(const uintptr_t& aParentWidget)
   MOZ_ASSERT(NS_IsMainThread());
   nsTArray<uintptr_t> list;
   nsIWidget::UpdateRegisteredPluginWindowVisibility(aParentWidget, list);
-#if defined(XP_WIN)
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
   SendRemotePluginsReady();
 #endif
   return true;
@@ -450,7 +450,8 @@ CompositorChild::SharedFrameMetricsData::SharedFrameMetricsData(
   , mLayersId(aLayersId)
   , mAPZCId(aAPZCId)
 {
-  mBuffer = new ipc::SharedMemoryBasic(metrics);
+  mBuffer = new ipc::SharedMemoryBasic;
+  mBuffer->SetHandle(metrics);
   mBuffer->Map(sizeof(FrameMetrics));
   mMutex = new CrossProcessMutex(handle);
   MOZ_COUNT_CTOR(SharedFrameMetricsData);

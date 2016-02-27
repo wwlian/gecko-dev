@@ -40,6 +40,7 @@
 #include "nsPIDNSService.h"
 #include "nsIProtocolProxyService2.h"
 #include "MainThreadUtils.h"
+#include "nsINode.h"
 #include "nsIWidget.h"
 #include "nsThreadUtils.h"
 #include "mozilla/LoadInfo.h"
@@ -48,7 +49,6 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/net/DNS.h"
 #include "CaptivePortalService.h"
-#include "ClosingService.h"
 #include "ReferrerPolicy.h"
 #include "nsContentSecurityManager.h"
 
@@ -63,7 +63,6 @@
 
 using namespace mozilla;
 using mozilla::net::IsNeckoChild;
-using mozilla::net::ClosingService;
 using mozilla::net::CaptivePortalService;
 
 #define PORT_PREF_PREFIX           "network.security.ports."
@@ -181,6 +180,7 @@ nsIOService::nsIOService()
     , mSettingOffline(false)
     , mSetOfflineValue(false)
     , mShutdown(false)
+    , mHttpHandlerAlreadyShutingDown(false)
     , mNetworkLinkServiceInitialized(false)
     , mChannelEventSinks(NS_CHANNEL_EVENT_SINK_CATEGORY)
     , mAutoDialEnabled(false)
@@ -189,6 +189,7 @@ nsIOService::nsIOService()
     , mLastOfflineStateChange(PR_IntervalNow())
     , mLastConnectivityChange(PR_IntervalNow())
     , mLastNetworkLinkChange(PR_IntervalNow())
+    , mNetTearingDownStarted(0)
 {
 }
 
@@ -257,10 +258,6 @@ nsIOService::Init()
 
     InitializeNetworkLinkService();
 
-    // Start the closing service. Actual PR_Close() will be carried out on
-    // a separate "closing" thread. Start the closing servicee here since this
-    // point is executed only once per session.
-    ClosingService::Start();
     SetOffline(false);
 
     return NS_OK;
@@ -566,7 +563,7 @@ nsIOService::GetProtocolHandler(const char* scheme, nsIProtocolHandler* *result)
 NS_IMETHODIMP
 nsIOService::ExtractScheme(const nsACString &inURI, nsACString &scheme)
 {
-    return net_ExtractURLScheme(inURI, nullptr, nullptr, &scheme);
+    return net_ExtractURLScheme(inURI, scheme);
 }
 
 NS_IMETHODIMP 
@@ -1024,9 +1021,6 @@ nsIOService::SetOffline(bool offline)
                                                  NS_IOSERVICE_GOING_OFFLINE_TOPIC,
                                                  offlineString.get());
 
-            if (mDNSService)
-                mDNSService->SetOffline(true);
-
             if (mSocketTransportService)
                 mSocketTransportService->SetOffline(true);
 
@@ -1039,7 +1033,6 @@ nsIOService::SetOffline(bool offline)
         else if (!offline && mOffline) {
             // go online
             if (mDNSService) {
-                mDNSService->SetOffline(false);
                 DebugOnly<nsresult> rv = mDNSService->Init();
                 NS_ASSERTION(NS_SUCCEEDED(rv), "DNS service init failed");
             }
@@ -1073,9 +1066,6 @@ nsIOService::SetOffline(bool offline)
         if (mSocketTransportService) {
             DebugOnly<nsresult> rv = mSocketTransportService->Shutdown();
             NS_ASSERTION(NS_SUCCEEDED(rv), "socket transport service shutdown failed");
-        }
-        if (mShutdown) {
-            ClosingService::Shutdown();
         }
     }
 
@@ -1412,6 +1402,15 @@ nsIOService::NotifyWakeup()
     return NS_OK;
 }
 
+void
+nsIOService::SetHttpHandlerAlreadyShutingDown()
+{
+    if (!mShutdown && !mOfflineForProfileChange) {
+        mNetTearingDownStarted = PR_IntervalNow();
+        mHttpHandlerAlreadyShutingDown = true;
+    }
+}
+
 // nsIObserver interface
 NS_IMETHODIMP
 nsIOService::Observe(nsISupports *subject,
@@ -1423,6 +1422,10 @@ nsIOService::Observe(nsISupports *subject,
         if (prefBranch)
             PrefsChanged(prefBranch, NS_ConvertUTF16toUTF8(data).get());
     } else if (!strcmp(topic, kProfileChangeNetTeardownTopic)) {
+        if (!mHttpHandlerAlreadyShutingDown) {
+          mNetTearingDownStarted = PR_IntervalNow();
+        }
+        mHttpHandlerAlreadyShutingDown = false;
         if (!mOffline) {
             mOfflineForProfileChange = true;
             SetOffline(true);
@@ -1450,6 +1453,11 @@ nsIOService::Observe(nsISupports *subject,
         // changes of the offline status from now. We must not allow going
         // online after this point.
         mShutdown = true;
+
+        if (!mHttpHandlerAlreadyShutingDown && !mOfflineForProfileChange) {
+          mNetTearingDownStarted = PR_IntervalNow();
+        }
+        mHttpHandlerAlreadyShutingDown = false;
 
         SetOffline(true);
 

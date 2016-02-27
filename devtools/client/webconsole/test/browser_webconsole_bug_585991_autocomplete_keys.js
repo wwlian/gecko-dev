@@ -1,15 +1,19 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
 const TEST_URI = "data:text/html;charset=utf-8,<p>bug 585991 - autocomplete " +
                  "popup keyboard usage test";
+
+// We should turn off auto-multiline editing during these tests
+const PREF_AUTO_MULTILINE = "devtools.webconsole.autoMultiline";
 var HUD, popup, jsterm, inputNode, completeNode;
 
-var test = asyncTest(function*() {
+add_task(function*() {
+  Services.prefs.setBoolPref(PREF_AUTO_MULTILINE, false);
   yield loadTab(TEST_URI);
   let hud = yield openConsole();
 
@@ -23,6 +27,7 @@ var test = asyncTest(function*() {
   yield popupHideAfterCompletionInText();
 
   HUD = popup = jsterm = inputNode = completeNode = null;
+  Services.prefs.setBoolPref(PREF_AUTO_MULTILINE, true);
 });
 
 var consoleOpened = Task.async(function*(aHud) {
@@ -88,7 +93,7 @@ var consoleOpened = Task.async(function*(aHud) {
        "Index of the first item from bottom is selected.");
     EventUtils.synthesizeKey("VK_DOWN", {});
 
-    let prefix = jsterm.inputNode.value.replace(/[\S]/g, " ");
+    let prefix = jsterm.getInputValue().replace(/[\S]/g, " ");
 
     is(popup.selectedIndex, 0, "index 0 is selected");
     is(popup.selectedItem.label, "watch", "watch is selected");
@@ -149,7 +154,7 @@ function popupHideAfterTab() {
   // At this point the completion suggestion should be accepted.
   ok(!popup.isOpen, "popup is not open");
 
-  is(inputNode.value, "window.foobarBug585991.watch",
+  is(jsterm.getInputValue(), "window.foobarBug585991.watch",
      "completion was successful after VK_TAB");
 
   ok(!completeNode.value, "completeNode is empty");
@@ -164,7 +169,7 @@ function popupHideAfterTab() {
     is(popup.selectedIndex, 18, "First index from bottom is selected");
     EventUtils.synthesizeKey("VK_DOWN", {});
 
-    let prefix = jsterm.inputNode.value.replace(/[\S]/g, " ");
+    let prefix = jsterm.getInputValue().replace(/[\S]/g, " ");
 
     is(popup.selectedIndex, 0, "index 0 is selected");
     is(popup.selectedItem.label, "watch", "watch is selected");
@@ -176,7 +181,7 @@ function popupHideAfterTab() {
 
       ok(!popup.isOpen, "popup is not open after VK_ESCAPE");
 
-      is(inputNode.value, "window.foobarBug585991.",
+      is(jsterm.getInputValue(), "window.foobarBug585991.",
          "completion was cancelled");
 
       ok(!completeNode.value, "completeNode is empty");
@@ -212,7 +217,7 @@ function testReturnKey() {
     is(popup.selectedIndex, 18, "First index from bottom is selected");
     EventUtils.synthesizeKey("VK_DOWN", {});
 
-    let prefix = jsterm.inputNode.value.replace(/[\S]/g, " ");
+    let prefix = jsterm.getInputValue().replace(/[\S]/g, " ");
 
     is(popup.selectedIndex, 0, "index 0 is selected");
     is(popup.selectedItem.label, "watch", "watch is selected");
@@ -231,7 +236,7 @@ function testReturnKey() {
 
       ok(!popup.isOpen, "popup is not open after VK_RETURN");
 
-      is(inputNode.value, "window.foobarBug585991.valueOf",
+      is(jsterm.getInputValue(), "window.foobarBug585991.valueOf",
          "completion was successful after VK_RETURN");
 
       ok(!completeNode.value, "completeNode is empty");
@@ -255,11 +260,13 @@ function testReturnKey() {
   return deferred.promise;
 }
 
-function dontShowArrayNumbers() {
+function* dontShowArrayNumbers() {
   let deferred = promise.defer();
 
   info("dontShowArrayNumbers");
-  content.wrappedJSObject.foobarBug585991 = ["Sherlock Holmes"];
+  yield ContentTask.spawn(gBrowser.selectedBrowser, {}, function*() {
+    content.wrappedJSObject.foobarBug585991 = ["Sherlock Holmes"];
+  });
 
   jsterm = HUD.jsterm;
   popup = jsterm.autocompletePopup;
@@ -324,7 +331,7 @@ function testReturnWithNoSelection() {
 function popupHideAfterReturnWithNoSelection() {
   ok(!popup.isOpen, "popup is not open after VK_RETURN");
 
-  is(inputNode.value, "", "inputNode is empty after VK_RETURN");
+  is(jsterm.getInputValue(), "", "inputNode is empty after VK_RETURN");
   is(completeNode.value, "", "completeNode is empty");
   is(jsterm.history[jsterm.history.length - 1], "window.testBug",
      "jsterm history is correct");
@@ -369,7 +376,7 @@ function testCompletionInText() {
 function popupHideAfterCompletionInText() {
   // At this point the completion suggestion should be accepted.
   ok(!popup.isOpen, "popup is not open");
-  is(inputNode.value, "dump(window.testBug873250b)",
+  is(jsterm.getInputValue(), "dump(window.testBug873250b)",
      "completion was successful after VK_TAB");
   is(inputNode.selectionStart, 26, "cursor location is correct");
   is(inputNode.selectionStart, inputNode.selectionEnd,

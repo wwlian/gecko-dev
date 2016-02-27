@@ -180,13 +180,20 @@ CompositableClient::Destroy()
   if (!IsConnected()) {
     return;
   }
-  // Send pending AsyncMessages before deleting CompositableChild.
-  // They might have dependency to the mCompositableChild.
+
+  // Send pending AsyncMessages before deleting CompositableChild since the former
+  // might have references to the latter.
   mForwarder->SendPendingAsyncMessges();
-  // Destroy CompositableChild.
+
   mCompositableChild->mCompositableClient = nullptr;
-  mCompositableChild->Destroy();
+  mCompositableChild->Destroy(mForwarder);
   mCompositableChild = nullptr;
+}
+
+bool
+CompositableClient::DestroyFallback(PCompositableChild* aActor)
+{
+  return aActor->SendDestroySync();
 }
 
 uint64_t
@@ -283,23 +290,10 @@ CompositableClient::DumpTextureClient(std::stringstream& aStream,
 
 AutoRemoveTexture::~AutoRemoveTexture()
 {
-#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 17
   if (mCompositable && mTexture && mCompositable->IsConnected()) {
-    // remove old buffer from CompositableHost
-    RefPtr<AsyncTransactionWaiter> waiter = new AsyncTransactionWaiter();
-    RefPtr<AsyncTransactionTracker> tracker =
-        new RemoveTextureFromCompositableTracker(waiter);
-    // Hold TextureClient until transaction complete.
-    tracker->SetTextureClient(mTexture);
-    mTexture->SetRemoveFromCompositableWaiter(waiter);
-    // RemoveTextureFromCompositableAsync() expects CompositorChild's presence.
-    mCompositable->GetForwarder()->RemoveTextureFromCompositableAsync(tracker, mCompositable, mTexture);
-  }
-#else
-  if (mCompositable && mTexture) {
+    mTexture->RemoveFromCompositable(mCompositable);
     mCompositable->RemoveTexture(mTexture);
   }
-#endif
 }
 
 } // namespace layers

@@ -4,6 +4,8 @@
 
 "use strict";
 
+requestLongerTimeout(2);
+
 const kXULWidgetId = "a-test-button"; // we'll create a button with this ID.
 
 add_task(function setup() {
@@ -11,7 +13,7 @@ add_task(function setup() {
   createDummyXULButton(kXULWidgetId, "test-button");
 });
 
-add_task(function customizeToolbarAndKeepIt() {
+add_task(function* customizeToolbarAndKeepIt() {
   ok(gNavToolbox.toolbarset, "There should be a toolbarset");
   let toolbarID = "testAustralisCustomToolbar";
   gNavToolbox.appendCustomToolbar(toolbarID, "");
@@ -82,7 +84,7 @@ add_task(function customizeToolbarAndKeepIt() {
   is(cuiAreaType, null, "CustomizableUI should have forgotten all about the area");
 });
 
-add_task(function resetShouldDealWithCustomToolbars() {
+add_task(function* resetShouldDealWithCustomToolbars() {
   ok(gNavToolbox.toolbarset, "There should be a toolbarset");
   let toolbarID = "testAustralisCustomToolbar";
   gNavToolbox.appendCustomToolbar(toolbarID, "");
@@ -135,7 +137,7 @@ add_task(function resetShouldDealWithCustomToolbars() {
 });
 
 
-add_task(function() {
+add_task(function*() {
   let newWin = yield openAndLoadWindow({}, true);
   ok(!newWin.gNavToolbox.toolbarset.hasAttribute("toolbar1"), "New window shouldn't have attribute toolbar1");
   ok(!newWin.gNavToolbox.toolbarset.hasAttribute("toolbar2"), "New window shouldn't have attribute toolbar2");

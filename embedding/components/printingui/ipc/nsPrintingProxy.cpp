@@ -4,15 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsPrintingProxy.h"
+
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/TabChild.h"
+#include "mozilla/layout/RemotePrintJobChild.h"
 #include "mozilla/unused.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIPrintingPromptService.h"
 #include "nsPIDOMWindow.h"
-#include "nsPrintingProxy.h"
 #include "nsPrintOptionsImpl.h"
 #include "PrintDataUtils.h"
 #include "PrintProgressDialogChild.h"
@@ -20,6 +22,7 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::embedding;
+using namespace mozilla::layout;
 
 static StaticRefPtr<nsPrintingProxy> sPrintingProxyInstance;
 
@@ -62,7 +65,7 @@ nsPrintingProxy::Init()
 }
 
 NS_IMETHODIMP
-nsPrintingProxy::ShowPrintDialog(nsIDOMWindow *parent,
+nsPrintingProxy::ShowPrintDialog(mozIDOMWindowProxy *parent,
                                  nsIWebBrowserPrint *webBrowserPrint,
                                  nsIPrintSettings *printSettings)
 {
@@ -73,7 +76,7 @@ nsPrintingProxy::ShowPrintDialog(nsIDOMWindow *parent,
   // Get the root docshell owner of this nsIDOMWindow, which
   // should map to a TabChild, which we can then pass up to
   // the parent.
-  nsCOMPtr<nsPIDOMWindow> pwin = do_QueryInterface(parent);
+  nsCOMPtr<nsPIDOMWindowOuter> pwin = nsPIDOMWindowOuter::From(parent);
   NS_ENSURE_STATE(pwin);
   nsCOMPtr<nsIDocShell> docShell = pwin->GetDocShell();
   NS_ENSURE_STATE(docShell);
@@ -117,7 +120,7 @@ nsPrintingProxy::ShowPrintDialog(nsIDOMWindow *parent,
 }
 
 NS_IMETHODIMP
-nsPrintingProxy::ShowProgress(nsIDOMWindow*            parent,
+nsPrintingProxy::ShowProgress(mozIDOMWindowProxy*      parent,
                               nsIWebBrowserPrint*      webBrowserPrint,    // ok to be null
                               nsIPrintSettings*        printSettings,      // ok to be null
                               nsIObserver*             openDialogObserver, // ok to be null
@@ -134,7 +137,7 @@ nsPrintingProxy::ShowProgress(nsIDOMWindow*            parent,
   // Get the root docshell owner of this nsIDOMWindow, which
   // should map to a TabChild, which we can then pass up to
   // the parent.
-  nsCOMPtr<nsPIDOMWindow> pwin = do_QueryInterface(parent);
+  nsCOMPtr<nsPIDOMWindowOuter> pwin = nsPIDOMWindowOuter::From(parent);
   NS_ENSURE_STATE(pwin);
   nsCOMPtr<nsIDocShell> docShell = pwin->GetDocShell();
   NS_ENSURE_STATE(docShell);
@@ -162,7 +165,7 @@ nsPrintingProxy::ShowProgress(nsIDOMWindow*            parent,
 }
 
 NS_IMETHODIMP
-nsPrintingProxy::ShowPageSetup(nsIDOMWindow *parent,
+nsPrintingProxy::ShowPageSetup(mozIDOMWindowProxy *parent,
                                nsIPrintSettings *printSettings,
                                nsIObserver *aObs)
 {
@@ -170,7 +173,7 @@ nsPrintingProxy::ShowPageSetup(nsIDOMWindow *parent,
 }
 
 NS_IMETHODIMP
-nsPrintingProxy::ShowPrinterProperties(nsIDOMWindow *parent,
+nsPrintingProxy::ShowPrinterProperties(mozIDOMWindowProxy *parent,
                                        const char16_t *printerName,
                                        nsIPrintSettings *printSettings)
 {
@@ -231,5 +234,20 @@ nsPrintingProxy::DeallocPPrintSettingsDialogChild(PPrintSettingsDialogChild* aAc
 {
   // The PrintSettingsDialogChild implements refcounting, and
   // will take itself out.
+  return true;
+}
+
+PRemotePrintJobChild*
+nsPrintingProxy::AllocPRemotePrintJobChild()
+{
+  RefPtr<RemotePrintJobChild> remotePrintJob = new RemotePrintJobChild();
+  return remotePrintJob.forget().take();
+}
+
+bool
+nsPrintingProxy::DeallocPRemotePrintJobChild(PRemotePrintJobChild* aDoomed)
+{
+  RemotePrintJobChild* remotePrintJob = static_cast<RemotePrintJobChild*>(aDoomed);
+  NS_RELEASE(remotePrintJob);
   return true;
 }

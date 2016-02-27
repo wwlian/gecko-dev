@@ -95,10 +95,9 @@ AppendToString(std::stringstream& aStream, const nsRegion& r,
 {
   aStream << pfx;
 
-  nsRegionRectIterator it(r);
   aStream << "< ";
-  while (const nsRect* sr = it.Next()) {
-    AppendToString(aStream, *sr);
+  for (auto iter = r.RectIter(); !iter.Done(); iter.Next()) {
+    AppendToString(aStream, iter.Get());
     aStream << "; ";
   }
   aStream << ">";
@@ -112,10 +111,9 @@ AppendToString(std::stringstream& aStream, const nsIntRegion& r,
 {
   aStream << pfx;
 
-  nsIntRegionRectIterator it(r);
   aStream << "< ";
-  while (const IntRect* sr = it.Next()) {
-    AppendToString(aStream, *sr);
+  for (auto iter = r.RectIter(); !iter.Done(); iter.Next()) {
+    AppendToString(aStream, iter.Get());
     aStream << "; ";
   }
   aStream << ">";
@@ -227,26 +225,6 @@ AppendToString(std::stringstream& aStream, const Matrix& m,
 }
 
 void
-AppendToString(std::stringstream& aStream, const Matrix4x4& m,
-               const char* pfx, const char* sfx)
-{
-  if (m.Is2D()) {
-    Matrix matrix = m.As2D();
-    AppendToString(aStream, matrix, pfx, sfx);
-    return;
-  }
-
-  aStream << pfx;
-  aStream << nsPrintfCString(
-    "[ %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g; ]",
-    m._11, m._12, m._13, m._14,
-    m._21, m._22, m._23, m._24,
-    m._31, m._32, m._33, m._34,
-    m._41, m._42, m._43, m._44).get();
-  aStream << sfx;
-}
-
-void
 AppendToString(std::stringstream& aStream, const Matrix5x4& m,
                const char* pfx, const char* sfx)
 {
@@ -322,6 +300,7 @@ AppendToString(std::stringstream& aStream, mozilla::gfx::SurfaceFormat format,
   case SurfaceFormat::A8:        aStream << "SurfaceFormat::A8"; break;
   case SurfaceFormat::YUV:       aStream << "SurfaceFormat::YUV"; break;
   case SurfaceFormat::NV12:      aStream << "SurfaceFormat::NV12"; break;
+  case SurfaceFormat::YUV422:    aStream << "SurfaceFormat::YUV422"; break;
   case SurfaceFormat::UNKNOWN:   aStream << "SurfaceFormat::UNKNOWN"; break;
   default:
     NS_ERROR("unknown surface format");

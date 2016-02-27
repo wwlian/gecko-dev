@@ -4,6 +4,9 @@
 
 "use strict";
 
+/* import-globals-from ../../../content/contentAreaUtils.js */
+/*globals XMLStylesheetProcessingInstruction*/
+
 var Cc = Components.classes;
 var Ci = Components.interfaces;
 var Cu = Components.utils;
@@ -24,10 +27,6 @@ const SIGNING_REQUIRED = CONSTANTS.REQUIRE_SIGNING ?
 XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
                                   "resource://gre/modules/PluralForm.jsm");
 
-XPCOMUtils.defineLazyGetter(this, "BrowserToolboxProcess", function() {
-  return Cu.import("resource://devtools/client/framework/ToolboxProcess.jsm", {}).
-         BrowserToolboxProcess;
-});
 XPCOMUtils.defineLazyModuleGetter(this, "Experiments",
   "resource:///modules/experiments/Experiments.jsm");
 
@@ -39,8 +38,6 @@ const PREF_GETADDONS_CACHE_ENABLED = "extensions.getAddons.cache.enabled";
 const PREF_GETADDONS_CACHE_ID_ENABLED = "extensions.%ID%.getAddons.cache.enabled";
 const PREF_UI_TYPE_HIDDEN = "extensions.ui.%TYPE%.hidden";
 const PREF_UI_LASTCATEGORY = "extensions.ui.lastCategory";
-const PREF_ADDON_DEBUGGING_ENABLED = "devtools.chrome.enabled";
-const PREF_REMOTE_DEBUGGING_ENABLED = "devtools.debugger.remote-enabled";
 
 const LOADING_MSG_DELAY = 100;
 
@@ -164,9 +161,6 @@ function initialize(event) {
   }
 
   gViewController.loadInitialView(view);
-
-  Services.prefs.addObserver(PREF_ADDON_DEBUGGING_ENABLED, debuggingPrefChanged, false);
-  Services.prefs.addObserver(PREF_REMOTE_DEBUGGING_ENABLED, debuggingPrefChanged, false);
 }
 
 function notifyInitialized() {
@@ -187,8 +181,6 @@ function shutdown() {
   gEventManager.shutdown();
   gViewController.shutdown();
   Services.obs.removeObserver(sendEMPong, "EM-ping");
-  Services.prefs.removeObserver(PREF_ADDON_DEBUGGING_ENABLED, debuggingPrefChanged);
-  Services.prefs.removeObserver(PREF_REMOTE_DEBUGGING_ENABLED, debuggingPrefChanged);
 }
 
 function sendEMPong(aSubject, aTopic, aData) {
@@ -212,8 +204,6 @@ function isCorrectlySigned(aAddon) {
   if (aAddon.scope == AddonManager.SCOPE_TEMPORARY)
       return true;
   if (aAddon.signedState <= AddonManager.SIGNEDSTATE_MISSING)
-    return false;
-  if (aAddon.foreignInstall && aAddon.signedState < AddonManager.SIGNEDSTATE_SIGNED)
     return false;
   return true;
 }
@@ -1077,20 +1067,6 @@ var gViewController = {
       }
     },
 
-    cmd_debugItem: {
-      doCommand: function(aAddon) {
-        BrowserToolboxProcess.init({ addonID: aAddon.id });
-      },
-
-      isEnabled: function(aAddon) {
-        let debuggerEnabled = Services.prefs.
-                              getBoolPref(PREF_ADDON_DEBUGGING_ENABLED);
-        let remoteEnabled = Services.prefs.
-                            getBoolPref(PREF_REMOTE_DEBUGGING_ENABLED);
-        return aAddon && aAddon.isDebuggable && debuggerEnabled && remoteEnabled;
-      }
-    },
-
     cmd_showItemPreferences: {
       isEnabled: function(aAddon) {
         if (!aAddon ||
@@ -1303,6 +1279,18 @@ var gViewController = {
 
         buildNextInstall();
       }
+    },
+
+    cmd_debugAddons: {
+      isEnabled: function() {
+        return true;
+      },
+      doCommand: function() {
+        let mainWindow = getMainWindow();
+        if ("switchToTabHavingURI" in mainWindow) {
+          mainWindow.switchToTabHavingURI("about:debugging#addons", true);
+        }
+      },
     },
 
     cmd_cancelOperation: {
@@ -1731,7 +1719,7 @@ function doPendingUninstalls(aListBox) {
   var listitem = aListBox.firstChild;
   while (listitem) {
     if (listitem.getAttribute("pending") == "uninstall" &&
-        !listitem.isPending("uninstall"))
+        !(listitem.opRequiresRestart("UNINSTALL")))
       items.push(listitem.mAddon);
     listitem = listitem.nextSibling;
   }
@@ -1928,10 +1916,11 @@ var gCategories = {
       return;
     }
 
+    var item;
     if (view.type == "search")
-      var item = this._search;
+      item = this._search;
     else
-      var item = this.get(aId);
+      item = this.get(aId);
 
     if (item) {
       item.hidden = false;
@@ -3163,7 +3152,7 @@ var gDetailView = {
     if (pending != AddonManager.PENDING_NONE) {
       this.node.removeAttribute("notification");
 
-      var pending = null;
+      pending = null;
       const PENDING_OPERATIONS = ["enable", "disable", "install", "uninstall",
                                   "upgrade"];
       for (let op of PENDING_OPERATIONS) {
@@ -3194,7 +3183,7 @@ var gDetailView = {
         document.getElementById("detail-error").textContent = gStrings.ext.formatStringFromName(
           "details.notification.unsignedAndDisabled", [this._addon.name, gStrings.brandShortName], 2
         );
-        var errorLink = document.getElementById("detail-error-link");
+        let errorLink = document.getElementById("detail-error-link");
         errorLink.value = gStrings.ext.GetStringFromName("details.notification.unsigned.link");
         errorLink.href = Services.urlFormatter.formatURLPref("app.support.baseURL") + "unsigned-addons";
         errorLink.hidden = false;
@@ -3221,7 +3210,7 @@ var gDetailView = {
           "details.notification.softblocked",
           [this._addon.name], 1
         );
-        var warningLink = document.getElementById("detail-warning-link");
+        let warningLink = document.getElementById("detail-warning-link");
         warningLink.value = gStrings.ext.GetStringFromName("details.notification.softblocked.link");
         warningLink.href = this._addon.blocklistURL;
         warningLink.hidden = false;
@@ -3231,7 +3220,7 @@ var gDetailView = {
           "details.notification.outdated",
           [this._addon.name], 1
         );
-        var warningLink = document.getElementById("detail-warning-link");
+        let warningLink = document.getElementById("detail-warning-link");
         warningLink.value = gStrings.ext.GetStringFromName("details.notification.outdated.link");
         warningLink.href = Services.urlFormatter.formatURLPref("plugins.update.url");
         warningLink.hidden = false;
@@ -3241,7 +3230,7 @@ var gDetailView = {
           "details.notification.vulnerableUpdatable",
           [this._addon.name], 1
         );
-        var errorLink = document.getElementById("detail-error-link");
+        let errorLink = document.getElementById("detail-error-link");
         errorLink.value = gStrings.ext.GetStringFromName("details.notification.vulnerableUpdatable.link");
         errorLink.href = this._addon.blocklistURL;
         errorLink.hidden = false;
@@ -3251,7 +3240,7 @@ var gDetailView = {
           "details.notification.vulnerableNoUpdate",
           [this._addon.name], 1
         );
-        var errorLink = document.getElementById("detail-error-link");
+        let errorLink = document.getElementById("detail-error-link");
         errorLink.value = gStrings.ext.GetStringFromName("details.notification.vulnerableNoUpdate.link");
         errorLink.href = this._addon.blocklistURL;
         errorLink.hidden = false;
@@ -3716,12 +3705,6 @@ var gUpdatesView = {
       this.updateAvailableCount();
   }
 };
-
-function debuggingPrefChanged() {
-  gViewController.updateState();
-  gViewController.updateCommands();
-  gViewController.notifyViewChanged();
-}
 
 var gDragDrop = {
   onDragOver: function(aEvent) {

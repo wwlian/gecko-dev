@@ -414,7 +414,7 @@ CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot, MDefinition* mir,
         if (mir->isLambda()) {
             MConstant* constant = mir->toLambda()->functionOperand();
             uint32_t cstIndex;
-            masm.propagateOOM(graph.addConstantToPool(constant->value(), &cstIndex));
+            masm.propagateOOM(graph.addConstantToPool(constant->toJSValue(), &cstIndex));
             alloc = RValueAllocation::RecoverInstruction(index, cstIndex);
             break;
         }
@@ -440,7 +440,7 @@ CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot, MDefinition* mir,
         if (payload->isConstant()) {
             MConstant* constant = mir->toConstant();
             uint32_t index;
-            masm.propagateOOM(graph.addConstantToPool(constant->value(), &index));
+            masm.propagateOOM(graph.addConstantToPool(constant->toJSValue(), &index));
             alloc = RValueAllocation::ConstantPool(index);
             break;
         }
@@ -458,6 +458,7 @@ CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot, MDefinition* mir,
         break;
       }
       case MIRType_Float32:
+      case MIRType_Bool32x4:
       case MIRType_Int32x4:
       case MIRType_Float32x4:
       {
@@ -465,7 +466,7 @@ CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot, MDefinition* mir,
         if (payload->isConstant()) {
             MConstant* constant = mir->toConstant();
             uint32_t index;
-            masm.propagateOOM(graph.addConstantToPool(constant->value(), &index));
+            masm.propagateOOM(graph.addConstantToPool(constant->toJSValue(), &index));
             alloc = RValueAllocation::ConstantPool(index);
             break;
         }
@@ -1360,10 +1361,10 @@ CodeGeneratorShared::callVM(const VMFunction& fun, LInstruction* ins, const Regi
     // fill the frame descriptor.
     if (dynStack) {
         masm.addPtr(Imm32(masm.framePushed()), *dynStack);
-        masm.makeFrameDescriptor(*dynStack, JitFrame_IonJS);
+        masm.makeFrameDescriptor(*dynStack, JitFrame_IonJS, ExitFrameLayout::Size());
         masm.Push(*dynStack); // descriptor
     } else {
-        masm.pushStaticFrameDescriptor(JitFrame_IonJS);
+        masm.pushStaticFrameDescriptor(JitFrame_IonJS, ExitFrameLayout::Size());
     }
 
     // Call the wrapper function.  The wrapper is in charge to unwind the stack
@@ -1500,11 +1501,11 @@ CodeGeneratorShared::emitAsmJSCall(LAsmJSCall* ins)
         masm.freeStack(mir->spIncrement());
 
     MOZ_ASSERT((sizeof(AsmJSFrame) + masm.framePushed()) % AsmJSStackAlignment == 0);
-
-#ifdef DEBUG
     static_assert(AsmJSStackAlignment >= ABIStackAlignment &&
                   AsmJSStackAlignment % ABIStackAlignment == 0,
                   "The asm.js stack alignment should subsume the ABI-required alignment");
+
+#ifdef DEBUG
     Label ok;
     masm.branchTestStackPtr(Assembler::Zero, Imm32(AsmJSStackAlignment - 1), &ok);
     masm.breakpoint();
@@ -1520,7 +1521,7 @@ CodeGeneratorShared::emitAsmJSCall(LAsmJSCall* ins)
         masm.call(mir->desc(), ToRegister(ins->getOperand(mir->dynamicCalleeOperandIndex())));
         break;
       case MAsmJSCall::Callee::Builtin:
-        masm.call(BuiltinToImmediate(callee.builtin()));
+        masm.call(callee.builtin());
         break;
     }
 
@@ -1529,13 +1530,13 @@ CodeGeneratorShared::emitAsmJSCall(LAsmJSCall* ins)
 }
 
 void
-CodeGeneratorShared::emitPreBarrier(Register base, const LAllocation* index)
+CodeGeneratorShared::emitPreBarrier(Register base, const LAllocation* index, int32_t offsetAdjustment)
 {
     if (index->isConstant()) {
-        Address address(base, ToInt32(index) * sizeof(Value));
+        Address address(base, ToInt32(index) * sizeof(Value) + offsetAdjustment);
         masm.patchableCallPreBarrier(address, MIRType_Value);
     } else {
-        BaseIndex address(base, ToRegister(index), TimesEight);
+        BaseIndex address(base, ToRegister(index), TimesEight, offsetAdjustment);
         masm.patchableCallPreBarrier(address, MIRType_Value);
     }
 }
@@ -1558,12 +1559,12 @@ CodeGeneratorShared::labelForBackedgeWithImplicitCheck(MBasicBlock* mir)
         for (LInstructionIterator iter = mir->lir()->begin(); iter != mir->lir()->end(); iter++) {
             if (iter->isMoveGroup()) {
                 // Continue searching for an interrupt check.
-            } else if (iter->isInterruptCheckImplicit()) {
-                return iter->toInterruptCheckImplicit()->oolEntry();
             } else {
                 // The interrupt check should be the first instruction in the
-                // loop header other than the initial label and move groups.
+                // loop header other than move groups.
                 MOZ_ASSERT(iter->isInterruptCheck());
+                if (iter->toInterruptCheck()->implicit())
+                    return iter->toInterruptCheck()->oolEntry();
                 return nullptr;
             }
         }
@@ -1617,21 +1618,24 @@ CodeGeneratorShared::jumpToBlock(MBasicBlock* mir, Assembler::Condition cond)
 }
 #endif
 
-size_t
-CodeGeneratorShared::addCacheLocations(const CacheLocationList& locs, size_t* numLocs)
+MOZ_WARN_UNUSED_RESULT bool
+CodeGeneratorShared::addCacheLocations(const CacheLocationList& locs, size_t* numLocs,
+                                       size_t* curIndex)
 {
     size_t firstIndex = runtimeData_.length();
     size_t numLocations = 0;
     for (CacheLocationList::iterator iter = locs.begin(); iter != locs.end(); iter++) {
         // allocateData() ensures that sizeof(CacheLocation) is word-aligned.
         // If this changes, we will need to pad to ensure alignment.
-        size_t curIndex = allocateData(sizeof(CacheLocation));
-        new (&runtimeData_[curIndex]) CacheLocation(iter->pc, iter->script);
+        if (!allocateData(sizeof(CacheLocation), curIndex))
+            return false;
+        new (&runtimeData_[*curIndex]) CacheLocation(iter->pc, iter->script);
         numLocations++;
     }
     MOZ_ASSERT(numLocations != 0);
     *numLocs = numLocations;
-    return firstIndex;
+    *curIndex = firstIndex;
+    return true;
 }
 
 ReciprocalMulConstants

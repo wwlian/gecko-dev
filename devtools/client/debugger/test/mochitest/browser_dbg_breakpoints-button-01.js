@@ -1,5 +1,7 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
  * Test if the breakpoints toggle button works as advertised.
@@ -42,7 +44,9 @@ function test() {
       yield waitForDispatch(gPanel, gDebugger.constants.ADD_BREAKPOINT, 3);
       checkBreakpointsDisabled(false);
 
-      yield ensureThreadClientState(gPanel, "resumed");
+      if (gDebugger.gThreadClient.state !== "attached") {
+        yield waitForThreadEvents(gPanel, "resumed");
+      }
       closeDebuggerAndFinish(gPanel)
     });
   });

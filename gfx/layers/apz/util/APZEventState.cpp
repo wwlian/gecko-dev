@@ -10,6 +10,7 @@
 #include "gfxPrefs.h"
 #include "LayersLogging.h"
 #include "mozilla/BasicEvents.h"
+#include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Move.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/TouchEvents.h"
@@ -181,7 +182,7 @@ APZEventState::ProcessSingleTap(const CSSPoint& aPoint,
 
   LayoutDevicePoint currentPoint =
       APZCCallbackHelper::ApplyCallbackTransform(aPoint, aGuid)
-    * widget->GetDefaultScale();;
+    * widget->GetDefaultScale();
   if (!mActiveElementManager->ActiveElementUsesStyle()) {
     // If the active element isn't visually affected by the :active style, we
     // have no need to wait the extra sActiveDurationMs to make the activation
@@ -278,6 +279,7 @@ APZEventState::ProcessTouchEvent(const WidgetTouchEvent& aEvent,
       // Since APZ doesn't know about it we don't want to send a response for
       // this block; we want to just skip over it from the point of view of
       // prevent-default notifications.
+      APZES_LOG("Got a synthetic touch-start!\n");
       break;
     }
     if (isTouchPrevented) {

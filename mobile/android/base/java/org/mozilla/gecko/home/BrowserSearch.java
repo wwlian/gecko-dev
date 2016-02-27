@@ -15,6 +15,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 
+import android.content.SharedPreferences;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -23,6 +24,7 @@ import org.mozilla.gecko.AppConstants;
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoEvent;
+import org.mozilla.gecko.GeckoSharedPrefs;
 import org.mozilla.gecko.PrefsHelper;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.SuggestClient;
@@ -36,6 +38,7 @@ import org.mozilla.gecko.db.BrowserContract.History;
 import org.mozilla.gecko.db.BrowserContract.URLColumns;
 import org.mozilla.gecko.home.HomePager.OnUrlOpenListener;
 import org.mozilla.gecko.home.SearchLoader.SearchCursorLoader;
+import org.mozilla.gecko.preferences.GeckoPreferences;
 import org.mozilla.gecko.toolbar.AutocompleteHandler;
 import org.mozilla.gecko.util.GeckoEventListener;
 import org.mozilla.gecko.util.StringUtils;
@@ -157,6 +160,9 @@ public class BrowserSearch extends HomeFragment
     // Whether search suggestions are enabled or not
     private boolean mSuggestionsEnabled;
 
+    // Whether history suggestions are enabled or not
+    private boolean mSavedSearchesEnabled;
+
     // Callbacks used for the search loader
     private CursorLoaderCallbacks mCursorLoaderCallbacks;
 
@@ -247,7 +253,7 @@ public class BrowserSearch extends HomeFragment
     @Override
     public void onHiddenChanged(boolean hidden) {
         if (!hidden) {
-            Tab tab = Tabs.getInstance().getSelectedTab();
+            final Tab tab = Tabs.getInstance().getSelectedTab();
             final boolean isPrivate = (tab != null && tab.isPrivate());
 
             // Removes Search Suggestions Loader if in private browsing mode
@@ -264,6 +270,9 @@ public class BrowserSearch extends HomeFragment
     @Override
     public void onResume() {
         super.onResume();
+
+        final SharedPreferences prefs = GeckoSharedPrefs.forApp(getContext());
+        mSavedSearchesEnabled = prefs.getBoolean(GeckoPreferences.PREFS_HISTORY_SAVED_SEARCH, true);
 
         // Fetch engines if we need to.
         if (mSearchEngines.isEmpty() || !Locale.getDefault().equals(mLastLocale)) {
@@ -476,7 +485,7 @@ public class BrowserSearch extends HomeFragment
     LinkedHashSet<String> domains = null;
     private LinkedHashSet<String> getDomains() {
         if (domains == null) {
-            domains = new LinkedHashSet<String>();
+            domains = new LinkedHashSet<String>(500);
             BufferedReader buf = null;
             try {
                 buf = new BufferedReader(new InputStreamReader(getResources().openRawResource(R.raw.topdomains)));
@@ -502,10 +511,6 @@ public class BrowserSearch extends HomeFragment
     }
 
     private String searchDomains(String search) {
-        if (AppConstants.NIGHTLY_BUILD == false) {
-            return null;
-        }
-
         for (String domain : getDomains()) {
             if (domain.startsWith(search)) {
                 return domain;
@@ -588,7 +593,13 @@ public class BrowserSearch extends HomeFragment
     }
 
     private void filterSuggestions() {
-        if (mSuggestClient == null || !mSuggestionsEnabled) {
+        Tab tab = Tabs.getInstance().getSelectedTab();
+        final boolean isPrivate = (tab != null && tab.isPrivate());
+
+        // mSuggestClient may be null if we haven't received our search engine list yet - hence
+        // we need to exit here in that case.
+        if (isPrivate || mSuggestClient == null || (!mSuggestionsEnabled && !mSavedSearchesEnabled)) {
+            mSearchHistorySuggestions.clear();
             return;
         }
 
@@ -665,16 +676,7 @@ public class BrowserSearch extends HomeFragment
                     // is also the default engine.
                     searchEngines.add(0, engine);
 
-                    // The only time Tabs.getInstance().getSelectedTab() should
-                    // be null is when we're restoring after a crash. We should
-                    // never restore private tabs when that happens, so it
-                    // should be safe to assume that null means non-private.
-                    Tab tab = Tabs.getInstance().getSelectedTab();
-                    final boolean isPrivate = (tab != null && tab.isPrivate());
-
-                    // Only create a new instance of SuggestClient if it hasn't been
-                    // set yet.
-                    maybeSetSuggestClient(suggestTemplate, isPrivate);
+                    ensureSuggestClientIsSet(suggestTemplate);
                 } else {
                     searchEngines.add(engine);
                 }
@@ -691,12 +693,15 @@ public class BrowserSearch extends HomeFragment
                 mAdapter.notifyDataSetChanged();
             }
 
+            final Tab tab = Tabs.getInstance().getSelectedTab();
+            final boolean isPrivate = (tab != null && tab.isPrivate());
+
             // Show suggestions opt-in prompt only if suggestions are not enabled yet,
             // user hasn't been prompted and we're not on a private browsing tab.
             // The prompt might have been inflated already when this view was previously called.
             // Remove the opt-in prompt if it has been inflated in the view and dealt with by the user,
             // or if we're on a private browsing tab
-            if (!mSuggestionsEnabled && !suggestionsPrompted && mSuggestClient != null) {
+            if (!mSuggestionsEnabled && !suggestionsPrompted && !isPrivate) {
                 showSuggestionsOptIn();
             } else {
                 removeSuggestionsOptIn();
@@ -730,12 +735,7 @@ public class BrowserSearch extends HomeFragment
         mSearchListener.onSearch(searchEngine, mSearchTerm);
     }
 
-    private void maybeSetSuggestClient(final String suggestTemplate, final boolean isPrivate) {
-        if (isPrivate) {
-            mSuggestClient = null;
-            return;
-        }
-
+    private void ensureSuggestClientIsSet(final String suggestTemplate) {
         if (mSuggestClient != null) {
             return;
         }
@@ -744,9 +744,11 @@ public class BrowserSearch extends HomeFragment
     }
 
     private void showSuggestionsOptIn() {
-        // Return if the ViewStub was already inflated - an inflated ViewStub is removed from the
-        // View hierarchy so a second call to findViewById will return null.
+        // Only make the ViewStub visible again if it has already previously been shown.
+        // (An inflated ViewStub is removed from the View hierarchy so a second call to findViewById will return null,
+        // which also further necessitates handling this separately.)
         if (mSuggestionsOptInPrompt != null) {
+            mSuggestionsOptInPrompt.setVisibility(View.VISIBLE);
             return;
         }
 
@@ -813,8 +815,10 @@ public class BrowserSearch extends HomeFragment
             }
         });
 
-        // Pref observer in gecko will also set prompted = true
+        PrefsHelper.setPref("browser.search.suggest.prompted", true);
         PrefsHelper.setPref("browser.search.suggest.enabled", enabled);
+
+        Telemetry.sendUIEvent(TelemetryContract.Event.ACTION, TelemetryContract.Method.BUTTON, (enabled ? "suggestions_optin_yes" : "suggestions_optin_no"));
 
         TranslateAnimation slideAnimation = new TranslateAnimation(0, mSuggestionsOptInPrompt.getWidth(), 0, 0);
         slideAnimation.setDuration(ANIMATION_DURATION);
@@ -1113,18 +1117,22 @@ public class BrowserSearch extends HomeFragment
 
         @Override
         public void onLoadFinished(Loader<Cursor> loader, Cursor c) {
-            mAdapter.swapCursor(c);
+            if (mAdapter != null) {
+                mAdapter.swapCursor(c);
 
-            // We should handle autocompletion based on the search term
-            // associated with the loader that has just provided
-            // the results.
-            SearchCursorLoader searchLoader = (SearchCursorLoader) loader;
-            handleAutocomplete(searchLoader.getSearchTerm(), c);
+                // We should handle autocompletion based on the search term
+                // associated with the loader that has just provided
+                // the results.
+                SearchCursorLoader searchLoader = (SearchCursorLoader) loader;
+                handleAutocomplete(searchLoader.getSearchTerm(), c);
+            }
         }
 
         @Override
         public void onLoaderReset(Loader<Cursor> loader) {
-            mAdapter.swapCursor(null);
+            if (mAdapter != null) {
+                mAdapter.swapCursor(null);
+            }
         }
     }
 

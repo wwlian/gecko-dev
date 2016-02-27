@@ -25,7 +25,7 @@ Structure::
       info: {
         reason: <string>, // what triggered this ping: "saved-session", "environment-change", "shutdown", ...
         revision: <string>, // the Histograms.json revision
-        timezoneOffset: <number>, // time-zone offset from UTC, in minutes, for the current locale
+        timezoneOffset: <integer>, // time-zone offset from UTC, in minutes, for the current locale
         previousBuildId: <string>, // null if this is the first run, or the previous build ID is unknown
 
         sessionId: <uuid>,  // random session id, shared by subsessions
@@ -34,19 +34,19 @@ Structure::
         previousSubsessionId: <uuid>, // subsession id of the previous subsession (even if it was in a different session),
                                       // null on first run.
 
-        subsessionCounter: <number>, // the running no. of this subsession since the start of the browser session
-        profileSubsessionCounter: <number>, // the running no. of all subsessions for the whole profile life time
+        subsessionCounter: <unsigned integer>, // the running no. of this subsession since the start of the browser session
+        profileSubsessionCounter: <unsigned integer>, // the running no. of all subsessions for the whole profile life time
 
         sessionStartDate: <ISO date>, // daily precision
         subsessionStartDate: <ISO date>, // daily precision, ISO date in local time
-        sessionLength: <number>, // the session length until now in seconds, monotonic
-        subsessionLength: <number>, // the subsession length in seconds, monotonic
+        sessionLength: <integer>, // the session length until now in seconds, monotonic
+        subsessionLength: <integer>, // the subsession length in seconds, monotonic
 
         flashVersion: <string>, // obsolete, use ``environment.addons.activePlugins``
         addons: <string>, // obsolete, use ``environment.addons``
       },
 
-      childPayloads: {...}, // only present with e10s; a reduced payload from content processes, null on failure
+      childPayloads: [...], // only present with e10s; reduced payloads from content processes, null on failure
       simpleMeasurements: {...},
 
       // The following properties may all be null if we fail to collect them.
@@ -60,7 +60,7 @@ Structure::
       lateWrites: {...},
       addonDetails: {...},
       addonHistograms: {...},
-      UIMeasurements: {...},
+      UIMeasurements: [...],
       slowSQL: {...},
       slowSQLstartup: {...},
     }
@@ -83,14 +83,111 @@ This uses a monotonic clock, so this may mismatch with other measurements that a
 
 If ``sessionLength`` is ``-1``, the monotonic clock is not working.
 
+childPayloads
+-------------
+The Telemetry payloads sent by child processes, recorded on child process shutdown (event ``content-child-shutdown`` observed) and whenever ``TelemetrySession.requestChildPayloads()`` is called (currently only used in tests). They are reduced session payloads, only available with e10s. Among some other things, they don't report addon details, addon histograms or UI Telemetry.
+
+Any histogram whose Accumulate call happens on a child process will be accumulated into a childPayload's histogram, not the parent's. As such, some histograms in childPayloads will contain different data (e.g. ``GC_MS`` will be much different in childPayloads, for instance, because the child GC needs to content with content scripts and parent doesn't) and some histograms will be absent (``EVENTLOOP_UI_ACTIVITY`` is parent-process-only because it measures inter-event timings where the OS delivers the events in the parent).
+
+Note: Child payloads are not collected and cleared with subsession splits, they are currently only meaningful when analysed from ``saved-session`` or ``main`` pings with ``reason`` set to ``shutdown``.
+
+simpleMeasurements
+------------------
+This section contains a list of simple measurements, or counters. In addition to the ones highlighted below, Telemetry timestamps (see `here <https://dxr.mozilla.org/mozilla-central/search?q=%22TelemetryTimestamps.add%22&redirect=false&case=true>`_ and `here <https://dxr.mozilla.org/mozilla-central/search?q=%22recordTimestamp%22&redirect=false&case=true>`_) can be reported.
+
+totalTime
+~~~~~~~~~
+A non-monotonic integer representing the number of seconds the session has been alive.
+
+uptime
+~~~~~~
+A non-monotonic integer representing the number of minutes the session has been alive.
+
+addonManager
+~~~~~~~~~~~~
+Only available in the extended set of measures, it contains a set of counters related to Addons. See `here <https://dxr.mozilla.org/mozilla-central/search?q=%22AddonManagerPrivate.recordSimpleMeasure%22&redirect=false&case=true>`_ for a list of recorded measures.
+
+UITelemetry
+~~~~~~~~~~~
+Only available in the extended set of measures. See the documentation for :doc:`/browser/docs/UITelemetry <UITelemetry>`.
+
+startupInterrupted
+~~~~~~~~~~~~~~~~~~
+A boolean set to true if startup was interrupted by an interactive prompt.
+
+js
+~~
+This section contains a series of counters from the JavaScript engine.
+
+Structure::
+
+    "js" : {
+      "setProto": <unsigned integer>, // Number of times __proto__ is set
+      "customIter": <unsigned integer> // Number of times __iterator__ is used (i.e., is found for a for-in loop)
+    }
+
+maximalNumberOfConcurrentThreads
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+An integer representing the highest number of threads encountered so far during the session.
+
+startupSessionRestoreReadBytes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Windows-only integer representing the number of bytes read by the main process up until the session store has finished restoring the windows.
+
+startupSessionRestoreWriteBytes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Windows-only integer representing the number of bytes written by the main process up until the session store has finished restoring the windows.
+
+startupWindowVisibleReadBytes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Windows-only integer representing the number of bytes read by the main process up until after a XUL window is made visible.
+
+startupWindowVisibleWriteBytes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Windows-only integer representing the number of bytes written by the main process up until after a XUL window is made visible.
+
+debuggerAttached
+~~~~~~~~~~~~~~~~
+A boolean set to true if a debugger is attached to the main process.
+
+shutdownDuration
+~~~~~~~~~~~~~~~~
+The time, in ticks per seconds (this behaves inconsistently across platforms, see `bug 1232285 <https://bugzilla.mozilla.org/show_bug.cgi?id=1232285>`_), it took to complete the last shutdown.
+
+failedProfileLockCount
+~~~~~~~~~~~~~~~~~~~~~~
+The number of times the system failed to lock the user profile.
+
+savedPings
+~~~~~~~~~~
+Integer count of the number of pings that need to be sent.
+
+activeTicks
+~~~~~~~~~~~
+Integer count of the number of five-second intervals ('ticks') the user was considered 'active' (sending UI events to the window). An extra event is fired immediately when the user becomes active after being inactive. This is for some mouse and gamepad events, and all touch, keyboard, wheel, and pointer events (see `EventStateManager.cpp <https://dxr.mozilla.org/mozilla-central/rev/e6463ae7eda2775bc84593bb4a0742940bb87379/dom/events/EventStateManager.cpp#549>`_).
+This measure might be useful to give a trend of how much a user actually interacts with the browser when compared to overall session duration. It does not take into account whether or not the window has focus or is in the foreground. Just if it is receiving these interaction events.
+Note that in ``main`` pings, this measure is reset on subsession splits, while in ``saved-session`` pings it covers the whole browser session.
+
+pingsOverdue
+~~~~~~~~~~~~
+Integer count of pending pings that are overdue.
+
+histograms
+----------
+This section contains the histograms that are valid for the current platform. ``Flag`` and ``count`` histograms are always created and submitted, with their default value being respectively ``false`` and ``0``. Other histogram types (`see here <https://developer.mozilla.org/en-US/docs/Mozilla/Performance/Adding_a_new_Telemetry_probe#Choosing_a_Histogram_Type>`_) are not created nor submitted if no data was added to them. The type and format of the reported histograms is described by the ``Histograms.json`` file. Its most recent version is available `here <https://dxr.mozilla.org/mozilla-central/source/toolkit/components/telemetry/Histograms.json>`_. The ``info.revision`` field indicates the revision of the file that describes the reported histograms.
+
+keyedHistograms
+---------------
+This section contains the keyed histograms available for the current platform. Unlike the ``histograms`` section, this section always reports all the keyed histograms, even though they contain no data.
+
 threadHangStats
-~~~~~~~~~~~~~~~
+---------------
 Contains the statistics about the hangs in main and background threads. Note that hangs in this section capture the [C++ pseudostack](https://developer.mozilla.org/en-US/docs/Mozilla/Performance/Profiling_with_the_Built-in_Profiler#Native_stack_vs._Pseudo_stack) and an incomplete JS stack, which is not 100% precise.
 
 To avoid submitting overly large payloads, some limits are applied:
 
 * Identical, adjacent "(chrome script)" or "(content script)" stack entries are collapsed together. If a stack is reduced, the "(reduced stack)" frame marker is added as the oldest frame.
-* The depth of the reported stacks is limited to 11 entries. This value represents the 95th percentile of the thread hangs stack depths reported by Telemetry.
+* The depth of the reported stacks is limited to 11 entries. This value represents the 99.9th percentile of the thread hangs stack depths reported by Telemetry.
 
 Structure::
 
@@ -124,7 +221,7 @@ Structure::
      ]
 
 chromeHangs
-~~~~~~~~~~~
+-----------
 Contains the statistics about the hangs happening exclusively on the main thread of the parent process. Precise C++ stacks are reported. This is only available on Nightly Release on Windows, when building using "--enable-profiling" switch.
 
 Some limits are applied:
@@ -167,3 +264,101 @@ Structure::
         ...
       ]
     },
+
+log
+---
+This section contains a log of important or unusual events reported through Telemetry.
+
+Structure::
+
+    "log": [
+      [
+        "Event_ID",
+        3785, // the timestamp (in milliseconds) for the log entry
+        ... other data ...
+      ],
+      ...
+    ]
+
+
+webrtc
+------
+Contains special statistics gathered by WebRTC releated components.
+
+So far only a bitmask for the ICE candidate type present in a successful or
+failed WebRTC connection is getting reported through C++ code as
+IceCandidatesStats, because the required bitmask is too big to be represented
+in a regular enum histogram. Further this data differentiates between Loop
+(aka Firefox Hello) connections and everything else, which is categorized as
+WebRTC.
+
+Note: in most cases the webrtc and loop dictionaries inside of
+IceCandidatesStats will simply be empty as the user has not used any WebRTC
+PeerConnection at all during the ping report time.
+
+Structure::
+
+    "webrtc": {
+      "IceCandidatesStats": {
+        "webrtc": {
+          "34526345": {
+            "successCount": 5
+          },
+          "2354353": {
+            "failureCount": 1
+          }
+        },
+        "loop": {
+          "2349346359": {
+            "successCount": 3
+          },
+          "73424": {
+            "successCount": 1,
+            "failureCount": 5
+          }
+        }
+      }
+    },
+
+fileIOReports
+-------------
+Contains the statistics of main-thread I/O recorded during the execution. Only the I/O stats for the XRE and the profile directories are currently reported, neither of them disclosing the full local path.
+
+Structure::
+
+    "fileIOReports": {
+      "{xre}": [
+        totalTime, // Accumulated duration of all operations
+        creates, // Number of create/open operations
+        reads, // Number of read operations
+        writes, // Number of write operations
+        fsyncs, // Number of fsync operations
+        stats, // Number of stat operations
+      ],
+      "{profile}": [ ... ],
+      ...
+    }
+
+lateWrites
+----------
+This sections reports writes to the file system that happen during shutdown.
+
+addonDetails
+------------
+This section contains per-addon telemetry details, as reported by each addon provider.
+
+addonHistograms
+---------------
+This section contains the histogram registered by the addons (`see here <https://dxr.mozilla.org/mozilla-central/rev/584870f1cbc5d060a57e147ce249f736956e2b62/toolkit/components/telemetry/nsITelemetry.idl#303>`_). This section is not present if no addon histogram is available.
+
+UITelemetry
+-----------
+See the ``UITelemetry data format`` documentation.
+
+slowSQL
+-------
+This section contains the informations about the slow SQL queries for both the main and other threads. The execution of an SQL statement is considered slow if it takes 50ms or more on the main thread or 100ms or more on other threads. Slow SQL statements will be automatically trimmed to 1000 characters. This limit doesn't include the ellipsis and database name, that are appended at the end of the stored statement.
+
+slowSQLStartup
+--------------
+This section contains the slow SQL statements gathered at startup (until the "sessionstore-windows-restored" event is fired).

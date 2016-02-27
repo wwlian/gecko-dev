@@ -217,6 +217,15 @@ BackgroundParentImpl::DeallocPBackgroundIndexedDBUtilsParent(
     mozilla::dom::indexedDB::DeallocPBackgroundIndexedDBUtilsParent(aActor);
 }
 
+bool
+BackgroundParentImpl::RecvFlushPendingFileDeletions()
+{
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+  return mozilla::dom::indexedDB::RecvFlushPendingFileDeletions();
+}
+
 auto
 BackgroundParentImpl::AllocPBlobParent(const BlobConstructorParams& aParams)
   -> PBlobParent*
@@ -569,7 +578,9 @@ BackgroundParentImpl::AllocPServiceWorkerManagerParent()
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();
 
-  return new ServiceWorkerManagerParent();
+  RefPtr<dom::workers::ServiceWorkerManagerParent> agent =
+    new dom::workers::ServiceWorkerManagerParent();
+  return agent.forget().take();
 }
 
 bool
@@ -580,7 +591,9 @@ BackgroundParentImpl::DeallocPServiceWorkerManagerParent(
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aActor);
 
-  delete static_cast<ServiceWorkerManagerParent*>(aActor);
+  RefPtr<dom::workers::ServiceWorkerManagerParent> parent =
+    dont_AddRef(static_cast<dom::workers::ServiceWorkerManagerParent*>(aActor));
+  MOZ_ASSERT(parent);
   return true;
 }
 

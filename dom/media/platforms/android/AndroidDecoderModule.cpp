@@ -4,12 +4,8 @@
 
 #include "AndroidDecoderModule.h"
 #include "AndroidBridge.h"
-#include "GLBlitHelper.h"
-#include "GLContext.h"
-#include "GLContextEGL.h"
-#include "GLContextProvider.h"
+#include "AndroidSurfaceTexture.h"
 #include "GLImages.h"
-#include "GLLibraryEGL.h"
 
 #include "MediaData.h"
 #include "MediaInfo.h"
@@ -85,6 +81,11 @@ public:
 
   }
 
+  const char* GetDescriptionName() const override
+  {
+    return "android video decoder";
+  }
+
   RefPtr<InitPromise> Init() override
   {
     mSurfaceTexture = AndroidSurfaceTexture::Create();
@@ -102,7 +103,6 @@ public:
 
   void Cleanup() override
   {
-    mGLContext = nullptr;
   }
 
   nsresult Input(MediaRawData* aSample) override
@@ -110,78 +110,12 @@ public:
     return MediaCodecDataDecoder::Input(aSample);
   }
 
-  bool WantCopy() const
-  {
-    // Allocating a texture is incredibly slow on PowerVR and may fail on
-    // emulators, see bug 1190379.
-    return mGLContext->Vendor() != GLVendor::Imagination &&
-           mGLContext->Renderer() != GLRenderer::AndroidEmulator;
-  }
-
-  EGLImage CopySurface(layers::Image* img)
-  {
-    mGLContext->MakeCurrent();
-
-    GLuint tex = CreateTextureForOffscreen(mGLContext, mGLContext->GetGLFormats(),
-                                           img->GetSize());
-
-    auto helper = mGLContext->BlitHelper();
-    const gl::OriginPos destOrigin = gl::OriginPos::TopLeft;
-    if (!helper->BlitImageToTexture(img, img->GetSize(), tex,
-                                    LOCAL_GL_TEXTURE_2D, destOrigin))
-    {
-      mGLContext->fDeleteTextures(1, &tex);
-      return nullptr;
-    }
-
-    EGLint attribs[] = {
-      LOCAL_EGL_IMAGE_PRESERVED_KHR, LOCAL_EGL_TRUE,
-      LOCAL_EGL_NONE, LOCAL_EGL_NONE
-    };
-
-    EGLContext eglContext = static_cast<GLContextEGL*>(mGLContext.get())->mContext;
-    EGLImage eglImage = sEGLLibrary.fCreateImage(
-        EGL_DISPLAY(), eglContext, LOCAL_EGL_GL_TEXTURE_2D_KHR,
-        reinterpret_cast<EGLClientBuffer>(tex), attribs);
-    mGLContext->fDeleteTextures(1, &tex);
-
-    return eglImage;
-  }
-
   nsresult PostOutput(BufferInfo::Param aInfo, MediaFormat::Param aFormat,
                       const TimeUnit& aDuration) override
   {
-    if (!EnsureGLContext()) {
-      return NS_ERROR_FAILURE;
-    }
-
     RefPtr<layers::Image> img =
       new SurfaceTextureImage(mSurfaceTexture.get(), mConfig.mDisplay,
                               gl::OriginPos::BottomLeft);
-
-    if (WantCopy()) {
-      EGLImage eglImage = CopySurface(img);
-      if (!eglImage) {
-        return NS_ERROR_FAILURE;
-      }
-
-      EGLSync eglSync = nullptr;
-      if (sEGLLibrary.IsExtensionSupported(GLLibraryEGL::KHR_fence_sync) &&
-          mGLContext->IsExtensionSupported(GLContext::OES_EGL_sync))
-      {
-        MOZ_ASSERT(mGLContext->IsCurrent());
-        eglSync = sEGLLibrary.fCreateSync(EGL_DISPLAY(),
-                                          LOCAL_EGL_SYNC_FENCE,
-                                          nullptr);
-        MOZ_ASSERT(eglSync);
-        mGLContext->fFlush();
-      } else {
-        NS_WARNING("No EGL fence support detected, rendering artifacts may occur!");
-      }
-
-      img = new layers::EGLImageImage(eglImage, eglSync, mConfig.mDisplay,
-                                      gl::OriginPos::TopLeft, true /* owns */);
-    }
 
     nsresult rv;
     int32_t flags;
@@ -212,20 +146,9 @@ public:
   }
 
 protected:
-  bool EnsureGLContext()
-  {
-    if (mGLContext) {
-      return true;
-    }
-
-    mGLContext = GLContextProvider::CreateHeadless(CreateContextFlags::NONE);
-    return mGLContext;
-  }
-
   layers::ImageContainer* mImageContainer;
   const VideoInfo& mConfig;
   RefPtr<AndroidSurfaceTexture> mSurfaceTexture;
-  RefPtr<GLContext> mGLContext;
 };
 
 class AudioDataDecoder : public MediaCodecDataDecoder
@@ -249,6 +172,11 @@ public:
       NS_ENSURE_SUCCESS_VOID(aFormat->SetByteBuffer(NS_LITERAL_STRING("csd-0"),
                                                     buffer));
     }
+  }
+
+  const char* GetDescriptionName() const override
+  {
+    return "android audio decoder";
   }
 
   nsresult Output(BufferInfo::Param aInfo, void* aBuffer,
@@ -301,7 +229,7 @@ bool
 AndroidDecoderModule::SupportsMimeType(const nsACString& aMimeType) const
 {
   if (!AndroidBridge::Bridge() ||
-      (AndroidBridge::Bridge()->GetAPIVersion() < 16)) {
+      AndroidBridge::Bridge()->GetAPIVersion() < 16) {
     return false;
   }
 
@@ -310,12 +238,19 @@ AndroidDecoderModule::SupportsMimeType(const nsACString& aMimeType) const
     return true;
   }
 
-  MediaCodec::LocalRef ref = mozilla::CreateDecoder(aMimeType);
-  if (!ref) {
+  // When checking "audio/x-wav", CreateDecoder can cause a JNI ERROR by
+  // Accessing a stale local reference leading to a SIGSEGV crash.
+  // To avoid this we check for wav types here.
+  if (aMimeType.EqualsLiteral("audio/x-wav") ||
+      aMimeType.EqualsLiteral("audio/wave; codecs=1") ||
+      aMimeType.EqualsLiteral("audio/wave; codecs=6") ||
+      aMimeType.EqualsLiteral("audio/wave; codecs=7") ||
+      aMimeType.EqualsLiteral("audio/wave; codecs=65534")) {
     return false;
-  }
-  ref->Release();
-  return true;
+  }  
+
+  return widget::HardwareCodecCapabilityUtils::FindDecoderCodecInfoForMimeType(
+      nsCString(TranslateMimeType(aMimeType)));
 }
 
 already_AddRefed<MediaDataDecoder>
@@ -796,7 +731,7 @@ MediaCodecDataDecoder::Shutdown()
 {
   MonitorAutoLock lock(mMonitor);
 
-  if (!mThread || State() == kStopping) {
+  if (State() == kStopping) {
     // Already shutdown or in the process of doing so
     return NS_OK;
   }
@@ -804,15 +739,20 @@ MediaCodecDataDecoder::Shutdown()
   State(kStopping);
   lock.Notify();
 
-  while (State() == kStopping) {
+  while (mThread && State() == kStopping) {
     lock.Wait();
   }
 
-  mThread->Shutdown();
-  mThread = nullptr;
+  if (mThread) {
+    mThread->Shutdown();
+    mThread = nullptr;
+  }
 
-  mDecoder->Stop();
-  mDecoder->Release();
+  if (mDecoder) {
+    mDecoder->Stop();
+    mDecoder->Release();
+    mDecoder = nullptr;
+  }
 
   return NS_OK;
 }

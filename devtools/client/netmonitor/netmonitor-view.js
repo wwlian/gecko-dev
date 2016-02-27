@@ -3,6 +3,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* import-globals-from netmonitor-controller.js */
+/* globals window, document */
 "use strict";
 
 XPCOMUtils.defineLazyGetter(this, "HarExporter", function() {
@@ -536,9 +538,11 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
    *        True if this request was initiated via XHR.
    * @param boolean aFromCache
    *        Indicates if the result came from the browser cache
+   * @param boolean aFromServiceWorker
+   *        Indicates if the request has been intercepted by a Service Worker
    */
-  addRequest: function(aId, aStartedDateTime, aMethod, aUrl, aIsXHR, aFromCache) {
-    this._addQueue.push([aId, aStartedDateTime, aMethod, aUrl, aIsXHR, aFromCache]);
+  addRequest: function(aId, aStartedDateTime, aMethod, aUrl, aIsXHR, aFromCache, aFromServiceWorker) {
+    this._addQueue.push([aId, aStartedDateTime, aMethod, aUrl, aIsXHR, aFromCache, aFromServiceWorker]);
 
     // Lazy updating is disabled in some tests.
     if (!this.lazyUpdate) {
@@ -1006,6 +1010,7 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
       if (header != target) {
         header.removeAttribute("sorted");
         header.removeAttribute("tooltiptext");
+        header.parentNode.removeAttribute("active");
       }
     }
 
@@ -1018,6 +1023,8 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
         target.setAttribute("sorted", direction = "ascending");
         target.setAttribute("tooltiptext", L10N.getStr("networkMenu.sortedAsc"));
       }
+      // Used to style the next column.
+      target.parentNode.setAttribute("active", "true");
     }
 
     // Sort by whatever was requested.
@@ -1344,7 +1351,7 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
     let widget = NetMonitorView.RequestsMenu.widget;
     let isScrolledToBottom = widget.isScrolledToBottom();
 
-    for (let [id, startedDateTime, method, url, isXHR, fromCache] of this._addQueue) {
+    for (let [id, startedDateTime, method, url, isXHR, fromCache, fromServiceWorker] of this._addQueue) {
       // Convert the received date/time string to a unix timestamp.
       let unixTime = Date.parse(startedDateTime);
 
@@ -1363,7 +1370,8 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
           method: method,
           url: url,
           isXHR: isXHR,
-          fromCache: fromCache
+          fromCache: fromCache,
+          fromServiceWorker: fromServiceWorker
         }
       });
 
@@ -1465,7 +1473,8 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
             requestItem.attachment.status = value;
             this.updateMenuView(requestItem, key, {
               status: value,
-              cached: requestItem.attachment.fromCache
+              cached: requestItem.attachment.fromCache,
+              serviceWorker: requestItem.attachment.fromServiceWorker
             });
             break;
           case "statusText":
@@ -1474,6 +1483,8 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
                         requestItem.attachment.statusText);
             if(requestItem.attachment.fromCache) {
               text += " (cached)";
+            } else if(requestItem.attachment.fromServiceWorker) {
+              text += " (service worker)";
             }
 
             this.updateMenuView(requestItem, key, text);
@@ -1489,6 +1500,10 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
             if(requestItem.attachment.fromCache) {
               requestItem.attachment.transferredSize = 0;
               this.updateMenuView(requestItem, key, 'cached');
+            }
+            else if(requestItem.attachment.fromServiceWorker) {
+              requestItem.attachment.transferredSize = 0;
+              this.updateMenuView(requestItem, key, 'service worker');
             }
             else {
               requestItem.attachment.transferredSize = value;
@@ -1518,7 +1533,9 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
           case "eventTimings":
             requestItem.attachment.eventTimings = value;
             this._createWaterfallView(
-              requestItem, value.timings, requestItem.attachment.fromCache
+              requestItem, value.timings,
+              requestItem.attachment.fromCache ||
+              requestItem.attachment.fromServiceWorker
             );
             break;
         }
@@ -1676,14 +1693,23 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
         break;
       }
       case "status": {
-        let node = $(".requests-menu-status", target);
-        node.setAttribute("code", aValue.cached ? "cached" : aValue.status);
+        let node = $(".requests-menu-status-icon", target);
+        let code;
+        if (aValue.cached) {
+          code = L10N.getStr("netmonitor.status.cached");
+          code = "cached";
+        } else if (aValue.serviceWorker) {
+          code = L10N.getStr("netmonitor.status.serviceWorker");
+        } else {
+          code = aValue.status;
+        }
+        node.setAttribute("code", code);
         let codeNode = $(".requests-menu-status-code", target);
         codeNode.setAttribute("value", aValue.status);
         break;
       }
       case "statusText": {
-        let node = $(".requests-menu-status-and-method", target);
+        let node = $(".requests-menu-status", target);
         node.setAttribute("tooltiptext", aValue);
         break;
       }
@@ -1705,6 +1731,10 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
         }
         else if(aValue === "cached") {
           text = L10N.getStr("networkMenu.sizeCached");
+          node.classList.add('theme-comment');
+        }
+        else if(aValue === "service worker") {
+          text = L10N.getStr("networkMenu.sizeServiceWorker");
           node.classList.add('theme-comment');
         }
         else {
@@ -1758,7 +1788,7 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
    * @param object aTimings
    *        An object containing timing information.
    * @param boolean aFromCache
-   *        Indicates if the result came from the browser cache
+   *        Indicates if the result came from the browser cache or a service worker
    */
   _createWaterfallView: function(aItem, aTimings, aFromCache) {
     let { target, attachment } = aItem;
@@ -1850,7 +1880,7 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
    *        The current waterfall scale.
    */
   _showWaterfallDivisionLabels: function(aScale) {
-    let container = $("#requests-menu-waterfall-button");
+    let container = $("#requests-menu-waterfall-label-wrapper");
     let availableWidth = this._waterfallWidth - REQUESTS_WATERFALL_SAFE_BOUNDS;
 
     // Nuke all existing labels.
@@ -1910,6 +1940,8 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
         fragment.appendChild(node);
       }
       container.appendChild(fragment);
+
+      container.className = 'requests-menu-waterfall-visible';
     }
   },
 
@@ -2085,7 +2117,7 @@ RequestsMenuView.prototype = Heritage.extend(WidgetMethods, {
     copyPostDataElement.hidden = !selectedItem || !selectedItem.attachment.requestPostData;
 
     let copyAsCurlElement = $("#request-menu-context-copy-as-curl");
-    copyAsCurlElement.hidden = !selectedItem || !selectedItem.attachment.responseContent;
+    copyAsCurlElement.hidden = !selectedItem || !selectedItem.attachment;
 
     let copyRequestHeadersElement = $("#request-menu-context-copy-request-headers");
     copyRequestHeadersElement.hidden = !selectedItem || !selectedItem.attachment.requestHeaders;
@@ -2476,7 +2508,6 @@ NetworkDetailsView.prototype = {
       }));
     this._params = new VariablesView($("#request-params"),
       Heritage.extend(GENERIC_VARIABLES_VIEW_SETTINGS, {
-        onlyEnumVisible: true,
         emptyText: L10N.getStr("paramsEmptyText"),
         searchPlaceholder: L10N.getStr("paramsFilterText")
       }));
@@ -2684,7 +2715,15 @@ NetworkDetailsView.prototype = {
     }
 
     if (aData.status) {
-      $("#headers-summary-status-circle").setAttribute("code", aData.fromCache ? "cached" : aData.status);
+      let code;
+      if (aData.fromCache) {
+        code = L10N.getStr("netmonitor.status.cached");
+      } else if (aData.fromServiceWorker) {
+        code = L10N.getStr("netmonitor.status.serviceWorker");
+      } else {
+        code = aData.status;
+      }
+      $("#headers-summary-status-circle").setAttribute("code", code);
       $("#headers-summary-status-value").setAttribute("value", aData.status + " " + aData.statusText);
       $("#headers-summary-status").removeAttribute("hidden");
     } else {
@@ -2859,6 +2898,8 @@ NetworkDetailsView.prototype = {
     let formDataSections = yield RequestsMenuView.prototype._getFormDataSections(
       aHeaders, aUploadHeaders, aPostData);
 
+    this._params.onlyEnumVisible = false;
+
     // Handle urlencoded form data sections (e.g. "?foo=bar&baz=42").
     if (formDataSections.length > 0) {
       formDataSections.forEach(section => {
@@ -2874,6 +2915,7 @@ NetworkDetailsView.prototype = {
         jsonVal = JSON.parse(postData);
       } catch (ex) { }
       if (jsonVal) {
+        this._params.onlyEnumVisible = true;
         let jsonScopeName = L10N.getStr("jsonScopeName");
         let jsonVar = { label: jsonScopeName, rawObject: jsonVal };
         let jsonScope = this._params.addScope(jsonScopeName);

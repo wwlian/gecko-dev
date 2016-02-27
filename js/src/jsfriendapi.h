@@ -115,6 +115,7 @@ enum {
     JS_TELEMETRY_GC_MAX_PAUSE_MS,
     JS_TELEMETRY_GC_MARK_MS,
     JS_TELEMETRY_GC_SWEEP_MS,
+    JS_TELEMETRY_GC_COMPACT_MS,
     JS_TELEMETRY_GC_MARK_ROOTS_MS,
     JS_TELEMETRY_GC_MARK_GRAY_MS,
     JS_TELEMETRY_GC_SLICE_MS,
@@ -130,8 +131,13 @@ enum {
     JS_TELEMETRY_GC_MINOR_US,
     JS_TELEMETRY_DEPRECATED_LANGUAGE_EXTENSIONS_IN_CONTENT,
     JS_TELEMETRY_DEPRECATED_LANGUAGE_EXTENSIONS_IN_ADDONS,
-    JS_TELEMETRY_ADDON_EXCEPTIONS
+    JS_TELEMETRY_ADDON_EXCEPTIONS,
+    JS_TELEMETRY_DEFINE_GETTER_SETTER_THIS_NULL_UNDEFINED,
+    JS_TELEMETRY_END
 };
+
+static_assert(JS_TELEMETRY_DEFINE_GETTER_SETTER_THIS_NULL_UNDEFINED == 25,
+              "This value needs to be kept in sync with SelfHostingDefines.h");
 
 typedef void
 (*JSAccumulateTelemetryDataCallback)(int id, uint32_t sample, const char* key);
@@ -243,6 +249,13 @@ namespace JS {
 extern JS_FRIEND_API(char*)
 FormatStackDump(JSContext* cx, char* buf, bool showArgs, bool showLocals, bool showThisProps);
 
+/**
+ * Set all of the uninitialized lexicals on an object to undefined. Return
+ * true if any lexicals were initialized and false otherwise.
+ * */
+extern JS_FRIEND_API(bool)
+ForceLexicalInitialization(JSContext *cx, HandleObject obj);
+
 } // namespace JS
 
 /**
@@ -275,7 +288,7 @@ JS_CopyPropertyFrom(JSContext* cx, JS::HandleId id, JS::HandleObject target,
                     PropertyCopyBehavior copyBehavior = CopyNonConfigurableAsIs);
 
 extern JS_FRIEND_API(bool)
-JS_WrapPropertyDescriptor(JSContext* cx, JS::MutableHandle<JSPropertyDescriptor> desc);
+JS_WrapPropertyDescriptor(JSContext* cx, JS::MutableHandle<JS::PropertyDescriptor> desc);
 
 struct JSFunctionSpecWithHelp {
     const char*     name;
@@ -367,7 +380,7 @@ proxy_LookupProperty(JSContext* cx, JS::HandleObject obj, JS::HandleId id, JS::M
                     JS::MutableHandle<Shape*> propp);
 extern JS_FRIEND_API(bool)
 proxy_DefineProperty(JSContext* cx, JS::HandleObject obj, JS::HandleId id,
-                     JS::Handle<JSPropertyDescriptor> desc,
+                     JS::Handle<JS::PropertyDescriptor> desc,
                      JS::ObjectOpResult& result);
 extern JS_FRIEND_API(bool)
 proxy_HasProperty(JSContext* cx, JS::HandleObject obj, JS::HandleId id, bool* foundp);
@@ -379,7 +392,7 @@ proxy_SetProperty(JSContext* cx, JS::HandleObject obj, JS::HandleId id, JS::Hand
                   JS::HandleValue receiver, JS::ObjectOpResult& result);
 extern JS_FRIEND_API(bool)
 proxy_GetOwnPropertyDescriptor(JSContext* cx, JS::HandleObject obj, JS::HandleId id,
-                               JS::MutableHandle<JSPropertyDescriptor> desc);
+                               JS::MutableHandle<JS::PropertyDescriptor> desc);
 extern JS_FRIEND_API(bool)
 proxy_DeleteProperty(JSContext* cx, JS::HandleObject obj, JS::HandleId id,
                      JS::ObjectOpResult& result);
@@ -1653,7 +1666,10 @@ JS_NewFloat64ArrayWithBuffer(JSContext* cx, JS::HandleObject arrayBuffer,
                              uint32_t byteOffset, int32_t length);
 
 /**
- * Create a new SharedArrayBuffer with the given byte length.
+ * Create a new SharedArrayBuffer with the given byte length.  This
+ * may only be called if
+ * JS::CompartmentCreationOptionsRef(cx).getSharedMemoryAndAtomicsEnabled() is
+ * true.
  */
 extern JS_FRIEND_API(JSObject*)
 JS_NewSharedArrayBuffer(JSContext* cx, uint32_t nbytes);
@@ -1889,7 +1905,7 @@ JS_GetSharedArrayBufferByteLength(JSObject* obj);
 
 /**
  * Return true if the arrayBuffer contains any data. This will return false for
- * ArrayBuffer.prototype and neutered ArrayBuffers.
+ * ArrayBuffer.prototype and detached ArrayBuffers.
  *
  * |obj| must have passed a JS_IsArrayBufferObject test, or somehow be known
  * that it would pass such a test: it is an ArrayBuffer or a wrapper of an
@@ -2010,39 +2026,40 @@ extern JS_FRIEND_API(void*)
 JS_GetArrayBufferViewData(JSObject* obj, bool* isSharedMemory, const JS::AutoCheckCannotGC&);
 
 /**
- * Return the ArrayBuffer or SharedArrayBuffer underlying an
- * ArrayBufferView. If the buffer has been neutered, this will still
- * return the neutered buffer. |obj| must be an object that would
+ * Return the ArrayBuffer or SharedArrayBuffer underlying an ArrayBufferView.
+ * This may return a detached buffer.  |obj| must be an object that would
  * return true for JS_IsArrayBufferViewObject().
  */
 extern JS_FRIEND_API(JSObject*)
 JS_GetArrayBufferViewBuffer(JSContext* cx, JS::HandleObject obj, bool* isSharedMemory);
 
-typedef enum {
+enum DetachDataDisposition {
     ChangeData,
     KeepData
-} NeuterDataDisposition;
+};
 
 /**
- * Set an ArrayBuffer's length to 0 and neuter all of its views.
+ * Detach an ArrayBuffer, causing all associated views to no longer refer to
+ * the ArrayBuffer's original attached memory.
  *
  * The |changeData| argument is a hint to inform internal behavior with respect
- * to the internal pointer to the ArrayBuffer's data after being neutered.
- * There is no guarantee it will be respected.  But if it is respected, the
- * ArrayBuffer's internal data pointer will, or will not, have changed
- * accordingly.
+ * to the ArrayBuffer's internal pointer to associated data.  |ChangeData|
+ * attempts to set the internal pointer to fresh memory of the same size as the
+ * original memory; |KeepData| attempts to preserve the original pointer, even
+ * while the ArrayBuffer appears observably detached.  There is no guarantee
+ * this parameter is respected -- it's only a hint.
  */
 extern JS_FRIEND_API(bool)
-JS_NeuterArrayBuffer(JSContext* cx, JS::HandleObject obj,
-                     NeuterDataDisposition changeData);
+JS_DetachArrayBuffer(JSContext* cx, JS::HandleObject obj,
+                     DetachDataDisposition changeData);
 
 /**
- * Check whether the obj is ArrayBufferObject and neutered. Note that this
- * may return false if a security wrapper is encountered that denies the
+ * Check whether the obj is a detached ArrayBufferObject. Note that this may
+ * return false if a security wrapper is encountered that denies the
  * unwrapping.
  */
 extern JS_FRIEND_API(bool)
-JS_IsNeuteredArrayBufferObject(JSObject* obj);
+JS_IsDetachedArrayBufferObject(JSObject* obj);
 
 /**
  * Check whether obj supports JS_GetDataView* APIs.
@@ -2336,7 +2353,12 @@ struct JSJitInfo {
         js::jit::InlinableNative inlinableNative;
     };
 
-    uint16_t depth;
+    union {
+        uint16_t depth;
+
+        // Additional opcode for some InlinableNative functions.
+        uint16_t nativeOp;
+    };
 
     // These fields are carefully packed to take up 4 bytes.  If you need more
     // bits for whatever reason, please see if you can steal bits from existing
@@ -2659,7 +2681,7 @@ class MOZ_RAII JS_FRIEND_API(AutoCTypesActivityCallback) {
 };
 
 typedef JSObject*
-(* ObjectMetadataCallback)(JSContext* cx, JSObject* obj);
+(* ObjectMetadataCallback)(JSContext* cx, JS::HandleObject obj);
 
 /**
  * Specify a callback to invoke when creating each JS object in the current
@@ -2703,7 +2725,7 @@ ForwardToNative(JSContext* cx, JSNative native, const JS::CallArgs& args);
 JS_FRIEND_API(bool)
 SetPropertyIgnoringNamedGetter(JSContext* cx, JS::HandleObject obj, JS::HandleId id,
                                JS::HandleValue v, JS::HandleValue receiver,
-                               JS::Handle<JSPropertyDescriptor> ownDesc,
+                               JS::Handle<JS::PropertyDescriptor> ownDesc,
                                JS::ObjectOpResult& result);
 
 JS_FRIEND_API(void)

@@ -255,9 +255,8 @@ protected:
     virtual nsresult SetBackgroundUnknown(NPP instance) override;
     virtual nsresult BeginUpdateBackground(NPP instance,
                                            const nsIntRect& aRect,
-                                           gfxContext** aCtx) override;
+                                           DrawTarget** aDrawTarget) override;
     virtual nsresult EndUpdateBackground(NPP instance,
-                                         gfxContext* aCtx,
                                          const nsIntRect& aRect) override;
 
 #if defined(XP_UNIX) && !defined(XP_MACOSX) && !defined(MOZ_WIDGET_GONK)
@@ -326,6 +325,7 @@ protected:
     TimeDuration mTimeBlocked;
     nsCString mPluginName;
     nsCString mPluginVersion;
+    int32_t mSandboxLevel;
     bool mIsFlashPlugin;
 
 #ifdef MOZ_X11
@@ -549,7 +549,6 @@ private:
     PluginHangUIParent *mHangUIParent;
     bool mHangUIEnabled;
     bool mIsTimerReset;
-    int32_t mSandboxLevel;
 #ifdef MOZ_CRASHREPORTER
     /**
      * This mutex protects the crash reporter when the Plugin Hang UI event

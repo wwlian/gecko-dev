@@ -25,7 +25,7 @@ Object.defineProperty(this, "WebConsoleUtils", {
 });
 
 const STRINGS_URI = "chrome://global/locale/security/security.properties";
-var l10n = new WebConsoleUtils.l10n(STRINGS_URI);
+var l10n = new WebConsoleUtils.L10n(STRINGS_URI);
 
 this.InsecurePasswordUtils = {
 
@@ -62,12 +62,11 @@ this.InsecurePasswordUtils = {
    * inside https).
    */
   _checkForInsecureNestedDocuments : function(domDoc) {
-    let uri = domDoc.documentURIObject;
     if (domDoc.defaultView == domDoc.defaultView.parent) {
       // We are at the top, nothing to check here
       return false;
     }
-    if (!LoginManagerContent.checkIfURIisSecure(uri)) {
+    if (!LoginManagerContent.isDocumentSecure(domDoc)) {
       // We are insecure
       return true;
     }
@@ -84,8 +83,8 @@ this.InsecurePasswordUtils = {
    */
   checkForInsecurePasswords : function (aForm) {
     var domDoc = aForm.ownerDocument;
-    let pageURI = domDoc.defaultView.top.document.documentURIObject;
-    let isSafePage = LoginManagerContent.checkIfURIisSecure(pageURI);
+    let topDocument = domDoc.defaultView.top.document;
+    let isSafePage = LoginManagerContent.isDocumentSecure(topDocument);
 
     if (!isSafePage) {
       this._sendWebConsoleMessage("InsecurePasswordsPresentOnPage", domDoc);

@@ -6,8 +6,8 @@ var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 
 var { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
 var { Task } = Cu.import("resource://gre/modules/Task.jsm", {});
-var { gDevTools } = Cu.import("resource://devtools/client/framework/gDevTools.jsm", {});
 var { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
+var { gDevTools } = require("devtools/client/framework/devtools");
 var { CurlUtils } = Cu.import("resource://devtools/client/shared/Curl.jsm", {});
 var promise = require("promise");
 var NetworkHelper = require("devtools/shared/webconsole/network-helper");
@@ -283,7 +283,7 @@ function verifyRequestItemTarget(aRequestItem, aMethod, aUrl, aData = {}) {
   info("Visible index of item: " + visibleIndex);
 
   let { fuzzyUrl, status, statusText, type, fullMimeType,
-        transferred, size, time, fromCache } = aData;
+        transferred, size, time, displayedStatus } = aData;
   let { attachment, target } = aRequestItem
 
   let uri = Services.io.newURI(aUrl, null, null).QueryInterface(Ci.nsIURL);
@@ -324,13 +324,13 @@ function verifyRequestItemTarget(aRequestItem, aMethod, aUrl, aData = {}) {
     domainTooltip, "The tooltip domain is correct.");
 
   if (status !== undefined) {
-    let value = target.querySelector(".requests-menu-status").getAttribute("code");
+    let value = target.querySelector(".requests-menu-status-icon").getAttribute("code");
     let codeValue = target.querySelector(".requests-menu-status-code").getAttribute("value");
-    let tooltip = target.querySelector(".requests-menu-status-and-method").getAttribute("tooltiptext");
+    let tooltip = target.querySelector(".requests-menu-status").getAttribute("tooltiptext");
     info("Displayed status: " + value);
     info("Displayed code: " + codeValue);
     info("Tooltip status: " + tooltip);
-    is(value, fromCache ? "cached" : status, "The displayed status is correct.");
+    is(value, displayedStatus ? displayedStatus : status, "The displayed status is correct.");
     is(codeValue, status, "The displayed status code is correct.");
     is(tooltip, status + " " + statusText, "The tooltip status is correct.");
   }

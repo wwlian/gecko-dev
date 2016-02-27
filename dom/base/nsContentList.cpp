@@ -548,7 +548,7 @@ nsContentList::GetSupportedNames(unsigned aFlags, nsTArray<nsString>& aNames)
 
   BringSelfUpToDate(true);
 
-  nsAutoTArray<nsIAtom*, 8> atoms;
+  AutoTArray<nsIAtom*, 8> atoms;
   for (uint32_t i = 0; i < mElements.Length(); ++i) {
     nsIContent *content = mElements.ElementAt(i);
     if (content->HasID()) {
@@ -845,11 +845,11 @@ nsContentList::Match(Element *aElement)
     return false;
 
   NodeInfo *ni = aElement->NodeInfo();
-
-  bool wildcard = mMatchNameSpaceId == kNameSpaceID_Wildcard ||
-                  mMatchNameSpaceId == kNameSpaceID_Unknown;
+ 
+  bool unknown = mMatchNameSpaceId == kNameSpaceID_Unknown;
+  bool wildcard = mMatchNameSpaceId == kNameSpaceID_Wildcard;
   bool toReturn = mMatchAll;
-  if (!wildcard)
+  if (!unknown && !wildcard)
     toReturn &= ni->NamespaceEquals(mMatchNameSpaceId);
 
   if (toReturn)
@@ -857,6 +857,11 @@ nsContentList::Match(Element *aElement)
 
   bool matchHTML =
     mIsHTMLDocument && aElement->GetNameSpaceID() == kNameSpaceID_XHTML;
+
+  if (unknown) {
+    return matchHTML ? ni->QualifiedNameEquals(mHTMLMatchAtom) :
+                       ni->QualifiedNameEquals(mXMLMatchAtom);
+  }
 
   if (wildcard) {
     return matchHTML ? ni->Equals(mHTMLMatchAtom) :

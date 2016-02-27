@@ -13,8 +13,16 @@ const {Task} = Cu.import("resource://gre/modules/Task.jsm", {});
 var DOMUtils = Cc["@mozilla.org/inspector/dom-utils;1"].getService(Ci.inIDOMUtils);
 var loader = Cc["@mozilla.org/moz/jssubscript-loader;1"]
             .getService(Ci.mozIJSSubScriptLoader);
-var EventUtils = {};
-loader.loadSubScript("chrome://marionette/content/EventUtils.js", EventUtils);
+
+// Set up a dummy environment so that EventUtils works. We need to be careful to
+// pass a window object into each EventUtils method we call rather than having
+// it rely on the |window| global.
+let EventUtils = {};
+EventUtils.window = {};
+EventUtils.parent = {};
+EventUtils._EU_Ci = Components.interfaces;
+EventUtils._EU_Cc = Components.classes;
+loader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/EventUtils.js", EventUtils);
 
 const protocol = require("devtools/server/protocol");
 const {Arg, Option, method, RetVal, types} = protocol;
@@ -556,6 +564,47 @@ var TestActor = exports.TestActor = protocol.ActorClass({
       value: RetVal("json")
     }
   }),
+
+  /**
+   * Get information about a DOM element, identified by a selector.
+   * @param {String} selector The CSS selector to get the node (can be an array
+   * of selectors to get elements in an iframe).
+   * @return {Object} data Null if selector didn't match any node, otherwise:
+   * - {String} tagName.
+   * - {String} namespaceURI.
+   * - {Number} numChildren The number of children in the element.
+   * - {Array} attributes An array of {name, value, namespaceURI} objects.
+   * - {String} outerHTML.
+   * - {String} innerHTML.
+   * - {String} textContent.
+   */
+  getNodeInfo: protocol.method(function(selector) {
+    let node = this._querySelector(selector);
+    let info = null;
+
+    if (node) {
+      info = {
+        tagName: node.tagName,
+        namespaceURI: node.namespaceURI,
+        numChildren: node.children.length,
+        attributes: [...node.attributes].map(({name, value, namespaceURI}) => {
+          return {name, value, namespaceURI};
+        }),
+        outerHTML: node.outerHTML,
+        innerHTML: node.innerHTML,
+        textContent: node.textContent
+      };
+    }
+
+    return info;
+  }, {
+    request: {
+      selector: Arg(0, "string")
+    },
+    response: {
+      value: RetVal("json")
+    }
+  })
 });
 
 var TestActorFront = exports.TestActorFront = protocol.FrontClass(TestActor, {

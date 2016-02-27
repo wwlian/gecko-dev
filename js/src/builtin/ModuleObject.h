@@ -12,7 +12,7 @@
 
 #include "gc/Zone.h"
 
-#include "js/TraceableVector.h"
+#include "js/GCVector.h"
 
 #include "vm/NativeObject.h"
 #include "vm/ProxyObject.h"
@@ -43,16 +43,19 @@ class ImportEntryObject : public NativeObject
     };
 
     static const Class class_;
-    static JSObject* initClass(JSContext* cx, HandleObject obj);
+    static JSObject* initClass(ExclusiveContext* cx, HandleObject obj);
     static bool isInstance(HandleValue value);
-    static ImportEntryObject* create(JSContext* cx,
+    static ImportEntryObject* create(ExclusiveContext* cx,
                                      HandleAtom moduleRequest,
                                      HandleAtom importName,
                                      HandleAtom localName);
-    JSAtom* moduleRequest();
-    JSAtom* importName();
-    JSAtom* localName();
+    JSAtom* moduleRequest() const;
+    JSAtom* importName() const;
+    JSAtom* localName() const;
 };
+
+typedef Rooted<ImportEntryObject*> RootedImportEntryObject;
+typedef Handle<ImportEntryObject*> HandleImportEntryObject;
 
 class ExportEntryObject : public NativeObject
 {
@@ -67,17 +70,17 @@ class ExportEntryObject : public NativeObject
     };
 
     static const Class class_;
-    static JSObject* initClass(JSContext* cx, HandleObject obj);
+    static JSObject* initClass(ExclusiveContext* cx, HandleObject obj);
     static bool isInstance(HandleValue value);
-    static ExportEntryObject* create(JSContext* cx,
+    static ExportEntryObject* create(ExclusiveContext* cx,
                                      HandleAtom maybeExportName,
                                      HandleAtom maybeModuleRequest,
                                      HandleAtom maybeImportName,
                                      HandleAtom maybeLocalName);
-    JSAtom* exportName();
-    JSAtom* moduleRequest();
-    JSAtom* importName();
-    JSAtom* localName();
+    JSAtom* exportName() const;
+    JSAtom* moduleRequest() const;
+    JSAtom* importName() const;
+    JSAtom* localName() const;
 };
 
 typedef Rooted<ExportEntryObject*> RootedExportEntryObject;
@@ -130,7 +133,7 @@ class ModuleNamespaceObject : public ProxyObject
     static ModuleNamespaceObject* create(JSContext* cx, HandleModuleObject module);
 
     ModuleObject& module();
-    ArrayObject& exports();
+    JSObject& exports();
     IndirectBindingMap& bindings();
 
     bool addBinding(JSContext* cx, HandleAtom exportedName, HandleModuleObject targetModule,
@@ -149,15 +152,14 @@ class ModuleNamespaceObject : public ProxyObject
         JS::Value getEnumerateFunction(HandleObject proxy) const;
 
         bool getOwnPropertyDescriptor(JSContext* cx, HandleObject proxy, HandleId id,
-                                      MutableHandle<JSPropertyDescriptor> desc) const override;
+                                      MutableHandle<PropertyDescriptor> desc) const override;
         bool defineProperty(JSContext* cx, HandleObject proxy, HandleId id,
-                            Handle<JSPropertyDescriptor> desc,
+                            Handle<PropertyDescriptor> desc,
                             ObjectOpResult& result) const override;
         bool ownPropertyKeys(JSContext* cx, HandleObject proxy,
                              AutoIdVector& props) const override;
         bool delete_(JSContext* cx, HandleObject proxy, HandleId id,
                      ObjectOpResult& result) const override;
-        bool enumerate(JSContext* cx, HandleObject proxy, MutableHandleObject objp) const override;
         bool getPrototype(JSContext* cx, HandleObject proxy,
                           MutableHandleObject protop) const override;
         bool setPrototype(JSContext* cx, HandleObject proxy, HandleObject proto,
@@ -193,7 +195,7 @@ struct FunctionDeclaration
     RelocatablePtrFunction fun;
 };
 
-using FunctionDeclarationVector = TraceableVector<FunctionDeclaration, 0, ZoneAllocPolicy>;
+using FunctionDeclarationVector = GCVector<FunctionDeclaration, 0, ZoneAllocPolicy>;
 
 class ModuleObject : public NativeObject
 {
@@ -230,6 +232,9 @@ class ModuleObject : public NativeObject
                               HandleArrayObject localExportEntries,
                               HandleArrayObject indiretExportEntries,
                               HandleArrayObject starExportEntries);
+    static bool FreezeArrayProperties(JSContext* cx, HandleModuleObject self);
+    static void AssertArrayPropertiesFrozen(JSContext* cx, HandleModuleObject self);
+    void fixScopesAfterCompartmentMerge(JSContext* cx);
 
     JSScript* script() const;
     JSObject* enclosingStaticScope() const;
@@ -243,7 +248,7 @@ class ModuleObject : public NativeObject
     ArrayObject& indirectExportEntries() const;
     ArrayObject& starExportEntries() const;
     IndirectBindingMap& importBindings();
-    ArrayObject* namespaceExports();
+    JSObject* namespaceExports();
     IndirectBindingMap* namespaceBindings();
 
     void createEnvironment();
@@ -255,7 +260,7 @@ class ModuleObject : public NativeObject
     static bool evaluate(JSContext* cx, HandleModuleObject self, MutableHandleValue rval);
 
     static ModuleNamespaceObject* createNamespace(JSContext* cx, HandleModuleObject self,
-                                                  HandleArrayObject exports);
+                                                  HandleObject exports);
 
   private:
     static void trace(JSTracer* trc, JSObject* obj);
@@ -271,19 +276,30 @@ class ModuleObject : public NativeObject
 class MOZ_STACK_CLASS ModuleBuilder
 {
   public:
-    explicit ModuleBuilder(JSContext* cx, HandleModuleObject module);
+    explicit ModuleBuilder(ExclusiveContext* cx, HandleModuleObject module);
 
-    bool buildAndInit(frontend::ParseNode* pn);
+    bool processImport(frontend::ParseNode* pn);
+    bool processExport(frontend::ParseNode* pn);
+    bool processExportFrom(frontend::ParseNode* pn);
+
+    bool hasExportedName(JSAtom* name) const;
+
+    using ExportEntryVector = GCVector<ExportEntryObject*>;
+    const ExportEntryVector& localExportEntries() const {
+        return localExportEntries_;
+    }
+
+    bool buildTables();
+    bool initModule();
 
   private:
-    using AtomVector = TraceableVector<JSAtom*>;
+    using AtomVector = GCVector<JSAtom*>;
     using RootedAtomVector = JS::Rooted<AtomVector>;
-    using ImportEntryVector = TraceableVector<ImportEntryObject*>;
+    using ImportEntryVector = GCVector<ImportEntryObject*>;
     using RootedImportEntryVector = JS::Rooted<ImportEntryVector>;
-    using ExportEntryVector = TraceableVector<ExportEntryObject*> ;
-    using RootedExportEntryVector = JS::Rooted<ExportEntryVector> ;
+    using RootedExportEntryVector = JS::Rooted<ExportEntryVector>;
 
-    JSContext* cx_;
+    ExclusiveContext* cx_;
     RootedModuleObject module_;
     RootedAtomVector requestedModules_;
     RootedAtomVector importedBoundNames_;
@@ -293,11 +309,7 @@ class MOZ_STACK_CLASS ModuleBuilder
     RootedExportEntryVector indirectExportEntries_;
     RootedExportEntryVector starExportEntries_;
 
-    bool processImport(frontend::ParseNode* pn);
-    bool processExport(frontend::ParseNode* pn);
-    bool processExportFrom(frontend::ParseNode* pn);
-
-    ImportEntryObject* importEntryFor(JSAtom* localName);
+    ImportEntryObject* importEntryFor(JSAtom* localName) const;
 
     bool appendExportEntry(HandleAtom exportName, HandleAtom localName);
     bool appendExportFromEntry(HandleAtom exportName, HandleAtom moduleRequest,
@@ -305,10 +317,8 @@ class MOZ_STACK_CLASS ModuleBuilder
 
     bool maybeAppendRequestedModule(HandleAtom module);
 
-    bool appendLocalExportEntry(HandleExportEntryObject exp);
-
     template <typename T>
-    ArrayObject* createArray(const TraceableVector<T>& vector);
+    ArrayObject* createArray(const GCVector<T>& vector);
 };
 
 bool InitModuleClasses(JSContext* cx, HandleObject obj);

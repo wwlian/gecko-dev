@@ -37,16 +37,7 @@ def table_dispatch(kind, table, body):
 class DefinitionException(BaseException):
     pass
 
-def check_numeric_limits(dmin, dmax, n_buckets):
-    if type(dmin) != int:
-        raise DefinitionException, "minimum is not a number"
-    if type(dmax) != int:
-        raise DefinitionException, "maximum is not a number"
-    if type(n_buckets) != int:
-        raise DefinitionException, "number of buckets is not a number"
-
 def linear_buckets(dmin, dmax, n_buckets):
-    check_numeric_limits(dmin, dmax, n_buckets)
     ret_array = [0] * n_buckets
     dmin = float(dmin)
     dmax = float(dmax)
@@ -56,7 +47,6 @@ def linear_buckets(dmin, dmax, n_buckets):
     return ret_array
 
 def exponential_buckets(dmin, dmax, n_buckets):
-    check_numeric_limits(dmin, dmax, n_buckets)
     log_max = math.log(dmax);
     bucket_index = 2;
     ret_array = [0] * n_buckets
@@ -103,14 +93,12 @@ definition is a dict-like object that must contain at least the keys:
 
 The key 'cpp_guard' is optional; if present, it denotes a preprocessor
 symbol that should guard C/C++ definitions associated with the histogram."""
-        self.check_name(name)
         self.verify_attributes(name, definition)
         self._name = name
         self._description = definition['description']
         self._kind = definition['kind']
         self._cpp_guard = definition.get('cpp_guard')
         self._keyed = definition.get('keyed', False)
-        self._extended_statistics_ok = definition.get('extended_statistics_ok', False)
         self._expiration = definition.get('expires_in_version')
         self.compute_bucket_parameters(definition)
         table = { 'boolean': 'BOOLEAN',
@@ -154,15 +142,15 @@ the histogram."""
         self._nsITelemetry_kind = "nsITelemetry::HISTOGRAM_%s" % kind
 
     def low(self):
-        """Return the lower bound of the histogram.  May be a string."""
+        """Return the lower bound of the histogram."""
         return self._low
 
     def high(self):
-        """Return the high bound of the histogram.  May be a string."""
+        """Return the high bound of the histogram."""
         return self._high
 
     def n_buckets(self):
-        """Return the number of buckets in the histogram.  May be a string."""
+        """Return the number of buckets in the histogram."""
         return self._n_buckets
 
     def cpp_guard(self):
@@ -177,11 +165,6 @@ associated with the histogram.  Returns None if no guarding is necessary."""
     def dataset(self):
         """Returns the dataset this histogram belongs into."""
         return self._dataset
-
-    def extended_statistics_ok(self):
-        """Return True if gathering extended statistics for this histogram
-is enabled."""
-        return self._extended_statistics_ok
 
     def ranges(self):
         """Return an array of lower bounds for each bucket in the histogram."""
@@ -216,7 +199,7 @@ is enabled."""
             'count': always_allowed_keys,
             'enumerated': always_allowed_keys + ['n_values'],
             'linear': general_keys,
-            'exponential': general_keys + ['extended_statistics_ok']
+            'exponential': general_keys
             }
         table_dispatch(definition['kind'], table,
                        lambda allowed_keys: Histogram.check_keys(name, definition, allowed_keys))
@@ -225,10 +208,13 @@ is enabled."""
             and not isinstance(definition['alert_emails'], list)):
             raise KeyError, 'alert_emails must be an array if present (in Histogram %s)' % name
 
+        Histogram.check_name(name)
+        Histogram.check_field_types(name, definition)
         Histogram.check_expiration(name, definition)
         Histogram.check_bug_numbers(name, definition)
 
-    def check_name(self, name):
+    @staticmethod
+    def check_name(name):
         if '#' in name:
             raise ValueError, '"#" not permitted for %s' % (name)
 
@@ -259,25 +245,45 @@ is enabled."""
             raise ValueError, 'bug_numbers array for "%s" should only contain integers' % (name)
 
     @staticmethod
+    def check_field_types(name, definition):
+        type_checked_fields = {
+                "n_buckets": int,
+                "n_values": int,
+                "low": int,
+                "high": int,
+                "keyed": bool,
+                "expires_in_version": basestring,
+                "kind": basestring,
+                "description": basestring,
+                "cpp_guard": basestring,
+                "releaseChannelCollection": basestring
+            }
+        for key, key_type in type_checked_fields.iteritems():
+            if not key in definition:
+                continue
+            if not isinstance(definition[key], key_type):
+                if key_type is basestring:
+                    type_name = "string"
+                else:
+                    type_name = key_type.__name__
+                raise ValueError, ('value for key "{0}" in Histogram "{1}" '
+                        'should be {2}').format(key, name, type_name)
+
+    @staticmethod
     def check_keys(name, definition, allowed_keys):
         for key in definition.iterkeys():
             if key not in allowed_keys:
                 raise KeyError, '%s not permitted for %s' % (key, name)
 
     def set_bucket_parameters(self, low, high, n_buckets):
-        def try_to_coerce_to_number(v):
-            try:
-                return eval(v, {})
-            except:
-                return v
-        self._low = try_to_coerce_to_number(low)
-        self._high = try_to_coerce_to_number(high)
-        self._n_buckets = try_to_coerce_to_number(n_buckets)
+        self._low = low
+        self._high = high
+        self._n_buckets = n_buckets
         if n_buckets_whitelist is not None and self._n_buckets > 100 and type(self._n_buckets) is int:
             if self._name not in n_buckets_whitelist:
                 raise KeyError, ('New histogram %s is not permitted to have more than 100 buckets. '
                                 'Histograms with large numbers of buckets use disproportionately high amounts of resources. '
-                                'Contact :vladan or the Perf team if you think an exception ought to be made.' % self._name)
+                                'Contact the Telemetry team (e.g. in #telemetry) if you think an exception ought to be made.' % self._name)
 
     @staticmethod
     def boolean_flag_bucket_parameters(definition):
@@ -292,7 +298,7 @@ is enabled."""
     @staticmethod
     def enumerated_bucket_parameters(definition):
         n_values = definition['n_values']
-        return (1, n_values, "%s+1" % n_values)
+        return (1, n_values, n_values + 1)
 
     @staticmethod
     def exponential_bucket_parameters(definition):

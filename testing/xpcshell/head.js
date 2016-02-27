@@ -22,6 +22,7 @@ var _profileInitialized = false;
 _register_modules_protocol_handler();
 
 var _Promise = Components.utils.import("resource://gre/modules/Promise.jsm", {}).Promise;
+var _PromiseTestUtils = Components.utils.import("resource://testing-common/PromiseTestUtils.jsm", {}).PromiseTestUtils;
 
 // Support a common assertion library, Assert.jsm.
 var AssertCls = Components.utils.import("resource://testing-common/Assert.jsm", null).Assert;
@@ -213,7 +214,6 @@ function _do_main() {
 
 function _do_quit() {
   _testLogger.info("exiting test");
-  _Promise.Debugging.flushUncaughtErrors();
   _quit = true;
 }
 
@@ -383,7 +383,20 @@ function _setupDebuggerServer(breakpointFiles, callback) {
     prefs.setBoolPref("devtools.debugger.log.verbose", true);
   }
 
-  let { require } = Components.utils.import("resource://devtools/shared/Loader.jsm", {});
+  let require;
+  try {
+    ({ require } = Components.utils.import("resource://devtools/shared/Loader.jsm", {}));
+  } catch (e) {
+    throw new Error("resource://devtools appears to be inaccessible from the " +
+                    "xpcshell environment.\n" +
+                    "This can usually be resolved by adding:\n" +
+                    "  firefox-appdir = browser\n" +
+                    "to the xpcshell.ini manifest.\n" +
+                    "It is possible for this to alter test behevior by " +
+                    "triggering additional browser code to run, so check " +
+                    "test behavior after making this change.\n" +
+                    "See also https://bugzil.la/1215378.")
+  }
   let { DebuggerServer } = require("devtools/server/main");
   let { OriginalLocation } = require("devtools/server/actors/common");
   DebuggerServer.init();
@@ -474,7 +487,9 @@ function _execute_test() {
     try {
       _initDebugging(_JSDEBUGGER_PORT);
     } catch (ex) {
-      do_print("Failed to initialize debugging: " + ex + "\n" + ex.stack);
+      // Fail the test run immediately if debugging is requested but fails, so
+      // that the failure state is more obvious.
+      do_throw(`Failed to initialize debugging: ${ex}`, ex.stack);
     }
   }
 
@@ -484,16 +499,8 @@ function _execute_test() {
   // Call do_get_idle() to restore the factory and get the service.
   _fakeIdleService.activate();
 
-  _Promise.Debugging.clearUncaughtErrorObservers();
-  _Promise.Debugging.addUncaughtErrorObserver(function observer({message, date, fileName, stack, lineNumber}) {
-    let text = " A promise chain failed to handle a rejection: " +
-        message + " - rejection date: " + date;
-    _testLogger.error(text,
-                      {
-                        stack: _format_stack(stack),
-                        source_file: fileName
-                      });
-  });
+  _PromiseTestUtils.init();
+  _PromiseTestUtils.Assert = Assert;
 
   // _HEAD_FILES is dynamically defined by <runxpcshelltests.py>.
   _load_files(_HEAD_FILES);
@@ -504,6 +511,12 @@ function _execute_test() {
   this.Assert = Assert;
   for (let func in Assert) {
     this[func] = Assert[func].bind(Assert);
+  }
+
+  if (_gTestHasOnly) {
+    _gTests = _gTests.filter(([props,]) => {
+      return ("_only" in props) && props._only;
+    });
   }
 
   try {
@@ -518,6 +531,7 @@ function _execute_test() {
     }
     do_test_finished("MAIN run_test");
     _do_main();
+    _PromiseTestUtils.assertNoUncaughtRejections();
   } catch (e) {
     _passed = false;
     // do_check failures are already logged and set _quit to true and throw
@@ -592,8 +606,26 @@ function _execute_test() {
   // Restore idle service to avoid leaks.
   _fakeIdleService.deactivate();
 
-  if (!_passed)
-    return;
+  if (_profileInitialized) {
+    // Since we have a profile, we will notify profile shutdown topics at
+    // the end of the current test, to ensure correct cleanup on shutdown.
+    let obs = Components.classes["@mozilla.org/observer-service;1"]
+                        .getService(Components.interfaces.nsIObserverService);
+    obs.notifyObservers(null, "profile-change-net-teardown", null);
+    obs.notifyObservers(null, "profile-change-teardown", null);
+    obs.notifyObservers(null, "profile-before-change", null);
+
+    _profileInitialized = false;
+  }
+
+  try {
+    _PromiseTestUtils.ensureDOMPromiseRejectionsProcessed();
+    _PromiseTestUtils.assertNoUncaughtRejections();
+    _PromiseTestUtils.assertNoMoreExpectedRejections();
+  } finally {
+    // It's important to terminate the module to avoid crashes on shutdown.
+    _PromiseTestUtils.uninit();
+  }
 }
 
 /**
@@ -1124,18 +1156,6 @@ function do_get_profile(notifyProfileAfterChange = false) {
     return null;
   }
 
-  if (!_profileInitialized) {
-    // Since we have a profile, we will notify profile shutdown topics at
-    // the end of the current test, to ensure correct cleanup on shutdown.
-    do_register_cleanup(function() {
-      let obsSvc = Components.classes["@mozilla.org/observer-service;1"].
-                   getService(Components.interfaces.nsIObserverService);
-      obsSvc.notifyObservers(null, "profile-change-net-teardown", null);
-      obsSvc.notifyObservers(null, "profile-change-teardown", null);
-      obsSvc.notifyObservers(null, "profile-before-change", null);
-    });
-  }
-
   let env = Components.classes["@mozilla.org/process/environment;1"]
                       .getService(Components.interfaces.nsIEnvironment);
   // the python harness sets this in the environment for us
@@ -1328,6 +1348,52 @@ function do_send_remote_message(name) {
 }
 
 /**
+ * Helper function to add the _only property to add_task/add_test function when
+ * running it as add_task.only(...).
+ *
+ * @param addFunc
+ *        The parent function to call, e.g. add_task or add_test.
+ * @param funcOrProperties
+ *        A function to be run or an object represents test properties.
+ * @param func
+ *        A function to be run only if the funcOrProperies is not a function.
+ */
+function _add_only(addFunc, funcOrProperties, func) {
+  _gTestHasOnly = true;
+  if (typeof funcOrProperties == "function") {
+    func = funcOrProperties;
+    funcOrProperties = {};
+  }
+
+  if (typeof funcOrProperties == "object") {
+    funcOrProperties._only = true;
+  }
+  return addFunc(funcOrProperties, func);
+}
+
+/**
+ * Helper function to skip the test using e.g. add_task.skip(...)
+ *
+ * @param addFunc
+ *        The parent function to call, e.g. add_task or add_test.
+ * @param funcOrProperties
+ *        A function to be run or an object represents test properties.
+ * @param func
+ *        A function to be run only if the funcOrProperies is not a function.
+ */
+function _add_skip(addFunc, funcOrProperties, func) {
+  if (typeof funcOrProperties == "function") {
+    func = funcOrProperties;
+    funcOrProperties = {};
+  }
+
+  if (typeof funcOrProperties == "object") {
+    funcOrProperties.skip_if = () => true;
+  }
+  return addFunc(funcOrProperties, func);
+}
+
+/**
  * Add a test function to the list of tests that are to be run asynchronously.
  *
  * @param funcOrProperties
@@ -1356,6 +1422,8 @@ function add_test(funcOrProperties, func) {
   }
   return func;
 }
+add_test.only = _add_only.bind(undefined, add_test);
+add_test.skip = _add_skip.bind(undefined, add_test);
 
 /**
  * Add a test function which is a Task function.
@@ -1422,6 +1490,9 @@ function add_task(funcOrProperties, func) {
     do_throw("add_task() should take a function or an object and a function");
   }
 }
+add_task.only = _add_only.bind(undefined, add_task);
+add_task.skip = _add_skip.bind(undefined, add_task);
+
 var _Task = Components.utils.import("resource://gre/modules/Task.jsm", {}).Task;
 _Task.Debugging.maintainStack = true;
 
@@ -1432,6 +1503,7 @@ _Task.Debugging.maintainStack = true;
 var _gRunningTest = null;
 var _gTestIndex = 0; // The index of the currently running test.
 var _gTaskRunning = false;
+var _gTestHasOnly = false;
 function run_next_test()
 {
   if (_gTaskRunning) {
@@ -1443,8 +1515,8 @@ function run_next_test()
   function _run_next_test()
   {
     if (_gTestIndex < _gTests.length) {
-      // Flush uncaught errors as early and often as possible.
-      _Promise.Debugging.flushUncaughtErrors();
+      // Check for uncaught rejections as early and often as possible.
+      _PromiseTestUtils.assertNoUncaughtRejections();
       let _properties;
       [_properties, _gRunningTest,] = _gTests[_gTestIndex++];
       if (typeof(_properties.skip_if) == "function" && _properties.skip_if()) {
@@ -1465,10 +1537,18 @@ function run_next_test()
 
       if (_properties._isTask) {
         _gTaskRunning = true;
-        _Task.spawn(_gRunningTest).then(
-          () => { _gTaskRunning = false; run_next_test(); },
-          (ex) => { _gTaskRunning = false; do_report_unexpected_exception(ex); }
-        );
+        _Task.spawn(_gRunningTest).then(() => {
+          _gTaskRunning = false;
+          run_next_test();
+        }, ex => {
+          _gTaskRunning = false;
+          try {
+            do_report_unexpected_exception(ex);
+          } catch (ex) {
+            // The above throws NS_ERROR_ABORT and we don't want this to show up
+            // as an unhandled rejection later.
+          }
+        });
       } else {
         // Exceptions do not kill asynchronous tests, so they'll time out.
         try {

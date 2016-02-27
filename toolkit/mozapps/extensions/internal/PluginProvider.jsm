@@ -11,6 +11,7 @@ const Cu = Components.utils;
 this.EXPORTED_SYMBOLS = [];
 
 Cu.import("resource://gre/modules/AddonManager.jsm");
+/*globals AddonManagerPrivate*/
 Cu.import("resource://gre/modules/Services.jsm");
 
 const URI_EXTENSION_STRINGS  = "chrome://mozapps/locale/extensions/extensions.properties";
@@ -449,7 +450,7 @@ PluginWrapper.prototype = {
 
   get pluginFullpath() {
     let paths = [];
-    for (let tag of aTags)
+    for (let tag of pluginFor(this).tags)
       paths.push(tag.fullpath);
     return paths;
   },

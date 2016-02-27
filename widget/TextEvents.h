@@ -82,6 +82,20 @@ private:
 
 protected:
   WidgetKeyboardEvent()
+    : keyCode(0)
+    , charCode(0)
+    , location(nsIDOMKeyEvent::DOM_KEY_LOCATION_STANDARD)
+    , isChar(false)
+    , mIsRepeat(false)
+    , mIsComposing(false)
+    , mKeyNameIndex(mozilla::KEY_NAME_INDEX_Unidentified)
+    , mCodeNameIndex(CODE_NAME_INDEX_UNKNOWN)
+    , mNativeKeyEvent(nullptr)
+    , mUniqueId(0)
+#ifdef XP_MACOSX
+    , mNativeKeyCode(0)
+    , mNativeModifierFlags(0)
+#endif
   {
   }
 
@@ -366,6 +380,7 @@ public:
   WidgetCompositionEvent(bool aIsTrusted, EventMessage aMessage,
                          nsIWidget* aWidget)
     : WidgetGUIEvent(aIsTrusted, aMessage, aWidget, eCompositionEventClass)
+    , mNativeIMEContext(aWidget)
     , mOriginalMessage(eVoidEvent)
   {
     // XXX compositionstart is cancelable in draft of DOM3 Events.
@@ -392,6 +407,10 @@ public:
   nsString mData;
 
   RefPtr<TextRangeArray> mRanges;
+
+  // mNativeIMEContext stores the native IME context which causes the
+  // composition event.
+  widget::NativeIMEContext mNativeIMEContext;
 
   // If the instance is a clone of another event, mOriginalMessage stores
   // the another event's mMessage.
@@ -465,6 +484,9 @@ private:
   friend class dom::PBrowserChild;
 
   WidgetQueryContentEvent()
+    : mSucceeded(false)
+    , mUseNativeLineBreak(true)
+    , mWithFontRanges(false)
   {
     MOZ_CRASH("WidgetQueryContentEvent is created without proper arguments");
   }
@@ -595,7 +617,7 @@ public:
     // Used by eQuerySelectionAsTransferable
     nsCOMPtr<nsITransferable> mTransferable;
     // Used by eQueryTextContent with font ranges requested
-    nsAutoTArray<mozilla::FontRange, 1> mFontRanges;
+    AutoTArray<mozilla::FontRange, 1> mFontRanges;
     // true if selection is reversed (end < start)
     bool mReversed;
     // true if the selection exists
@@ -645,6 +667,7 @@ private:
     , mReversed(false)
     , mExpandToClusterBoundary(true)
     , mSucceeded(false)
+    , mUseNativeLineBreak(true)
   {
   }
 

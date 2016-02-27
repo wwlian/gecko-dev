@@ -341,6 +341,10 @@ function RTCPeerConnection() {
 
   this._localType = null;
   this._remoteType = null;
+  // http://rtcweb-wg.github.io/jsep/#rfc.section.4.1.9
+  // canTrickle == null means unknown; when a remote description is received it
+  // is set to true or false based on the presence of the "trickle" ice-option
+  this._canTrickle = null;
 
   // States
   this._iceGatheringState = this._iceConnectionState = "new";
@@ -405,8 +409,9 @@ RTCPeerConnection.prototype = {
           "InvalidStateError");
     }
 
-    this.makeGetterSetterEH("onaddstream");
-    this.makeGetterSetterEH("onaddtrack");
+    this.makeGetterSetterEH("ontrack");
+    this.makeLegacyGetterSetterEH("onaddstream", "Use peerConnection.ontrack instead.");
+    this.makeLegacyGetterSetterEH("onaddtrack", "Use peerConnection.ontrack instead.");
     this.makeGetterSetterEH("onicecandidate");
     this.makeGetterSetterEH("onnegotiationneeded");
     this.makeGetterSetterEH("onsignalingstatechange");
@@ -581,6 +586,13 @@ RTCPeerConnection.prototype = {
             throw new this._win.DOMException(msg + " - missing credential: " + urlStr,
                                              "InvalidAccessError");
           }
+          if (server.credentialType != "password") {
+            this.logWarning("RTCConfiguration TURN credentialType \""+
+                            server.credentialType +
+                            "\" is not yet implemented. Treating as password."+
+                            " https://bugzil.la/1247616",
+                            null, 0);
+          }
         }
         else if (!(url.scheme in { stun:1, stuns:1 })) {
           throw new this._win.DOMException(msg + " - improper scheme: " + url.scheme,
@@ -660,6 +672,18 @@ RTCPeerConnection.prototype = {
                           {
                             get:function()  { return this.getEH(name); },
                             set:function(h) { return this.setEH(name, h); }
+                          });
+  },
+
+  makeLegacyGetterSetterEH: function(name, msg) {
+    Object.defineProperty(this, name,
+                          {
+                            get:function()  { return this.getEH(name); },
+                            set:function(h) {
+                              this.logWarning(name + " is deprecated! " + msg,
+                                              null, 0);
+                              return this.setEH(name, h);
+                            }
                           });
   },
 
@@ -923,7 +947,7 @@ RTCPeerConnection.prototype = {
             this._onSetRemoteDescriptionSuccess = resolve;
             this._onSetRemoteDescriptionFailure = reject;
             this._impl.setRemoteDescription(type, desc.sdp);
-          }));
+          })).then(() => { this._updateCanTrickle(); });
 
         if (desc.type === "rollback") {
           return setRem;
@@ -951,10 +975,39 @@ RTCPeerConnection.prototype = {
     );
   },
 
-  updateIce: function(config) {
-    throw new this._win.DOMException("updateIce not yet implemented",
-                                     "NotSupportedError");
+  get canTrickleIceCandidates() {
+    return this._canTrickle;
   },
+
+  _updateCanTrickle: function() {
+    let containsTrickle = section => {
+      let lines = section.toLowerCase().split(/(?:\r\n?|\n)/);
+      return lines.some(line => {
+        let prefix = "a=ice-options:";
+        if (line.substring(0, prefix.length) !== prefix) {
+          return false;
+        }
+        let tokens = line.substring(prefix.length).split(" ");
+        return tokens.some(x => x === "trickle");
+      });
+    };
+
+    let desc = null;
+    try {
+      // The getter for remoteDescription can throw if the pc is closed.
+      desc = this.remoteDescription;
+    } catch (e) {}
+    if (!desc) {
+      this._canTrickle = null;
+      return;
+    }
+
+    let sections = desc.sdp.split(/(?:\r\n?|\n)m=/);
+    let topSection = sections.shift();
+    this._canTrickle =
+      containsTrickle(topSection) || sections.every(containsTrickle);
+  },
+
 
   addIceCandidate: function(c, onSuccess, onError) {
     return this._legacyCatch(onSuccess, onError, () => {
@@ -1038,6 +1091,37 @@ RTCPeerConnection.prototype = {
     });
   },
 
+  _setParameters: function(sender, parameters) {
+    if (!Services.prefs.getBoolPref("media.peerconnection.simulcast")) {
+      return;
+    }
+    // validate parameters input
+    var encodings = parameters.encodings || [];
+
+    encodings.reduce((uniqueRids, encoding) => {
+      if (encoding.scaleResolutionDownBy < 1.0) {
+        throw new this._win.RangeError("scaleResolutionDownBy must be >= 1.0");
+      }
+      if (!encoding.rid && encodings.length > 1) {
+        throw new this._win.DOMException("Missing rid", "TypeError");
+      }
+      if (uniqueRids[encoding.rid]) {
+        throw new this._win.DOMException("Duplicate rid", "TypeError");
+      }
+      uniqueRids[encoding.rid] = true;
+      return uniqueRids;
+    }, {});
+
+    this._impl.setParameters(sender.track, parameters);
+  },
+
+  _getParameters: function(sender) {
+    if (!Services.prefs.getBoolPref("media.peerconnection.simulcast")) {
+      return;
+    }
+    return this._impl.getParameters(sender.track);
+  },
+
   close: function() {
     if (this._closed) {
       return;
@@ -1065,6 +1149,10 @@ RTCPeerConnection.prototype = {
 
   getReceivers: function() {
     return this._receivers;
+  },
+
+  mozSelectSsrc: function(receiver, ssrcIndex) {
+    this._impl.selectSsrc(receiver.track, ssrcIndex);
   },
 
   get localDescription() {
@@ -1325,15 +1413,16 @@ PeerConnectionObserver.prototype = {
   //                 STUN requests.
 
   handleIceConnectionStateChange: function(iceConnectionState) {
-    if (this._dompc.iceConnectionState === 'new') {
+    let pc = this._dompc;
+    if (pc.iceConnectionState === 'new') {
       var checking_histogram = Services.telemetry.getHistogramById("WEBRTC_ICE_CHECKING_RATE");
       if (iceConnectionState === 'checking') {
         checking_histogram.add(true);
       } else if (iceConnectionState === 'failed') {
         checking_histogram.add(false);
       }
-    } else if (this._dompc.iceConnectionState === 'checking') {
-      var success_histogram = Services.telemetry.getHistogramById(this._dompc._isLoop ?
+    } else if (pc.iceConnectionState === 'checking') {
+      var success_histogram = Services.telemetry.getHistogramById(pc._isLoop ?
         "LOOP_ICE_SUCCESS_RATE" : "WEBRTC_ICE_SUCCESS_RATE");
       if (iceConnectionState === 'completed' ||
           iceConnectionState === 'connected') {
@@ -1344,10 +1433,10 @@ PeerConnectionObserver.prototype = {
     }
 
     if (iceConnectionState === 'failed') {
-      this._dompc.logError("ICE failed, see about:webrtc for more details", null, 0);
+      pc.logError("ICE failed, see about:webrtc for more details", null, 0);
     }
 
-    this._dompc.changeIceConnectionState(iceConnectionState);
+    pc.changeIceConnectionState(iceConnectionState);
   },
 
   // This method is responsible for updating iceGatheringState. This
@@ -1402,11 +1491,11 @@ PeerConnectionObserver.prototype = {
   },
 
   onGetStatsSuccess: function(dict) {
-    let chromeobj = new RTCStatsReport(this._dompc._win, dict);
-    let webidlobj = this._dompc._win.RTCStatsReport._create(this._dompc._win,
-                                                            chromeobj);
+    let pc = this._dompc;
+    let chromeobj = new RTCStatsReport(pc._win, dict);
+    let webidlobj = pc._win.RTCStatsReport._create(pc._win, chromeobj);
     chromeobj.makeStatsPublic();
-    this._dompc._onGetStatsSuccess(webidlobj);
+    pc._onGetStatsSuccess(webidlobj);
   },
 
   onGetStatsError: function(code, message) {
@@ -1419,20 +1508,34 @@ PeerConnectionObserver.prototype = {
     this.dispatchEvent(ev);
   },
 
-  onRemoveStream: function(stream, type) {
+  onRemoveStream: function(stream) {
     this.dispatchEvent(new this._dompc._win.MediaStreamEvent("removestream",
                                                              { stream: stream }));
   },
 
-  onAddTrack: function(track) {
-    let ev = new this._dompc._win.MediaStreamTrackEvent("addtrack",
-                                                        { track: track });
+  onAddTrack: function(track, streams) {
+    let pc = this._dompc;
+    let receiver = pc._win.RTCRtpReceiver._create(pc._win,
+                                                  new RTCRtpReceiver(this,
+                                                                     track));
+    pc._receivers.push(receiver);
+    let ev = new pc._win.RTCTrackEvent("track",
+                                       { receiver: receiver,
+                                         track: track,
+                                         streams: streams });
+    this.dispatchEvent(ev);
+
+    // Fire legacy event as well for a little bit.
+    ev = new pc._win.MediaStreamTrackEvent("addtrack", { track: track });
     this.dispatchEvent(ev);
   },
 
-  onRemoveTrack: function(track, type) {
-    this.dispatchEvent(new this._dompc._win.MediaStreamTrackEvent("removetrack",
-                                                                  { track: track }));
+  onRemoveTrack: function(track) {
+    let pc = this._dompc;
+    let i = pc._receivers.findIndex(receiver => receiver.track == track);
+    if (i >= 0) {
+      pc._receivers.splice(i, 1);
+    }
   },
 
   onReplaceTrackSuccess: function() {
@@ -1494,11 +1597,20 @@ RTCRtpSender.prototype = {
 
   replaceTrack: function(withTrack) {
     return this._pc._chain(() => this._pc._replaceTrack(this, withTrack));
+  },
+
+  setParameters: function(parameters) {
+    return this._pc._win.Promise.resolve()
+      .then(() => this._pc._setParameters(this, parameters));
+  },
+
+  getParameters: function() {
+    return this._pc._getParameters(this);
   }
 };
 
 function RTCRtpReceiver(pc, track) {
-  this.pc = pc;
+  this._pc = pc;
   this.track = track;
 }
 RTCRtpReceiver.prototype = {

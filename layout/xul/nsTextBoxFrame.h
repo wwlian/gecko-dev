@@ -26,7 +26,7 @@ public:
   NS_IMETHOD DoLayout(nsBoxLayoutState& aBoxLayoutState) override;
   virtual void MarkIntrinsicISizesDirty() override;
 
-  enum CroppingStyle { CropNone, CropLeft, CropRight, CropCenter };
+  enum CroppingStyle { CropNone, CropLeft, CropRight, CropCenter, CropAuto };
 
   friend nsIFrame* NS_NewTextBoxFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 
@@ -85,8 +85,7 @@ protected:
                    nsRenderingContext& aRenderingContext,
                    const nsRect&        aRect);
 
-  void CalculateUnderline(nsRenderingContext& aRenderingContext,
-                          nsFontMetrics& aFontMetrics);
+  void CalculateUnderline(DrawTarget* aDrawTarget, nsFontMetrics& aFontMetrics);
 
   void CalcTextSize(nsBoxLayoutState& aBoxLayoutState);
 

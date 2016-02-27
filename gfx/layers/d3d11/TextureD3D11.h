@@ -30,7 +30,7 @@ public:
  
   virtual bool SupportsMoz2D() const override { return true; }
 
-  virtual bool HasInternalBuffer() const override { return false; }
+  virtual bool HasIntermediateBuffer() const override { return false; }
 
   virtual bool HasSynchronization() const override { return mHasSynchronization; }
 
@@ -109,45 +109,6 @@ CreateD3D11extureClientWithDevice(gfx::IntSize aSize, gfx::SurfaceFormat aFormat
                                   ID3D11Device* aDevice,
                                   ISurfaceAllocator* aAllocator);
 
-
-class D3D10TextureData : public DXGITextureData
-{
-public:
-  static DXGITextureData*
-  Create(gfx::IntSize aSize, gfx::SurfaceFormat aFormat, TextureAllocationFlags aFlags);
-
-  virtual bool Lock(OpenMode aMode, FenceHandle*) override;
-
-  virtual void Unlock() override;
-
-  virtual bool UpdateFromSurface(gfx::SourceSurface* aSurface) override;
-
-  virtual already_AddRefed<gfx::DrawTarget> BorrowDrawTarget() override;
-
-  virtual TextureData*
-  CreateSimilar(ISurfaceAllocator* aAllocator,
-                TextureFlags aFlags,
-                TextureAllocationFlags aAllocFlags) const override;
-
-  // TODO - merge this with the FenceHandle API!
-  virtual void SyncWithObject(SyncObject* aSync) override;
-
-  virtual bool ReadBack(TextureReadbackSink* aReadbackSinc) override;
-
-  virtual void Deallocate(ISurfaceAllocator* aAllocator) override;
-
-  ~D3D10TextureData();
-protected:
-  D3D10TextureData(ID3D10Texture2D* aTexture,
-                   gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
-                   bool aNeedsClear, bool aNeedsClearWhite,
-                   bool aIsForOutOfBandContent);
-
-  virtual void GetDXGIResource(IDXGIResource** aOutResource) override;
-
-  RefPtr<ID3D10Texture2D> mTexture;
-};
-
 class DXGIYCbCrTextureData : public TextureData
 {
 public:
@@ -181,15 +142,15 @@ public:
   virtual bool Serialize(SurfaceDescriptor& aOutDescriptor) override;
 
   // TODO - DXGIYCbCrTextureClient returned true but that looks like a mistake
-  virtual bool HasInternalBuffer() const override{ return false; }
+  virtual bool HasIntermediateBuffer() const override{ return false; }
 
   virtual gfx::IntSize GetSize() const override { return mSize; }
 
-  virtual gfx::SurfaceFormat GetFormat() const { return gfx::SurfaceFormat::YUV; }
+  virtual gfx::SurfaceFormat GetFormat() const override { return gfx::SurfaceFormat::YUV; }
 
-  virtual bool SupportsMoz2D() const { return false; }
+  virtual bool SupportsMoz2D() const override { return false; }
 
-  virtual already_AddRefed<gfx::DrawTarget> BorrowDrawTarget() { return nullptr; }
+  virtual already_AddRefed<gfx::DrawTarget> BorrowDrawTarget() override { return nullptr; }
 
   // This TextureData should not be used in a context where we use CreateSimilar
   // (ex. component alpha) because the underlying texture is always created by
@@ -221,7 +182,7 @@ protected:
 class TextureSourceD3D11
 {
 public:
-  TextureSourceD3D11() {}
+  TextureSourceD3D11() : mFormatOverride(DXGI_FORMAT_UNKNOWN) {}
   virtual ~TextureSourceD3D11() {}
 
   virtual ID3D11Texture2D* GetD3D11Texture() const { return mTexture; }
@@ -232,6 +193,7 @@ protected:
   gfx::IntSize mSize;
   RefPtr<ID3D11Texture2D> mTexture;
   RefPtr<ID3D11ShaderResourceView> mSRV;
+  DXGI_FORMAT mFormatOverride;
 };
 
 /**
@@ -252,6 +214,7 @@ public:
 
   virtual ~DataTextureSourceD3D11();
 
+  virtual const char* Name() const override { return "DataTextureSourceD3D11"; }
 
   // DataTextureSource
 
@@ -404,7 +367,10 @@ class CompositingRenderTargetD3D11 : public CompositingRenderTarget,
 {
 public:
   CompositingRenderTargetD3D11(ID3D11Texture2D* aTexture,
-                               const gfx::IntPoint& aOrigin);
+                               const gfx::IntPoint& aOrigin,
+                               DXGI_FORMAT aFormatOverride = DXGI_FORMAT_UNKNOWN);
+
+  virtual const char* Name() const override { return "CompositingRenderTargetD3D11"; }
 
   virtual TextureSourceD3D11* AsSourceD3D11() override { return this; }
 
@@ -429,12 +395,9 @@ public:
   virtual SyncType GetSyncType() { return SyncType::D3D11; }
 
   void RegisterTexture(ID3D11Texture2D* aTexture);
-  void RegisterTexture(ID3D10Texture2D* aTexture);
 
 private:
   RefPtr<ID3D11Texture2D> mD3D11Texture;
-  RefPtr<ID3D10Texture2D> mD3D10Texture;
-  std::vector<ID3D10Texture2D*> mD3D10SyncedTextures;
   std::vector<ID3D11Texture2D*> mD3D11SyncedTextures;
   SyncHandle mHandle;
 };

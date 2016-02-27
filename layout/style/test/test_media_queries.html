@@ -253,6 +253,14 @@ function run() {
     expression_should_not_be_parseable("max-" + feature);
   }
 
+  var mediatypes = ["browser", "minimal-ui", "standalone", "fullscreen"];
+
+  mediatypes.forEach(function(type) {
+    expression_should_be_parseable("display-mode: " + type);
+  });
+
+  expression_should_not_be_parseable("display-mode: invalid")
+
   var content_div = document.getElementById("content");
   content_div.style.font = "initial";
   var em_size =
@@ -439,6 +447,8 @@ function run() {
   expression_should_not_be_parseable("min-device-pixel-ratio: 1.0");
   expression_should_be_parseable("-webkit-max-device-pixel-ratio: 1.0");
   expression_should_not_be_parseable("max-device-pixel-ratio: 1.0");
+
+  should_apply("(-webkit-transform-3d)");
 
   features = [ "max-aspect-ratio", "device-aspect-ratio" ];
   for (i in features) {

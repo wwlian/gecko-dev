@@ -211,17 +211,6 @@ class tresize(TsBase):
     unit = 'ms'
 
 
-# Media Test
-@register_test()
-class media_tests(TsBase):
-    """
-    Media Performance Tests
-    """
-    cycles = 5
-    desktop = True
-    url = 'http://localhost:16932/startup_test/media/html/media_tests.html'
-    timeout = 360
-
 # pageloader tests(tp5, etc)
 
 # The overall test number is determined by first calculating the median
@@ -246,7 +235,6 @@ class PageloaderTest(Test):
             'xperf_providers', 'xperf_user_providers', 'xperf_stackwalk',
             'filters', 'preferences', 'extensions', 'setup', 'cleanup',
             'test_name_extension', 'lower_is_better', 'unit']
-    unit = 'ms'
 
 
 @register_test()
@@ -269,6 +257,7 @@ class tps(PageloaderTest):
         'addon.test.tabswitch.maxurls':
             45 if utils.PLATFORM_TYPE == 'win_' else -1,
     }
+    unit = 'ms'
 
 
 @register_test()
@@ -314,6 +303,7 @@ class tart(PageloaderTest):
                    'docshell.event_starvation_delay_hint': 1,
                    'dom.send_after_paint_to_content': False}
     filters = filter.ignore_first.prepare(1) + filter.median.prepare()
+    unit = 'ms'
 
 
 @register_test()
@@ -346,6 +336,7 @@ class cart(PageloaderTest):
                    'docshell.event_starvation_delay_hint': 1,
                    'dom.send_after_paint_to_content': False}
     filters = filter.ignore_first.prepare(1) + filter.median.prepare()
+    unit = 'ms'
 
 
 @register_test()
@@ -367,6 +358,7 @@ class damp(PageloaderTest):
     filters = filter.ignore_first.prepare(1) + filter.median.prepare()
     preferences = {'devtools.memory.enabled': True,
                    'addon.test.damp.webserver': '${webserver}'}
+    unit = 'ms'
 
 
 @register_test()
@@ -437,6 +429,7 @@ class tp5n(PageloaderTest):
     cleanup = '${talos}/xtalos/parse_xperf.py -c ${talos}/bcontroller.json'
     preferences = {'extensions.enabledScopes': '',
                    'talos.logfile': 'browser_output.txt'}
+    unit = 'ms'
 
 
 @register_test()
@@ -462,6 +455,7 @@ class tp5o(PageloaderTest):
     sps_profile_entries = 4000000
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
     timeout = 1800
+    unit = 'ms'
 
 
 @register_test()
@@ -520,6 +514,7 @@ class kraken(PageloaderTest):
     tpmozafterpaint = False
     preferences = {'dom.send_after_paint_to_content': False}
     filters = filter.mean.prepare()
+    unit = 'score'
 
 
 @register_test()
@@ -559,6 +554,7 @@ class dromaeo_css(dromaeo):
     sps_profile_interval = 2
     sps_profile_entries = 10000000
     tpmanifest = '${talos}/tests/dromaeo/css.manifest'
+    unit = 'score'
 
 
 @register_test()
@@ -574,6 +570,7 @@ class dromaeo_dom(dromaeo):
     sps_profile_entries = 10000000
     tpmanifest = '${talos}/tests/dromaeo/dom.manifest'
     tpdisable_e10s = True
+    unit = 'score'
 
 
 @register_test()
@@ -592,6 +589,7 @@ class tsvgm(PageloaderTest):
                    'docshell.event_starvation_delay_hint': 1,
                    'dom.send_after_paint_to_content': False}
     filters = filter.ignore_first.prepare(2) + filter.median.prepare()
+    unit = 'ms'
 
 
 @register_test()
@@ -610,6 +608,7 @@ class tsvgx(PageloaderTest):
                    'docshell.event_starvation_delay_hint': 1,
                    'dom.send_after_paint_to_content': False}
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
+    unit = 'ms'
 
 
 @register_test()
@@ -623,6 +622,7 @@ class tsvgr_opacity(PageloaderTest):
     sps_profile_interval = 1
     sps_profile_entries = 10000000
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
+    unit = 'ms'
 
 
 @register_test()
@@ -641,6 +641,7 @@ class tscrollx(PageloaderTest):
                    'docshell.event_starvation_delay_hint': 1,
                    'dom.send_after_paint_to_content': False}
     filters = filter.ignore_first.prepare(5) + filter.median.prepare()
+    unit = 'ms'
 
 
 @register_test()
@@ -654,3 +655,4 @@ class a11yr(PageloaderTest):
     tppagecycles = 25
     tpmozafterpaint = True
     preferences = {'dom.send_after_paint_to_content': False}
+    unit = 'ms'

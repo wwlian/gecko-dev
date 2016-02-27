@@ -6,9 +6,9 @@
 #define AndroidDecoderModule_h_
 
 #include "PlatformDecoderModule.h"
-#include "AndroidSurfaceTexture.h"
 
 #include "MediaCodec.h"
+#include "SurfaceTexture.h"
 #include "TimeUnits.h"
 #include "mozilla/Monitor.h"
 
@@ -57,6 +57,10 @@ public:
   nsresult Drain() override;
   nsresult Shutdown() override;
   nsresult Input(MediaRawData* aSample) override;
+  const char* GetDescriptionName() const override
+  {
+    return "android decoder";
+  }
 
 protected:
   enum ModuleState {

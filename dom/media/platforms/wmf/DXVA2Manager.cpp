@@ -280,21 +280,23 @@ D3D9DXVA2Manager::Init(nsACString& aFailureReason)
     return hr;
   }
 
-  // Create D3D9DeviceEx.
+  // Create D3D9DeviceEx. We pass null HWNDs here even though the documentation
+  // suggests that one of them should not be. At this point in time Chromium
+  // does the same thing for video acceleration.
   D3DPRESENT_PARAMETERS params = {0};
   params.BackBufferWidth = 1;
   params.BackBufferHeight = 1;
   params.BackBufferFormat = D3DFMT_UNKNOWN;
   params.BackBufferCount = 1;
   params.SwapEffect = D3DSWAPEFFECT_DISCARD;
-  params.hDeviceWindow = ::GetShellWindow();
+  params.hDeviceWindow = nullptr;
   params.Windowed = TRUE;
   params.Flags = D3DPRESENTFLAG_VIDEO;
 
   RefPtr<IDirect3DDevice9Ex> device;
   hr = d3d9Ex->CreateDeviceEx(D3DADAPTER_DEFAULT,
                               D3DDEVTYPE_HAL,
-                              ::GetShellWindow(),
+                              nullptr,
                               D3DCREATE_FPU_PRESERVE |
                               D3DCREATE_MULTITHREADED |
                               D3DCREATE_MIXED_VERTEXPROCESSING,
@@ -380,7 +382,8 @@ D3D9DXVA2Manager::Init(nsACString& aFailureReason)
     return hr;
   }
 
-  if (adapter.VendorId == 0x1022) {
+  if (adapter.VendorId == 0x1022 &&
+      !Preferences::GetBool("media.wmf.skip-blacklist", false)) {
     for (size_t i = 0; i < MOZ_ARRAY_LENGTH(sAMDPreUVD4); i++) {
       if (adapter.DeviceId == sAMDPreUVD4[i]) {
         mIsAMDPreUVD4 = true;
@@ -663,7 +666,8 @@ D3D11DXVA2Manager::Init(nsACString& aFailureReason)
     return hr;
   }
 
-  if (adapterDesc.VendorId == 0x1022) {
+  if (adapterDesc.VendorId == 0x1022 &&
+      !Preferences::GetBool("media.wmf.skip-blacklist", false)) {
     for (size_t i = 0; i < MOZ_ARRAY_LENGTH(sAMDPreUVD4); i++) {
       if (adapterDesc.DeviceId == sAMDPreUVD4[i]) {
         mIsAMDPreUVD4 = true;

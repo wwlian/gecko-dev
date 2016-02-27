@@ -6,7 +6,10 @@
 exports.allocations = require("./reducers/allocations");
 exports.breakdown = require("./reducers/breakdown");
 exports.diffing = require("./reducers/diffing");
+exports.dominatorTreeBreakdown = require("./reducers/dominatorTreeBreakdown");
 exports.errors = require("./reducers/errors");
 exports.filter = require("./reducers/filter");
 exports.inverted = require("./reducers/inverted");
+exports.sizes = require("./reducers/sizes");
 exports.snapshots = require("./reducers/snapshots");
+exports.view = require("./reducers/view");

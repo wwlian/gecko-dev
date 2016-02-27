@@ -14,7 +14,6 @@
 #include "nsIScrollPositionListener.h"
 #include "nsDisplayList.h"
 #include "nsIAnonymousContentCreator.h"
-#include "nsIDOMEventListener.h"
 
 class nsPresContext;
 class nsRenderingContext;
@@ -83,23 +82,6 @@ public:
   virtual nsresult CreateAnonymousContent(nsTArray<ContentInfo>& aElements) override;
   virtual void AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements, uint32_t aFilter) override;
 
-  // Touch caret handle function
-  mozilla::dom::Element* GetTouchCaretElement() const
-  {
-     return mTouchCaretElement;
-  }
-
-  // Selection Caret Handle function
-  mozilla::dom::Element* GetSelectionCaretsStartElement() const
-  {
-    return mSelectionCaretsStartElement;
-  }
-
-  mozilla::dom::Element* GetSelectionCaretsEndElement() const
-  {
-    return mSelectionCaretsEndElement;
-  }
-
   mozilla::dom::Element* GetCustomContentContainer() const
   {
     return mCustomContentContainer;
@@ -165,28 +147,7 @@ protected:
   bool                      mDoPaintFocus;
   bool                      mAddedScrollPositionListener;
 
-  nsCOMPtr<mozilla::dom::Element> mTouchCaretElement;
-  nsCOMPtr<mozilla::dom::Element> mSelectionCaretsStartElement;
-  nsCOMPtr<mozilla::dom::Element> mSelectionCaretsEndElement;
   nsCOMPtr<mozilla::dom::Element> mCustomContentContainer;
-
-  class DummyTouchListener final : public nsIDOMEventListener
-  {
-  public:
-    NS_DECL_ISUPPORTS
-
-    NS_IMETHOD HandleEvent(nsIDOMEvent* aEvent) override
-    {
-      return NS_OK;
-    }
-  private:
-    ~DummyTouchListener() {}
-  };
-
-  /**
-   * A no-op touch-listener used for APZ purposes.
-   */
-  RefPtr<DummyTouchListener> mDummyTouchListener;
 };
 
 /**
@@ -259,8 +220,8 @@ public:
     // compositing layer. Since we know their background painting area can't
     // change (unless the viewport size itself changes), async scrolling
     // will work well.
-    return mBackgroundStyle->mLayers[mLayer].mAttachment == NS_STYLE_BG_ATTACHMENT_FIXED &&
-           !mBackgroundStyle->mLayers[mLayer].mImage.IsEmpty();
+    return mBackgroundStyle->mImage.mLayers[mLayer].mAttachment == NS_STYLE_IMAGELAYER_ATTACHMENT_FIXED &&
+           !mBackgroundStyle->mImage.mLayers[mLayer].mImage.IsEmpty();
   }
  
   // We still need to paint a background color as well as an image for this item, 

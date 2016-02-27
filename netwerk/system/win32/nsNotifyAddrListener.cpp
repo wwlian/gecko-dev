@@ -220,16 +220,21 @@ nsNotifyAddrListener::Run()
             false, // no initial notification
             &interfacechange);
 
-        do {
-            ret = WaitForSingleObject(mCheckEvent, waitTime);
-            if (!mShutdown) {
-                waitTime = nextCoalesceWaitTime();
-            }
-            else {
-                break;
-            }
-        } while (ret != WAIT_FAILED);
-        sCancelMibChangeNotify2(interfacechange);
+        if (ret == NO_ERROR) {
+            do {
+                ret = WaitForSingleObject(mCheckEvent, waitTime);
+                if (!mShutdown) {
+                    waitTime = nextCoalesceWaitTime();
+                }
+                else {
+                    break;
+                }
+            } while (ret != WAIT_FAILED);
+            sCancelMibChangeNotify2(interfacechange);
+        } else {
+            LOG(("Link Monitor: sNotifyIpInterfaceChange returned %d\n",
+                 (int)ret));
+        }
     }
     return NS_OK;
 }
@@ -284,7 +289,7 @@ nsNotifyAddrListener::Shutdown(void)
     mShutdown = true;
     SetEvent(mCheckEvent);
 
-    nsresult rv = mThread->Shutdown();
+    nsresult rv = mThread ? mThread->Shutdown() : NS_OK;
 
     // Have to break the cycle here, otherwise nsNotifyAddrListener holds
     // onto the thread and the thread holds onto the nsNotifyAddrListener

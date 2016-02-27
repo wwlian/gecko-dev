@@ -2,13 +2,14 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
- 
+
 /* the interface (to internal code) for retrieving computed style data */
 
 #include "CSSVariableImageTable.h"
 #include "mozilla/DebugOnly.h"
 
 #include "nsCSSAnonBoxes.h"
+#include "nsCSSPseudoElements.h"
 #include "nsStyleConsts.h"
 #include "nsString.h"
 #include "nsPresContext.h"
@@ -24,8 +25,11 @@
 #include "GeckoProfiler.h"
 #include "nsIDocument.h"
 #include "nsPrintfCString.h"
+#include "RubyUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ArenaObjectID.h"
+#include "mozilla/StyleSetHandle.h"
+#include "mozilla/StyleSetHandleInlines.h"
 
 #ifdef DEBUG
 // #define NOISY_DEBUG
@@ -69,7 +73,7 @@ static bool sExpensiveStyleStructAssertionsEnabled;
 
 nsStyleContext::nsStyleContext(nsStyleContext* aParent,
                                nsIAtom* aPseudoTag,
-                               nsCSSPseudoElements::Type aPseudoType,
+                               CSSPseudoElementType aPseudoType,
                                nsRuleNode* aRuleNode,
                                bool aSkipParentDisplayBasedStyleFixup)
   : mParent(aParent)
@@ -88,7 +92,8 @@ nsStyleContext::nsStyleContext(nsStyleContext* aParent,
   // This check has to be done "backward", because if it were written the
   // more natural way it wouldn't fail even when it needed to.
   static_assert((UINT64_MAX >> NS_STYLE_CONTEXT_TYPE_SHIFT) >=
-                nsCSSPseudoElements::ePseudo_MAX,
+                 static_cast<CSSPseudoElementTypeBase>(
+                   CSSPseudoElementType::MAX),
                 "pseudo element bits no longer fit in a uint64_t");
   MOZ_ASSERT(aRuleNode);
 
@@ -129,9 +134,10 @@ nsStyleContext::~nsStyleContext()
   NS_ASSERTION((nullptr == mChild) && (nullptr == mEmptyChild), "destructing context with children");
 
   nsPresContext *presContext = mRuleNode->PresContext();
-  nsStyleSet* styleSet = presContext->PresShell()->StyleSet();
+  nsStyleSet* styleSet = presContext->PresShell()->StyleSet()->GetAsGecko();
 
-  NS_ASSERTION(styleSet->GetRuleTree() == mRuleNode->RuleTree() ||
+  NS_ASSERTION(!styleSet ||
+               styleSet->GetRuleTree() == mRuleNode->RuleTree() ||
                styleSet->IsInRuleTreeReconstruct(),
                "destroying style context from old rule tree too late");
 
@@ -155,7 +161,9 @@ nsStyleContext::~nsStyleContext()
 
   mRuleNode->Release();
 
-  styleSet->NotifyStyleContextDestroyed(this);
+  if (styleSet) {
+    styleSet->NotifyStyleContextDestroyed(this);
+  }
 
   if (mParent) {
     mParent->RemoveChild(this);
@@ -511,20 +519,33 @@ nsStyleContext::SetStyle(nsStyleStructID aSID, void* aStruct)
 }
 
 static bool
-ShouldSuppressLineBreak(const nsStyleDisplay* aStyleDisplay,
-                        const nsStyleContext* aContainerContext,
-                        const nsStyleDisplay* aContainerDisplay)
+ShouldSuppressLineBreak(const nsStyleContext* aContext,
+                        const nsStyleDisplay* aDisplay,
+                        const nsStyleContext* aParentContext,
+                        const nsStyleDisplay* aParentDisplay)
 {
   // The display change should only occur for "in-flow" children
-  if (aStyleDisplay->IsOutOfFlowStyle()) {
+  if (aDisplay->IsOutOfFlowStyle()) {
     return false;
   }
-  if (aContainerContext->ShouldSuppressLineBreak()) {
-    // Line break suppressing bit is propagated to any children of line
-    // participants, which include inline and inline ruby boxes.
-    if (aContainerDisplay->mDisplay == NS_STYLE_DISPLAY_INLINE ||
-        aContainerDisplay->mDisplay == NS_STYLE_DISPLAY_RUBY ||
-        aContainerDisplay->mDisplay == NS_STYLE_DISPLAY_RUBY_BASE_CONTAINER) {
+  // Display value of any anonymous box should not be touched. In most
+  // cases, anonymous boxes are actually not in ruby frame, but instead,
+  // some other frame with a ruby display value. Non-element pseudos
+  // which represents text frames, as well as ruby pseudos are excluded
+  // because we still want to set the flag for them.
+  if (aContext->GetPseudoType() == CSSPseudoElementType::AnonBox &&
+      aContext->GetPseudo() != nsCSSAnonBoxes::mozNonElement &&
+      !RubyUtils::IsRubyPseudo(aContext->GetPseudo())) {
+    return false;
+  }
+  if (aParentContext->ShouldSuppressLineBreak()) {
+    // Line break suppressing bit is propagated to any children of
+    // line participants, which include inline, contents, and inline
+    // ruby boxes.
+    if (aParentDisplay->mDisplay == NS_STYLE_DISPLAY_INLINE ||
+        aParentDisplay->mDisplay == NS_STYLE_DISPLAY_CONTENTS ||
+        aParentDisplay->mDisplay == NS_STYLE_DISPLAY_RUBY ||
+        aParentDisplay->mDisplay == NS_STYLE_DISPLAY_RUBY_BASE_CONTAINER) {
       return true;
     }
   }
@@ -547,13 +568,13 @@ ShouldSuppressLineBreak(const nsStyleDisplay* aStyleDisplay,
   // However, there is one special case which is BR tag, because it
   // directly affects the line layout. This case is handled by the BR
   // frame which checks the flag of its parent frame instead of itself.
-  if ((aContainerDisplay->IsRubyDisplayType() &&
-       aStyleDisplay->mDisplay != NS_STYLE_DISPLAY_RUBY_BASE_CONTAINER &&
-       aStyleDisplay->mDisplay != NS_STYLE_DISPLAY_RUBY_TEXT_CONTAINER) ||
+  if ((aParentDisplay->IsRubyDisplayType() &&
+       aDisplay->mDisplay != NS_STYLE_DISPLAY_RUBY_BASE_CONTAINER &&
+       aDisplay->mDisplay != NS_STYLE_DISPLAY_RUBY_TEXT_CONTAINER) ||
       // Since ruby base and ruby text may exist themselves without any
       // non-anonymous frame outside, we should also check them.
-      aStyleDisplay->mDisplay == NS_STYLE_DISPLAY_RUBY_BASE ||
-      aStyleDisplay->mDisplay == NS_STYLE_DISPLAY_RUBY_TEXT) {
+      aDisplay->mDisplay == NS_STYLE_DISPLAY_RUBY_BASE ||
+      aDisplay->mDisplay == NS_STYLE_DISPLAY_RUBY_TEXT) {
     return true;
   }
   return false;
@@ -704,18 +725,6 @@ nsStyleContext::ApplyStyleFixups(bool aSkipParentDisplayBasedStyleFixup)
         }
       }
     }
-
-    if (::ShouldSuppressLineBreak(disp, containerContext, containerDisp)) {
-      mBits |= NS_STYLE_SUPPRESS_LINEBREAK;
-      uint8_t displayVal = disp->mDisplay;
-      nsRuleNode::EnsureInlineDisplay(displayVal);
-      if (displayVal != disp->mDisplay) {
-        nsStyleDisplay* mutable_display =
-          static_cast<nsStyleDisplay*>(GetUniqueStyleData(eStyleStruct_Display));
-        disp = mutable_display;
-        mutable_display->mDisplay = displayVal;
-      }
-    }
   }
 
   // Set the NS_STYLE_IN_DISPLAY_NONE_SUBTREE bit
@@ -724,6 +733,18 @@ nsStyleContext::ApplyStyleFixups(bool aSkipParentDisplayBasedStyleFixup)
     mBits |= NS_STYLE_IN_DISPLAY_NONE_SUBTREE;
   }
 
+  if (mParent && ::ShouldSuppressLineBreak(this, disp, mParent,
+                                           mParent->StyleDisplay())) {
+    mBits |= NS_STYLE_SUPPRESS_LINEBREAK;
+    uint8_t displayVal = disp->mDisplay;
+    nsRuleNode::EnsureInlineDisplay(displayVal);
+    if (displayVal != disp->mDisplay) {
+      nsStyleDisplay* mutable_display =
+        static_cast<nsStyleDisplay*>(GetUniqueStyleData(eStyleStruct_Display));
+      disp = mutable_display;
+      mutable_display->mDisplay = displayVal;
+    }
+  }
   // Suppress border/padding of ruby level containers
   if (disp->mDisplay == NS_STYLE_DISPLAY_RUBY_BASE_CONTAINER ||
       disp->mDisplay == NS_STYLE_DISPLAY_RUBY_TEXT_CONTAINER) {
@@ -1202,7 +1223,7 @@ nsStyleContext::Destroy()
 already_AddRefed<nsStyleContext>
 NS_NewStyleContext(nsStyleContext* aParentContext,
                    nsIAtom* aPseudoTag,
-                   nsCSSPseudoElements::Type aPseudoType,
+                   CSSPseudoElementType aPseudoType,
                    nsRuleNode* aRuleNode,
                    bool aSkipParentDisplayBasedStyleFixup)
 {

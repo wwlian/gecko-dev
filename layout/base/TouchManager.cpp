@@ -6,7 +6,16 @@
  */
 
 #include "TouchManager.h"
+
+#include "mozilla/TouchEvents.h"
+#include "mozilla/dom/EventTarget.h"
+#include "nsIFrame.h"
 #include "nsPresShell.h"
+#include "nsView.h"
+
+namespace mozilla {
+
+using EventTarget = ::mozilla::dom::EventTarget;
 
 nsRefPtrHashtable<nsUint32HashKey, dom::Touch>* TouchManager::gCaptureTouchList;
 
@@ -73,21 +82,23 @@ EvictTouchPoint(RefPtr<dom::Touch>& aTouch,
   }
 }
 
-static PLDHashOperator
-AppendToTouchList(const uint32_t& aKey, RefPtr<dom::Touch>& aData, void *aTouchList)
+static void
+AppendToTouchList(WidgetTouchEvent::TouchArray* aTouchList)
 {
-  WidgetTouchEvent::TouchArray* touches =
-    static_cast<WidgetTouchEvent::TouchArray*>(aTouchList);
-  aData->mChanged = false;
-  touches->AppendElement(aData);
-  return PL_DHASH_NEXT;
+  for (auto iter = TouchManager::gCaptureTouchList->Iter();
+       !iter.Done();
+       iter.Next()) {
+    RefPtr<dom::Touch>& touch = iter.Data();
+    touch->mChanged = false;
+    aTouchList->AppendElement(touch);
+  }
 }
 
 void
 TouchManager::EvictTouches()
 {
   WidgetTouchEvent::AutoTouchArray touches;
-  gCaptureTouchList->Enumerate(&AppendToTouchList, &touches);
+  AppendToTouchList(&touches);
   for (uint32_t i = 0; i < touches.Length(); ++i) {
     EvictTouchPoint(touches[i], mDocument);
   }
@@ -109,7 +120,7 @@ TouchManager::PreHandleEvent(WidgetEvent* aEvent,
       // queue
       if (touchEvent->touches.Length() == 1) {
         WidgetTouchEvent::AutoTouchArray touches;
-        gCaptureTouchList->Enumerate(&AppendToTouchList, (void *)&touches);
+        AppendToTouchList(&touches);
         for (uint32_t i = 0; i < touches.Length(); ++i) {
           EvictTouchPoint(touches[i]);
         }
@@ -189,6 +200,7 @@ TouchManager::PreHandleEvent(WidgetEvent* aEvent,
     case eTouchEnd:
       aIsHandlingUserInput = true;
       // Fall through to touchcancel code
+      MOZ_FALLTHROUGH;
     case eTouchCancel: {
       // Remove the changed touches
       // need to make sure we only remove touches that are ending here
@@ -214,7 +226,7 @@ TouchManager::PreHandleEvent(WidgetEvent* aEvent,
         gCaptureTouchList->Remove(id);
       }
       // add any touches left in the touch list, but ensure changed=false
-      gCaptureTouchList->Enumerate(&AppendToTouchList, (void *)&touches);
+      AppendToTouchList(&touches);
       break;
     }
     default:
@@ -222,3 +234,5 @@ TouchManager::PreHandleEvent(WidgetEvent* aEvent,
   }
   return true;
 }
+
+} // namespace mozilla

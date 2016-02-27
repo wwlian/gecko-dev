@@ -229,16 +229,11 @@ SpdyStream31::WriteSegments(nsAHttpSegmentWriter *writer,
   return rv;
 }
 
-PLDHashOperator
-SpdyStream31::hdrHashEnumerate(const nsACString &key,
-                               nsAutoPtr<nsCString> &value,
-                               void *closure)
+bool
+SpdyStream31::ChannelPipeFull()
 {
-  SpdyStream31 *self = static_cast<SpdyStream31 *>(closure);
-
-  self->CompressToFrame(key);
-  self->CompressToFrame(value.get());
-  return PL_DHASH_NEXT;
+  nsHttpTransaction *trans = mTransaction ? mTransaction->QueryHttpTransaction() : nullptr;
+  return trans ? trans->ChannelPipeFull() : false;
 }
 
 void
@@ -537,7 +532,10 @@ SpdyStream31::GenerateSynFrame()
     CompressToFrame(nsDependentCString(mTransaction->RequestHead()->IsHTTPS() ? "https" : "http"));
   }
 
-  hdrHash.Enumerate(hdrHashEnumerate, this);
+  for (auto iter = hdrHash.Iter(); !iter.Done(); iter.Next()) {
+    CompressToFrame(iter.Key());
+    CompressToFrame(iter.Data().get());
+  }
   CompressFlushFrame();
 
   // 4 to 7 are length and flags, which we can now fill in
@@ -1586,7 +1584,7 @@ SpdyStream31::OnReadSegment(const char *buf,
     mRequestBodyLenRemaining -= dataLength;
     GenerateDataFrameHeader(dataLength, !mRequestBodyLenRemaining);
     ChangeState(SENDING_REQUEST_BODY);
-    // NO BREAK
+    MOZ_FALLTHROUGH;
 
   case SENDING_REQUEST_BODY:
     MOZ_ASSERT(mTxInlineFrameUsed, "OnReadSegment Send Data Header 0b");

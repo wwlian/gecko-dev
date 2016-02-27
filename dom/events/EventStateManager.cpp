@@ -185,13 +185,6 @@ PrintDocTreeAll(nsIDocShellTreeItem* aItem)
 #define NS_MODIFIER_META     8
 #define NS_MODIFIER_OS       16
 
-static nsIDocument *
-GetDocumentFromWindow(nsIDOMWindow *aWindow)
-{
-  nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(aWindow);
-  return win ? win->GetExtantDoc() : nullptr;
-}
-
 /******************************************************************/
 /* mozilla::UITimerCallback                                       */
 /******************************************************************/
@@ -285,6 +278,7 @@ TimeStamp EventStateManager::sHandlingInputStart;
 
 EventStateManager::WheelPrefs*
   EventStateManager::WheelPrefs::sInstance = nullptr;
+bool EventStateManager::WheelPrefs::sWheelEventsEnabledOnPlugins = true;
 EventStateManager::DeltaAccumulator*
   EventStateManager::DeltaAccumulator::sInstance = nullptr;
 
@@ -738,7 +732,7 @@ EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
       if (modifierMask &&
           (modifierMask == Prefs::ChromeAccessModifierMask() ||
            modifierMask == Prefs::ContentAccessModifierMask())) {
-        nsAutoTArray<uint32_t, 10> accessCharCodes;
+        AutoTArray<uint32_t, 10> accessCharCodes;
         nsContentUtils::GetAccessKeyCandidates(keyEvent, accessCharCodes);
 
         if (HandleAccessKey(aPresContext, accessCharCodes,
@@ -760,15 +754,17 @@ EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
       if (content)
         mCurrentTargetContent = content;
 
-      // NOTE: Don't refer TextComposition::IsComposing() since DOM Level 3
-      //       Events defines that KeyboardEvent.isComposing is true when it's
+      // NOTE: Don't refer TextComposition::IsComposing() since UI Events
+      //       defines that KeyboardEvent.isComposing is true when it's
       //       dispatched after compositionstart and compositionend.
       //       TextComposition::IsComposing() is false even before
       //       compositionend if there is no composing string.
-      WidgetKeyboardEvent* keyEvent = aEvent->AsKeyboardEvent();
+      //       And also don't expose other document's composition state.
+      //       A native IME context is typically shared by multiple documents.
+      //       So, don't use GetTextCompositionFor(nsIWidget*) here.
       RefPtr<TextComposition> composition =
-        IMEStateManager::GetTextCompositionFor(keyEvent);
-      keyEvent->mIsComposing = !!composition;
+        IMEStateManager::GetTextCompositionFor(aPresContext);
+      aEvent->AsKeyboardEvent()->mIsComposing = !!composition;
     }
     break;
   case eWheel:
@@ -1208,6 +1204,10 @@ EventStateManager::DispatchCrossProcessEvent(WidgetEvent* aEvent,
 
     return retval;
   }
+  case ePluginEventClass: {
+    *aStatus = nsEventStatus_eConsumeNoDefault;
+    return remote->SendPluginEvent(*aEvent->AsPluginEvent());
+  }
   default: {
     MOZ_CRASH("Attempt to send non-whitelisted event?");
   }
@@ -1292,7 +1292,7 @@ EventStateManager::HandleCrossProcessEvent(WidgetEvent* aEvent,
   // event to.
   //
   // NB: the elements of |targets| must be unique, for correctness.
-  nsAutoTArray<nsCOMPtr<nsIContent>, 1> targets;
+  AutoTArray<nsCOMPtr<nsIContent>, 1> targets;
   if (aEvent->mClass != eTouchEventClass || aEvent->mMessage == eTouchStart) {
     // If this event only has one target, and it's remote, add it to
     // the array.
@@ -1701,7 +1701,7 @@ EventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
       }
 
       nsCOMPtr<nsISupports> container = aPresContext->GetContainerWeak();
-      nsCOMPtr<nsPIDOMWindow> window = do_GetInterface(container);
+      nsCOMPtr<nsPIDOMWindowOuter> window = do_GetInterface(container);
       if (!window)
         return;
 
@@ -1810,7 +1810,7 @@ EventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
 } // GenerateDragGesture
 
 void
-EventStateManager::DetermineDragTargetAndDefaultData(nsPIDOMWindow* aWindow,
+EventStateManager::DetermineDragTargetAndDefaultData(nsPIDOMWindowOuter* aWindow,
                                                      nsIContent* aSelectionTarget,
                                                      DataTransfer* aDataTransfer,
                                                      nsISelection** aSelection,
@@ -2005,19 +2005,19 @@ EventStateManager::GetContentViewer(nsIContentViewer** aCv)
   nsIFocusManager* fm = nsFocusManager::GetFocusManager();
   if(!fm) return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsIDOMWindow> focusedWindow;
+  nsCOMPtr<mozIDOMWindowProxy> focusedWindow;
   fm->GetFocusedWindow(getter_AddRefs(focusedWindow));
+  if (!focusedWindow) return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsPIDOMWindow> ourWindow = do_QueryInterface(focusedWindow);
-  if(!ourWindow) return NS_ERROR_FAILURE;
+  auto* ourWindow = nsPIDOMWindowOuter::From(focusedWindow);
 
-  nsCOMPtr<nsPIDOMWindow> rootWindow = do_QueryInterface(ourWindow->GetPrivateRoot());
+  nsCOMPtr<nsPIDOMWindowOuter> rootWindow = ourWindow->GetPrivateRoot();
   if(!rootWindow) return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsIDOMWindow> contentWindow = nsGlobalWindow::Cast(rootWindow)->GetContent();
+  nsCOMPtr<nsPIDOMWindowOuter> contentWindow = nsGlobalWindow::Cast(rootWindow)->GetContent();
   if(!contentWindow) return NS_ERROR_FAILURE;
 
-  nsIDocument *doc = GetDocumentFromWindow(contentWindow);
+  nsIDocument *doc = contentWindow->GetDoc();
   if(!doc) return NS_ERROR_FAILURE;
 
   nsIPresShell *presShell = doc->GetShell();
@@ -2368,6 +2368,11 @@ EventStateManager::ComputeScrollTarget(nsIFrame* aTargetFrame,
                                        WidgetWheelEvent* aEvent,
                                        ComputeScrollTargetOptions aOptions)
 {
+  if ((aOptions & INCLUDE_PLUGIN_AS_TARGET) &&
+      !WheelPrefs::WheelEventsEnabledOnPlugins()) {
+    aOptions = RemovePluginFromTarget(aOptions);
+  }
+
   if (aOptions & PREFER_MOUSE_WHEEL_TRANSACTION) {
     // If the user recently scrolled with the mousewheel, then they probably
     // want to scroll the same view as before instead of the view under the
@@ -3063,14 +3068,14 @@ EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
         EnsureDocument(mPresContext);
         nsIFocusManager* fm = nsFocusManager::GetFocusManager();
         if (mDocument && fm) {
-          nsCOMPtr<nsIDOMWindow> window;
+          nsCOMPtr<mozIDOMWindowProxy> window;
           fm->GetFocusedWindow(getter_AddRefs(window));
-          nsCOMPtr<nsPIDOMWindow> currentWindow = do_QueryInterface(window);
+          auto* currentWindow = nsPIDOMWindowOuter::From(window);
           if (currentWindow && mDocument->GetWindow() &&
               currentWindow != mDocument->GetWindow() &&
               !nsContentUtils::IsChromeDoc(mDocument)) {
-            nsCOMPtr<nsPIDOMWindow> currentTop;
-            nsCOMPtr<nsPIDOMWindow> newTop;
+            nsCOMPtr<nsPIDOMWindowOuter> currentTop;
+            nsCOMPtr<nsPIDOMWindowOuter> newTop;
             currentTop = currentWindow->GetTop();
             newTop = mDocument->GetWindow()->GetTop();
             nsCOMPtr<nsIDocument> currentDoc = currentWindow->GetExtantDoc();
@@ -3161,10 +3166,15 @@ EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
       if (pluginFrame) {
         MOZ_ASSERT(pluginFrame->WantsToHandleWheelEventAsDefaultAction());
         action = WheelPrefs::ACTION_SEND_TO_PLUGIN;
-      } else if (nsLayoutUtils::IsScrollFrameWithSnapping(frameToScroll)) {
+      } else if (!wheelEvent->mayHaveMomentum &&
+            nsLayoutUtils::IsScrollFrameWithSnapping(frameToScroll)) {
         // If the target has scroll-snapping points then we want to handle
         // the wheel event on the main thread even if we have APZ enabled. Do
-        // so and let the APZ know that it should ignore this event.
+        // so and let the APZ know that it should ignore this event. However,
+        // if the wheel event is synthesized from a Mac trackpad or other device
+        // that can generate additional momentum events, then we should allow
+        // APZ to handle it, because it will track the velocity and predicted
+        // destination from the momentum.
         if (wheelEvent->mFlags.mHandledByAPZ) {
           wheelEvent->mFlags.mDefaultPrevented = true;
         }
@@ -3963,7 +3973,7 @@ public:
     , mMouseEvent(aMouseEvent)
     , mEventMessage(aEventMessage)
   {
-    nsPIDOMWindow* win =
+    nsPIDOMWindowInner* win =
       aTarget ? aTarget->OwnerDoc()->GetInnerWindow() : nullptr;
     if (aMouseEvent->AsPointerEvent() ? win && win->HasPointerEnterLeaveEventListeners() :
                                         win && win->HasMouseEnterLeaveEventListeners()) {
@@ -4166,7 +4176,7 @@ EventStateManager::NotifyMouseOver(WidgetMouseEvent* aMouseEvent,
 // makes us throw away the fractional error that results, rather than having
 // it manifest as a potential one-device-pix discrepancy.
 static LayoutDeviceIntPoint
-GetWindowInnerRectCenter(nsPIDOMWindow* aWindow,
+GetWindowInnerRectCenter(nsPIDOMWindowOuter* aWindow,
                          nsIWidget* aWidget,
                          nsPresContext* aContext)
 {
@@ -4678,7 +4688,8 @@ EventStateManager::CheckForAndDispatchClick(WidgetMouseEvent* aEvent,
       nsWeakFrame currentTarget = mCurrentTarget;
       ret = presShell->HandleEventWithTarget(&event, currentTarget,
                                              mouseContent, aStatus);
-      if (NS_SUCCEEDED(ret) && aEvent->clickCount == 2) {
+      if (NS_SUCCEEDED(ret) && aEvent->clickCount == 2 &&
+          mouseContent && mouseContent->IsInComposedDoc()) {
         //fire double click
         WidgetMouseEvent event2(aEvent->mFlags.mIsTrusted, eMouseDoubleClick,
                                 aEvent->widget, WidgetMouseEvent::eReal);
@@ -5027,19 +5038,17 @@ EventStateManager::SetContentState(nsIContent* aContent, EventStates aState)
   return true;
 }
 
-PLDHashOperator
+void
 EventStateManager::ResetLastOverForContent(
                      const uint32_t& aIdx,
                      RefPtr<OverOutElementsWrapper>& aElemWrapper,
-                     void* aClosure)
+                     nsIContent* aContent)
 {
-  nsIContent* content = static_cast<nsIContent*>(aClosure);
   if (aElemWrapper && aElemWrapper->mLastOverElement &&
-      nsContentUtils::ContentIsDescendantOf(aElemWrapper->mLastOverElement, content)) {
+      nsContentUtils::ContentIsDescendantOf(aElemWrapper->mLastOverElement,
+                                            aContent)) {
     aElemWrapper->mLastOverElement = nullptr;
   }
-
-  return PL_DHASH_NEXT;
 }
 
 void
@@ -5088,8 +5097,11 @@ EventStateManager::ContentRemoved(nsIDocument* aDocument, nsIContent* aContent)
 
   // See bug 292146 for why we want to null this out
   ResetLastOverForContent(0, mMouseEnterLeaveHelper, aContent);
-  mPointersEnterLeaveHelper.Enumerate(
-    &EventStateManager::ResetLastOverForContent, aContent);
+  for (auto iter = mPointersEnterLeaveHelper.Iter();
+       !iter.Done();
+       iter.Next()) {
+    ResetLastOverForContent(iter.Key(), iter.Data(), aContent);
+  }
 }
 
 bool
@@ -5154,7 +5166,7 @@ EventStateManager::GetFocusedContent()
   if (!fm || !mDocument)
     return nullptr;
 
-  nsCOMPtr<nsPIDOMWindow> focusedWindow;
+  nsCOMPtr<nsPIDOMWindowOuter> focusedWindow;
   return nsFocusManager::GetFocusedDescendant(mDocument->GetWindow(), false,
                                               getter_AddRefs(focusedWindow));
 }
@@ -5185,7 +5197,7 @@ EventStateManager::DoContentCommandEvent(WidgetContentCommandEvent* aEvent)
 {
   EnsureDocument(mPresContext);
   NS_ENSURE_TRUE(mDocument, NS_ERROR_FAILURE);
-  nsCOMPtr<nsPIDOMWindow> window(mDocument->GetWindow());
+  nsCOMPtr<nsPIDOMWindowOuter> window(mDocument->GetWindow());
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
   nsCOMPtr<nsPIWindowRoot> root = window->GetTopWindowRoot();
@@ -5509,6 +5521,9 @@ EventStateManager::WheelPrefs::WheelPrefs()
 {
   Reset();
   Preferences::RegisterCallback(OnPrefChanged, "mousewheel.", nullptr);
+  Preferences::AddBoolVarCache(&sWheelEventsEnabledOnPlugins,
+                               "plugin.mousewheel.enabled",
+                               true);
 }
 
 EventStateManager::WheelPrefs::~WheelPrefs()
@@ -5726,6 +5741,16 @@ EventStateManager::WheelPrefs::GetUserPrefsForEvent(WidgetWheelEvent* aEvent,
 
   *aOutMultiplierX = mMultiplierX[index];
   *aOutMultiplierY = mMultiplierY[index];
+}
+
+// static
+bool
+EventStateManager::WheelPrefs::WheelEventsEnabledOnPlugins()
+{
+  if (!sInstance) {
+    GetInstance(); // initializing sWheelEventsEnabledOnPlugins
+  }
+  return sWheelEventsEnabledOnPlugins;
 }
 
 bool

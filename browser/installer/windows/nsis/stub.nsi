@@ -371,6 +371,27 @@ Function .onInit
   ${If} "$R9" == "false"
     SetShellVarContext current ; Set SHCTX to HKCU
     ${GetSingleInstallPath} "Software\Mozilla\${BrandFullNameInternal}" $R9
+
+    ${If} ${RunningX64}
+      ; In HKCU there is no WOW64 redirection, which means we may have gotten
+      ; the path to a 32-bit install even though we're 64-bit, or vice-versa.
+      ; In that case, just use the default path instead of offering an upgrade.
+      ; But only do that override if the existing install is in Program Files,
+      ; because that's the only place we can be sure is specific
+      ; to either 32 or 64 bit applications.
+      ; The WordFind syntax below searches for the first occurence of the
+      ; "delimiter" (the Program Files path) in the install path and returns
+      ; anything that appears before that. If nothing appears before that,
+      ; then the install is under Program Files (32 or 64).
+!ifdef HAVE_64BIT_BUILD
+      ${WordFind} $R9 $PROGRAMFILES32 "+1{" $0
+!else
+      ${WordFind} $R9 $PROGRAMFILES64 "+1{" $0
+!endif
+      ${If} $0 == ""
+        StrCpy $R9 "false"
+      ${EndIf}
+    ${EndIf}
   ${EndIf}
 
   ${If} "$R9" != "false"
@@ -1543,6 +1564,14 @@ Function OnDownload
       WriteINIStr "$PLUGINSDIR\${CONFIG_INI}" "Install" "InstallDirectoryPath" "$INSTDIR"
       ; Don't create the QuickLaunch or Taskbar shortcut from the launched installer
       WriteINIStr "$PLUGINSDIR\${CONFIG_INI}" "Install" "QuickLaunchShortcut" "false"
+
+      ; Either avoid or force adding a taskbar pin based on the checkbox value:
+      ${If} $CheckboxShortcutOnBar == 0
+        WriteINIStr "$PLUGINSDIR\${CONFIG_INI}" "Install" "TaskbarShortcut" "false"
+      ${Else}
+        WriteINIStr "$PLUGINSDIR\${CONFIG_INI}" "Install" "TaskbarShortcut" "true"
+      ${EndIf}
+
       ${If} $CheckboxShortcutOnDesktop == 1
         WriteINIStr "$PLUGINSDIR\${CONFIG_INI}" "Install" "DesktopShortcut" "true"
       ${Else}
@@ -1565,14 +1594,10 @@ Function OnDownload
       WriteINIStr "$PLUGINSDIR\${CONFIG_INI}" "Install" "MaintenanceService" "false"
 !endif
 
-      ; Write migrated to the shortcuts.ini file to prevent the installer
-      ; from creating a taskbar shortcut (Bug 791613).
+      ; Delete the taskbar shortcut history to ensure we do the right thing based on
+      ; the config file above.
       ${GetShortcutsLogPath} $0
       Delete "$0"
-      ; Workaround to prevent pinning to the taskbar.
-      ${If} $CheckboxShortcutOnBar == 0
-        WriteIniStr "$0" "TASKBAR" "Migrated" "true"
-      ${EndIf}
 
       GetFunctionAddress $0 RemoveFileProgressCallback
       ${RemovePrecompleteEntries} $0

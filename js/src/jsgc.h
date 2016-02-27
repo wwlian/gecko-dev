@@ -48,49 +48,9 @@ enum State {
     MARK_ROOTS,
     MARK,
     SWEEP,
+    FINALIZE,
     COMPACT
 };
-
-// Expand the given macro D for each valid GC reference type.
-#define FOR_EACH_GC_POINTER_TYPE(D) \
-    D(AccessorShape*) \
-    D(BaseShape*) \
-    D(UnownedBaseShape*) \
-    D(jit::JitCode*) \
-    D(NativeObject*) \
-    D(ArrayObject*) \
-    D(ArgumentsObject*) \
-    D(ArrayBufferObject*) \
-    D(ArrayBufferObjectMaybeShared*) \
-    D(ArrayBufferViewObject*) \
-    D(DebugScopeObject*) \
-    D(GlobalObject*) \
-    D(JSObject*) \
-    D(JSFunction*) \
-    D(ModuleObject*) \
-    D(ModuleEnvironmentObject*) \
-    D(ModuleNamespaceObject*) \
-    D(NestedScopeObject*) \
-    D(PlainObject*) \
-    D(SavedFrame*) \
-    D(ScopeObject*) \
-    D(ScriptSourceObject*) \
-    D(SharedArrayBufferObject*) \
-    D(ImportEntryObject*) \
-    D(ExportEntryObject*) \
-    D(JSScript*) \
-    D(LazyScript*) \
-    D(Shape*) \
-    D(JSAtom*) \
-    D(JSString*) \
-    D(JSFlatString*) \
-    D(JSLinearString*) \
-    D(PropertyName*) \
-    D(JS::Symbol*) \
-    D(js::ObjectGroup*) \
-    D(Value) \
-    D(jsid) \
-    D(TaggedProto)
 
 /* Map from C++ type to alloc kind. JSObject does not have a 1:1 mapping, so must use Arena::thingSize. */
 template <typename T> struct MapTypeToFinalizeKind {};
@@ -167,7 +127,7 @@ IsBackgroundFinalized(AllocKind kind)
         false,     /* AllocKind::OBJECT16 */
         true,      /* AllocKind::OBJECT16_BACKGROUND */
         false,     /* AllocKind::SCRIPT */
-        false,     /* AllocKind::LAZY_SCRIPT */
+        true,      /* AllocKind::LAZY_SCRIPT */
         true,      /* AllocKind::SHAPE */
         true,      /* AllocKind::ACCESSOR_SHAPE */
         true,      /* AllocKind::BASE_SHAPE */
@@ -635,7 +595,7 @@ class ArenaLists
 
     enum BackgroundFinalizeStateEnum { BFS_DONE, BFS_RUN };
 
-    typedef mozilla::Atomic<BackgroundFinalizeStateEnum, mozilla::ReleaseAcquire>
+    typedef mozilla::Atomic<BackgroundFinalizeStateEnum, mozilla::SequentiallyConsistent>
         BackgroundFinalizeState;
 
     /* The current background finalization state, accessed atomically. */
@@ -1292,19 +1252,23 @@ CheckValueAfterMovingGC(const JS::Value& value)
 
 #endif // JSGC_HASH_TABLE_CHECKS
 
-const int ZealPokeValue = 1;
-const int ZealAllocValue = 2;
-const int ZealFrameGCValue = 3;
-const int ZealVerifierPreValue = 4;
-const int ZealFrameVerifierPreValue = 5;
-const int ZealStackRootingValue = 6;
-const int ZealGenerationalGCValue = 7;
-const int ZealIncrementalRootsThenFinish = 8;
-const int ZealIncrementalMarkAllThenFinish = 9;
-const int ZealIncrementalMultipleSlices = 10;
-const int ZealCheckHashTablesOnMinorGC = 13;
-const int ZealCompactValue = 14;
-const int ZealLimit = 14;
+enum class ZealMode {
+    Poke = 1,
+    Alloc = 2,
+    FrameGC = 3,
+    VerifierPre = 4,
+    FrameVerifierPre = 5,
+    StackRooting = 6,
+    GenerationalGC = 7,
+    IncrementalRootsThenFinish = 8,
+    IncrementalMarkAllThenFinish = 9,
+    IncrementalMultipleSlices = 10,
+    IncrementalMarkingValidator = 11,
+    ElementsBarrier = 12,
+    CheckHashTablesOnMinorGC = 13,
+    Compact = 14,
+    Limit = 14
+};
 
 enum VerifierType {
     PreBarrierVerifier
@@ -1386,6 +1350,19 @@ class ZoneList
 
 JSObject*
 NewMemoryStatisticsObject(JSContext* cx);
+
+struct MOZ_RAII AutoAssertNoNurseryAlloc
+{
+#ifdef DEBUG
+    explicit AutoAssertNoNurseryAlloc(JSRuntime* rt);
+    ~AutoAssertNoNurseryAlloc();
+
+  private:
+    gc::GCRuntime& gc;
+#else
+    explicit AutoAssertNoNurseryAlloc(JSRuntime* rt) {}
+#endif
+};
 
 } /* namespace gc */
 

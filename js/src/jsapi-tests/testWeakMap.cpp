@@ -99,7 +99,8 @@ BEGIN_TEST(testWeakMap_keyDelegates)
     CHECK(newCCW(map, delegateRoot));
     js::SliceBudget budget(js::WorkBudget(1000000));
     rt->gc.startDebugGC(GC_NORMAL, budget);
-    CHECK(!JS::IsIncrementalGCInProgress(rt));
+    while (JS::IsIncrementalGCInProgress(rt))
+        rt->gc.debugGCSlice(budget);
 #ifdef DEBUG
     CHECK(map->zone()->lastZoneGroupIndex() < delegateRoot->zone()->lastZoneGroupIndex());
 #endif
@@ -114,7 +115,8 @@ BEGIN_TEST(testWeakMap_keyDelegates)
     CHECK(newCCW(map, delegateRoot));
     budget = js::SliceBudget(js::WorkBudget(100000));
     rt->gc.startDebugGC(GC_NORMAL, budget);
-    CHECK(!JS::IsIncrementalGCInProgress(rt));
+    while (JS::IsIncrementalGCInProgress(rt))
+        rt->gc.debugGCSlice(budget);
     CHECK(checkSize(map, 1));
 
     /*
@@ -230,12 +232,14 @@ JSObject* newDelegate()
 
     /* Create the global object. */
     JS::CompartmentOptions options;
-    options.setVersion(JSVERSION_LATEST);
-    JS::RootedObject global(cx);
-    global = JS_NewGlobalObject(cx, Jsvalify(&delegateClass), nullptr, JS::FireOnNewGlobalHook,
-                                options);
-    JS_SetReservedSlot(global, 0, JS::Int32Value(42));
+    options.behaviors().setVersion(JSVERSION_LATEST);
 
+    JS::RootedObject global(cx, JS_NewGlobalObject(cx, Jsvalify(&delegateClass), nullptr,
+                                                   JS::FireOnNewGlobalHook, options));
+    if (!global)
+        return nullptr;
+
+    JS_SetReservedSlot(global, 0, JS::Int32Value(42));
     return global;
 }
 

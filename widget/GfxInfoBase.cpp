@@ -155,7 +155,7 @@ GetPrefNameForFeature(int32_t aFeature)
       break;
     default:
       break;
-  };
+  }
 
   return name;
 }
@@ -280,6 +280,8 @@ BlacklistOSToOperatingSystem(const nsAString& os)
     return DRIVER_OS_OS_X_10_9;
   else if (os.EqualsLiteral("Darwin 14"))
     return DRIVER_OS_OS_X_10_10;
+  else if (os.EqualsLiteral("Darwin 15"))
+    return DRIVER_OS_OS_X_10_11;
   else if (os.EqualsLiteral("Android"))
     return DRIVER_OS_ANDROID;
   else if (os.EqualsLiteral("All"))
@@ -564,6 +566,15 @@ BlacklistEntryToDriverInfo(nsIDOMNode* aBlacklistEntry,
     uint64_t version;
     if (ParseDriverVersion(dataValue, &version))
       aDriverInfo.mDriverVersion = version;
+  }
+
+  // <driverVersionMax> 8.52.322.2202 </driverVersionMax>
+  if (BlacklistNodeGetChildByName(element, NS_LITERAL_STRING("driverVersionMax"),
+                                  getter_AddRefs(dataNode))) {
+    BlacklistNodeToTextValue(dataNode, dataValue);
+    uint64_t version;
+    if (ParseDriverVersion(dataValue, &version))
+      aDriverInfo.mDriverVersionMax = version;
   }
 
   // <driverVersionComparator> LESS_THAN_OR_EQUAL </driverVersionComparator>
@@ -1066,7 +1077,7 @@ NS_IMETHODIMP GfxInfoBase::GetFailures(uint32_t* failureCount,
   // and the strings in it should be small as well (the error messages in the
   // code.)  The second copy happens with the Clone() calls.  Technically,
   // we don't need the mutex lock after the StringVectorCopy() call.
-  std::vector<std::pair<int32_t,std::string> > loggedStrings = logForwarder->StringsVectorCopy();
+  LoggingRecord loggedStrings = logForwarder->LoggingRecordCopy();
   *failureCount = loggedStrings.size();
 
   if (*failureCount != 0) {
@@ -1084,11 +1095,11 @@ NS_IMETHODIMP GfxInfoBase::GetFailures(uint32_t* failureCount,
     }
 
     /* copy over the failure messages into the array we just allocated */
-    std::vector<std::pair<int32_t, std::string> >::const_iterator it;
+    LoggingRecord::const_iterator it;
     uint32_t i=0;
     for(it = loggedStrings.begin() ; it != loggedStrings.end(); ++it, i++) {
-      (*failures)[i] = (char*)nsMemory::Clone((*it).second.c_str(), (*it).second.size() + 1);
-      if (indices) (*indices)[i] = (*it).first;
+      (*failures)[i] = (char*)nsMemory::Clone(Get<1>(*it).c_str(), Get<1>(*it).size() + 1);
+      if (indices) (*indices)[i] = Get<0>(*it);
 
       if (!(*failures)[i]) {
         /* <sarcasm> I'm too afraid to use an inline function... </sarcasm> */

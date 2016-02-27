@@ -1,5 +1,7 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
  * Tests if the same source is shown after a page is reloaded.
@@ -17,6 +19,7 @@ function test() {
     const gTab = aTab;
     const gPanel = aPanel;
     const gDebugger = aPanel.panelWin;
+    const gTarget = gDebugger.gTarget;
     const gSources = gDebugger.DebuggerView.Sources;
     const queries = gDebugger.require('./content/queries');
     const actions = bindActionCreators(gPanel);
@@ -24,9 +27,9 @@ function test() {
     let gStep = 0;
 
     function reloadPage() {
-      const loaded = waitForDispatch(gPanel, gDebugger.constants.LOAD_SOURCES);
+      const navigated = waitForNavigation(gPanel);
       reload(gPanel);
-      return loaded;
+      return navigated;
     }
 
     function switchAndReload(aUrl) {

@@ -127,7 +127,7 @@ class MobileSingleLocale(MockMixin, LocalesMixin, ReleaseMixin,
                 'virtualenv_modules': [
                     'requests==2.8.1',
                     'PyHawk-with-a-single-extra-commit==0.1.5',
-                    'taskcluster==0.0.15',
+                    'taskcluster==0.0.26',
                 ],
                 'virtualenv_path': 'venv',
             },
@@ -183,7 +183,7 @@ class MobileSingleLocale(MockMixin, LocalesMixin, ReleaseMixin,
 
         # Android l10n builds use a non-standard location for l10n files.  Other
         # builds go to 'mozilla-central-l10n', while android builds add part of
-        # the platform name as well, like 'mozilla-central-android-api-11-l10n'.
+        # the platform name as well, like 'mozilla-central-android-api-15-l10n'.
         # So we override the branch with something that contains the platform
         # name.
         replace_dict['branch'] = c['upload_branch']
@@ -366,18 +366,23 @@ class MobileSingleLocale(MockMixin, LocalesMixin, ReleaseMixin,
                               env=env,
                               error_list=MakefileErrorList):
             self.fatal("Configure failed!")
-        for make_dir in c.get('make_dirs', []):
-            self.run_command_m([make, 'export'],
-                               cwd=os.path.join(dirs['abs_objdir'], make_dir),
-                               env=env,
-                               error_list=MakefileErrorList,
-                               halt_on_failure=True)
-            if buildid:
-                self.run_command_m([make, 'export',
-                                    'MOZ_BUILD_DATE=%s' % str(buildid)],
-                                   cwd=os.path.join(dirs['abs_objdir'], make_dir),
-                                   env=env,
-                                   error_list=MakefileErrorList)
+
+        # Run 'make export' in objdir/config to get nsinstall
+        self.run_command_m([make, 'export'],
+                           cwd=os.path.join(dirs['abs_objdir'], 'config'),
+                           env=env,
+                           error_list=MakefileErrorList,
+                           halt_on_failure=True)
+
+        # Run 'make buildid.h' in objdir/ to get the buildid.h file
+        cmd = [make, 'buildid.h']
+        if buildid:
+            cmd.append('MOZ_BUILD_DATE=%s' % str(buildid))
+        self.run_command_m(cmd,
+                           cwd=dirs['abs_objdir'],
+                           env=env,
+                           error_list=MakefileErrorList,
+                           halt_on_failure=True)
 
     def setup(self):
         c = self.config
@@ -490,8 +495,8 @@ class MobileSingleLocale(MockMixin, LocalesMixin, ReleaseMixin,
         pushdate = time.strftime('%Y%m%d%H%M%S', time.gmtime(pushinfo.pushdate))
         routes_json = os.path.join(self.query_abs_dirs()['abs_mozilla_dir'],
                                    'testing/taskcluster/routes.json')
-        with open(routes_json) as f:
-            contents = json.load(f)
+        with open(routes_json) as routes_file:
+            contents = json.load(routes_file)
             templates = contents['l10n']
 
         for locale in locales:

@@ -3,14 +3,14 @@ $inherits:
   from: 'tasks/tests/fx_desktop_unittest.yml'
 task:
   metadata:
-    name: '[TC] Linux64 jittests {{chunk}}'
+    name: '[TC] Linux64 jittest-{{chunk}}'
     description: Jittests run {{chunk}}
   extra:
     chunks:
-      total: 2
+      total: 6
     suite:
       name: jittest
-      flavor: jittests-chunked
+      flavor: jittest-chunked
     treeherder:
       groupName: Desktop jittests
       symbol: Jit{{chunk}}

@@ -2,6 +2,8 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
+requestLongerTimeout(2);
+
 add_task(function* () {
   let win1 = yield BrowserTestUtils.openNewBrowserWindow();
 
@@ -21,9 +23,9 @@ add_task(function* () {
       let pageURL = "http://mochi.test:8888/browser/browser/components/extensions/test/browser/context_tabs_onUpdated_page.html";
 
       let expectedSequence = [
-        { status: "loading" },
-        { status: "loading", url: pageURL },
-        { status: "complete" },
+        {status: "loading"},
+        {status: "loading", url: pageURL},
+        {status: "complete"},
       ];
       let collectedSequence = [];
 
@@ -58,7 +60,7 @@ add_task(function* () {
         browser.test.notifyPass("tabs.onUpdated");
       });
 
-      browser.tabs.create({ url: pageURL });
+      browser.tabs.create({url: pageURL});
     },
     files: {
       "content-script.js": `
@@ -170,3 +172,5 @@ add_task(function* test_url() {
     });
   });
 });
+
+add_task(forceGC);

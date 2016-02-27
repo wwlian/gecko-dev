@@ -1,4 +1,5 @@
 #filter substitution
+#include @TOPOBJDIR@/source-repo.h
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -47,6 +48,13 @@ this.AppConstants = Object.freeze({
 
   MOZ_OFFICIAL_BRANDING:
 #ifdef MOZ_OFFICIAL_BRANDING
+  true,
+#else
+  false,
+#endif
+
+  MOZ_DEV_EDITION:
+#ifdef MOZ_DEV_EDITION
   true,
 #else
   false,
@@ -132,6 +140,13 @@ this.AppConstants = Object.freeze({
 # MOZ_B2G covers both device and desktop b2g
   MOZ_B2G:
 #ifdef MOZ_B2G
+  true,
+#else
+  false,
+#endif
+
+  XP_UNIX:
+#ifdef XP_UNIX
   true,
 #else
   false,
@@ -226,8 +241,36 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
+  MOZ_NATIVE_NSS:
+#ifdef MOZ_NATIVE_NSS
+  true,
+#else
+  false,
+#endif
+
   MOZ_PLACES:
 #ifdef MOZ_PLACES
+  true,
+#else
+  false,
+#endif
+
+  MOZ_REQUIRE_SIGNING:
+#ifdef MOZ_REQUIRE_SIGNING
+  true,
+#else
+  false,
+#endif
+
+  MENUBAR_CAN_AUTOHIDE:
+#ifdef MENUBAR_CAN_AUTOHIDE
+  true,
+#else
+  false,
+#endif
+
+  CAN_DRAW_IN_TITLEBAR:
+#ifdef CAN_DRAW_IN_TITLEBAR
   true,
 #else
   false,
@@ -247,6 +290,7 @@ this.AppConstants = Object.freeze({
   MOZ_APP_VERSION: "@MOZ_APP_VERSION@",
   MOZ_APP_VERSION_DISPLAY: "@MOZ_APP_VERSION_DISPLAY@",
   MOZ_BUILD_APP: "@MOZ_BUILD_APP@",
+  MOZ_MACBUNDLE_NAME: "@MOZ_MACBUNDLE_NAME@",
   MOZ_UPDATE_CHANNEL: "@MOZ_UPDATE_CHANNEL@",
   INSTALL_LOCALE: "@AB_CD@",
   MOZ_WIDGET_TOOLKIT: "@MOZ_WIDGET_TOOLKIT@",
@@ -265,5 +309,15 @@ this.AppConstants = Object.freeze({
   // URL to the hg revision this was built from (e.g.
   // "https://hg.mozilla.org/mozilla-central/rev/6256ec9113c1")
   // On unofficial builds, this is an empty string.
-  SOURCE_REVISION_URL: "@SOURCE_REV_URL@"
+#ifndef MOZ_SOURCE_URL
+#define MOZ_SOURCE_URL
+#endif
+  SOURCE_REVISION_URL: "@MOZ_SOURCE_URL@",
+
+  MOZ_NUWA_PROCESS:
+#ifdef MOZ_NUWA_PROCESS
+    true
+#else
+    false
+#endif
 });

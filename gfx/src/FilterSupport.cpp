@@ -310,6 +310,13 @@ FilterCachedColorModels::FilterCachedColorModels(DrawTarget* aDT,
 already_AddRefed<FilterNode>
 FilterCachedColorModels::ForColorModel(ColorModel aColorModel)
 {
+  if (aColorModel == mOriginalColorModel) {
+    // Make sure to not call WrapForColorModel if our original filter node was
+    // null, because then we'd get an infinite recursion.
+    RefPtr<FilterNode> filter = mFilterForColorModel[mOriginalColorModel.ToIndex()];
+    return filter.forget();
+  }
+
   if (!mFilterForColorModel[aColorModel.ToIndex()]) {
     mFilterForColorModel[aColorModel.ToIndex()] = WrapForColorModel(aColorModel);
   }
@@ -1665,7 +1672,7 @@ SourceNeededRegionForPrimitive(const FilterPrimitiveDescription& aDescription,
     case PrimitiveType::Flood:
     case PrimitiveType::Turbulence:
     case PrimitiveType::Image:
-      MOZ_CRASH("this shouldn't be called for filters without inputs");
+      MOZ_CRASH("GFX: this shouldn't be called for filters without inputs");
       return nsIntRegion();
 
     case PrimitiveType::Empty:

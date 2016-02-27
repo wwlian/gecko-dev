@@ -34,6 +34,7 @@
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/Element.h"        // for Element, nsINode::AsElement
 #include "mozilla/dom/Text.h"
+#include "mozilla/dom/Event.h"
 #include "mozilla/mozalloc.h"           // for operator new, etc
 #include "nsAString.h"                  // for nsAString_internal::Length, etc
 #include "nsCCUncollectableMarker.h"    // for nsCCUncollectableMarker
@@ -1479,7 +1480,7 @@ nsEditor::JoinNodes(nsINode& aLeftNode, nsINode& aRightNode)
                             parent->AsDOMNode());
   }
 
-  nsresult result;
+  nsresult result = NS_OK;
   RefPtr<JoinNodeTxn> txn = CreateTxnForJoinNode(aLeftNode, aRightNode);
   if (txn)  {
     result = DoTransaction(txn);
@@ -1987,14 +1988,14 @@ nsEditor::StopPreservingSelection()
 }
 
 void
-nsEditor::EnsureComposition(mozilla::WidgetGUIEvent* aEvent)
+nsEditor::EnsureComposition(mozilla::WidgetCompositionEvent* aCompositionEvent)
 {
   if (mComposition) {
     return;
   }
   // The compositionstart event must cause creating new TextComposition
   // instance at being dispatched by IMEStateManager.
-  mComposition = IMEStateManager::GetTextCompositionFor(aEvent);
+  mComposition = IMEStateManager::GetTextCompositionFor(aCompositionEvent);
   if (!mComposition) {
     MOZ_CRASH("IMEStateManager doesn't return proper composition");
   }
@@ -2663,7 +2664,7 @@ nsEditor::SplitNodeImpl(nsIContent& aExistingRightNode,
                         nsIContent& aNewLeftNode)
 {
   // Remember all selection points.
-  nsAutoTArray<SavedRange, 10> savedRanges;
+  AutoTArray<SavedRange, 10> savedRanges;
   for (size_t i = 0; i < nsISelectionController::NUM_SELECTIONTYPES - 1; ++i) {
     SelectionType type(1 << i);
     SavedRange range;
@@ -2810,7 +2811,7 @@ nsEditor::JoinNodesImpl(nsINode* aNodeToKeep,
   nsINode* parent = GetNodeLocation(aNodeToKeep, &keepOffset);
 
   // Remember all selection points.
-  nsAutoTArray<SavedRange, 10> savedRanges;
+  AutoTArray<SavedRange, 10> savedRanges;
   for (size_t i = 0; i < nsISelectionController::NUM_SELECTIONTYPES - 1; ++i) {
     SelectionType type(1 << i);
     SavedRange range;
@@ -3836,7 +3837,7 @@ nsEditor::SplitNodeDeep(nsIContent& aNode,
       didSplit = true;
       ErrorResult rv;
       nsCOMPtr<nsIContent> newLeftNode = SplitNode(nodeToSplit, offset, rv);
-      NS_ENSURE_TRUE(!rv.Failed(), -1);
+      NS_ENSURE_TRUE(!NS_FAILED(rv.StealNSResult()), -1);
 
       rightNode = nodeToSplit;
       leftNode = newLeftNode;
@@ -4252,7 +4253,7 @@ nsEditor::CreateTxnForIMEText(const nsAString& aStringToInsert)
 
 
 NS_IMETHODIMP
-nsEditor::CreateTxnForAddStyleSheet(CSSStyleSheet* aSheet, AddStyleSheetTxn* *aTxn)
+nsEditor::CreateTxnForAddStyleSheet(StyleSheetHandle aSheet, AddStyleSheetTxn* *aTxn)
 {
   RefPtr<AddStyleSheetTxn> txn = new AddStyleSheetTxn();
 
@@ -4268,7 +4269,7 @@ nsEditor::CreateTxnForAddStyleSheet(CSSStyleSheet* aSheet, AddStyleSheetTxn* *aT
 
 
 NS_IMETHODIMP
-nsEditor::CreateTxnForRemoveStyleSheet(CSSStyleSheet* aSheet, RemoveStyleSheetTxn* *aTxn)
+nsEditor::CreateTxnForRemoveStyleSheet(StyleSheetHandle aSheet, RemoveStyleSheetTxn* *aTxn)
 {
   RefPtr<RemoveStyleSheetTxn> txn = new RemoveStyleSheetTxn();
 
@@ -4615,7 +4616,7 @@ nsEditor::HandleKeyPressEvent(nsIDOMKeyEvent* aKeyEvent)
   // HandleKeyPressEvent()'s switch statement.
 
   WidgetKeyboardEvent* nativeKeyEvent =
-    aKeyEvent->GetInternalNSEvent()->AsKeyboardEvent();
+    aKeyEvent->AsEvent()->WidgetEventPtr()->AsKeyboardEvent();
   NS_ENSURE_TRUE(nativeKeyEvent, NS_ERROR_UNEXPECTED);
   NS_ASSERTION(nativeKeyEvent->mMessage == eKeyPress,
                "HandleKeyPressEvent gets non-keypress event");
@@ -4625,7 +4626,7 @@ nsEditor::HandleKeyPressEvent(nsIDOMKeyEvent* aKeyEvent)
     // consume backspace for disabled and readonly textfields, to prevent
     // back in history, which could be confusing to users
     if (nativeKeyEvent->keyCode == nsIDOMKeyEvent::DOM_VK_BACK_SPACE) {
-      aKeyEvent->PreventDefault();
+      aKeyEvent->AsEvent()->PreventDefault();
     }
     return NS_OK;
   }
@@ -4636,7 +4637,7 @@ nsEditor::HandleKeyPressEvent(nsIDOMKeyEvent* aKeyEvent)
     case nsIDOMKeyEvent::DOM_VK_SHIFT:
     case nsIDOMKeyEvent::DOM_VK_CONTROL:
     case nsIDOMKeyEvent::DOM_VK_ALT:
-      aKeyEvent->PreventDefault(); // consumed
+      aKeyEvent->AsEvent()->PreventDefault(); // consumed
       return NS_OK;
     case nsIDOMKeyEvent::DOM_VK_BACK_SPACE:
       if (nativeKeyEvent->IsControl() || nativeKeyEvent->IsAlt() ||
@@ -4644,7 +4645,7 @@ nsEditor::HandleKeyPressEvent(nsIDOMKeyEvent* aKeyEvent)
         return NS_OK;
       }
       DeleteSelection(nsIEditor::ePrevious, nsIEditor::eStrip);
-      aKeyEvent->PreventDefault(); // consumed
+      aKeyEvent->AsEvent()->PreventDefault(); // consumed
       return NS_OK;
     case nsIDOMKeyEvent::DOM_VK_DELETE:
       // on certain platforms (such as windows) the shift key
@@ -4656,7 +4657,7 @@ nsEditor::HandleKeyPressEvent(nsIDOMKeyEvent* aKeyEvent)
         return NS_OK;
       }
       DeleteSelection(nsIEditor::eNext, nsIEditor::eStrip);
-      aKeyEvent->PreventDefault(); // consumed
+      aKeyEvent->AsEvent()->PreventDefault(); // consumed
       return NS_OK;
   }
   return NS_OK;
@@ -5038,8 +5039,8 @@ nsEditor::IsActiveInDOMWindow()
   NS_ENSURE_TRUE(fm, false);
 
   nsCOMPtr<nsIDocument> doc = do_QueryReferent(mDocWeak);
-  nsPIDOMWindow* ourWindow = doc->GetWindow();
-  nsCOMPtr<nsPIDOMWindow> win;
+  nsPIDOMWindowOuter* ourWindow = doc->GetWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> win;
   nsIContent* content =
     nsFocusManager::GetFocusedDescendant(ourWindow, false,
                                          getter_AddRefs(win));
@@ -5052,7 +5053,7 @@ nsEditor::IsAcceptableInputEvent(nsIDOMEvent* aEvent)
   // If the event is trusted, the event should always cause input.
   NS_ENSURE_TRUE(aEvent, false);
 
-  WidgetEvent* widgetEvent = aEvent->GetInternalNSEvent();
+  WidgetEvent* widgetEvent = aEvent->WidgetEventPtr();
   if (NS_WARN_IF(!widgetEvent)) {
     return false;
   }
@@ -5085,7 +5086,7 @@ nsEditor::IsAcceptableInputEvent(nsIDOMEvent* aEvent)
     case eCompositionCommitAsIs:
       // Don't allow composition events whose internal event are not
       // WidgetCompositionEvent.
-      widgetGUIEvent = aEvent->GetInternalNSEvent()->AsCompositionEvent();
+      widgetGUIEvent = aEvent->WidgetEventPtr()->AsCompositionEvent();
       needsWidget = true;
       break;
     default:

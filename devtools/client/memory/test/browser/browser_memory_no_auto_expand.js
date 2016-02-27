@@ -1,16 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-// Sanity test that we can show allocation stack breakdowns in the tree.
+// Bug 1221150 - Ensure that census trees do not accidentally auto expand
+// when clicking on the allocation stacks checkbox.
 
 "use strict";
 
-const { waitForTime } = require("devtools/shared/DevToolsUtils");
-const { breakdowns } = require("devtools/client/memory/constants");
-const { toggleRecordingAllocationStacks } = require("devtools/client/memory/actions/allocations");
 const { takeSnapshotAndCensus } = require("devtools/client/memory/actions/snapshot");
-const breakdownActions = require("devtools/client/memory/actions/breakdown");
-const { toggleInvertedAndRefresh } = require("devtools/client/memory/actions/inverted");
 
 const TEST_URL = "http://example.com/browser/devtools/client/memory/test/browser/doc_steady_allocation.html";
 
@@ -30,10 +26,19 @@ this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
 
   const nameElems = [...doc.querySelectorAll(".heap-tree-item-field.heap-tree-item-name")];
   is(nameElems.length, 4, "Should get 4 items, one for each coarse type");
-  ok(nameElems.some(e => e.textContent.trim() === "objects"), "One for coarse type 'objects'");
-  ok(nameElems.some(e => e.textContent.trim() === "scripts"), "One for coarse type 'scripts'");
-  ok(nameElems.some(e => e.textContent.trim() === "strings"), "One for coarse type 'strings'");
-  ok(nameElems.some(e => e.textContent.trim() === "other"), "One for coarse type 'other'");
+
+  for (let el of nameElems) {
+    dumpn(`Found ${el.textContent.trim()}`);
+  }
+
+  ok(nameElems.some(e => e.textContent.indexOf("objects") >= 0),
+     "One for coarse type 'objects'");
+  ok(nameElems.some(e => e.textContent.indexOf("scripts") >= 0),
+     "One for coarse type 'scripts'");
+  ok(nameElems.some(e => e.textContent.indexOf("strings") >= 0),
+     "One for coarse type 'strings'");
+  ok(nameElems.some(e => e.textContent.indexOf("other") >= 0),
+     "One for coarse type 'other'");
 
   for (let e of nameElems) {
     is(e.style.marginLeft, "0px",

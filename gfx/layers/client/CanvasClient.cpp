@@ -25,6 +25,7 @@
 #include "nsDebug.h"                    // for printf_stderr, NS_ASSERTION
 #include "nsXULAppAPI.h"                // for XRE_GetProcessType, etc
 #include "TextureClientSharedSurface.h"
+#include "VRManagerChild.h"
 
 using namespace mozilla::gfx;
 using namespace mozilla::gl;
@@ -120,11 +121,12 @@ CanvasClient2D::Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer)
   }
 
   if (updated) {
-    nsAutoTArray<CompositableForwarder::TimedTextureClient,1> textures;
+    AutoTArray<CompositableForwarder::TimedTextureClient,1> textures;
     CompositableForwarder::TimedTextureClient* t = textures.AppendElement();
     t->mTextureClient = mBuffer;
     t->mPictureRect = nsIntRect(nsIntPoint(0, 0), mBuffer->GetSize());
     t->mFrameID = mFrameID;
+    t->mInputFrameID = VRManagerChild::Get()->GetInputFrameID();
     GetForwarder()->UseTextures(this, textures);
     mBuffer->SyncWithObject(GetForwarder()->GetSyncObject());
   }
@@ -277,7 +279,7 @@ TexClientFromReadback(SharedSurface* src, ISurfaceAllocator* allocator,
       // [RR, GG, BB, AA]
       texClient = factory.CreateR8G8B8AX8();
     } else {
-      MOZ_CRASH("Bad `read{Format,Type}`.");
+      MOZ_CRASH("GFX: Bad `read{Format,Type}`.");
     }
 
     MOZ_ASSERT(texClient);
@@ -335,8 +337,13 @@ CloneSurface(gl::SharedSurface* src, gl::SurfaceFactory* factory)
     if (!dest) {
       return nullptr;
     }
+
+    gl::SharedSurface* destSurf = dest->Surf();
+
+    destSurf->ProducerAcquire();
     SharedSurface::ProdCopy(src, dest->Surf(), factory);
-    dest->Surf()->Fence();
+    destSurf->ProducerRelease();
+
     return dest.forget();
 }
 
@@ -471,11 +478,16 @@ CanvasClientSharedSurface::Updated()
   // Add the new TexClient.
   MOZ_ALWAYS_TRUE( AddTextureClient(mFront) );
 
-  nsAutoTArray<CompositableForwarder::TimedTextureClient,1> textures;
+  AutoTArray<CompositableForwarder::TimedTextureClient,1> textures;
   CompositableForwarder::TimedTextureClient* t = textures.AppendElement();
   t->mTextureClient = mFront;
   t->mPictureRect = nsIntRect(nsIntPoint(0, 0), mFront->GetSize());
   t->mFrameID = mFrameID;
+  // XXX TODO - This reference to VRManagerChild will be moved with the
+  //            implementation of the WebVR 1.0 API, which will enable
+  //            the inputFrameID to be passed through Javascript with
+  //            the new VRDisplay API.
+  t->mInputFrameID = VRManagerChild::Get()->GetInputFrameID();
   forwarder->UseTextures(this, textures);
 }
 

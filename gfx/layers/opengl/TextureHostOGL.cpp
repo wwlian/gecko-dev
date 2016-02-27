@@ -16,7 +16,6 @@
 #include "mozilla/gfx/BaseSize.h"       // for BaseSize
 #include "mozilla/gfx/Logging.h"        // for gfxCriticalError
 #include "mozilla/layers/ISurfaceAllocator.h"
-#include "mozilla/layers/YCbCrImageDataSerializer.h"
 #include "mozilla/layers/GrallocTextureHost.h"
 #include "nsRegion.h"                   // for nsIntRegion
 #include "AndroidSurfaceTexture.h"
@@ -52,8 +51,7 @@ CreateTextureHostOGL(const SurfaceDescriptor& aDesc,
 {
   RefPtr<TextureHost> result;
   switch (aDesc.type()) {
-    case SurfaceDescriptor::TSurfaceDescriptorShmem:
-    case SurfaceDescriptor::TSurfaceDescriptorMemory: {
+    case SurfaceDescriptor::TSurfaceDescriptorBuffer: {
       result = CreateBackendIndependentTextureHost(aDesc,
                                                    aDeallocator, aFlags);
       break;
@@ -168,8 +166,7 @@ TextureImageTextureSourceOGL::Update(gfx::DataSourceSurface* aSurface,
       mTexImage = CreateBasicTextureImage(gl, size,
                                           gfx::ContentForFormat(aSurface->GetFormat()),
                                           LOCAL_GL_CLAMP_TO_EDGE,
-                                          FlagsToGLFlags(mFlags),
-                                          SurfaceFormatToImageFormat(aSurface->GetFormat()));
+                                          FlagsToGLFlags(mFlags));
     } else {
       // XXX - clarify which size we want to use. IncrementalContentHost will
       // require the size of the destination surface to be different from
@@ -386,6 +383,7 @@ SurfaceTextureSource::SurfaceTextureSource(CompositorOGL* aCompositor,
 void
 SurfaceTextureSource::BindTexture(GLenum aTextureUnit, gfx::Filter aFilter)
 {
+  MOZ_ASSERT(mSurfTex);
   if (!gl()) {
     NS_WARNING("Trying to bind a texture without a GLContext");
     return;
@@ -428,10 +426,18 @@ SurfaceTextureSource::gl() const
 gfx::Matrix4x4
 SurfaceTextureSource::GetTextureTransform()
 {
+  MOZ_ASSERT(mSurfTex);
+
   gfx::Matrix4x4 ret;
   mSurfTex->GetTransformMatrix(ret);
 
   return ret;
+}
+
+void
+SurfaceTextureSource::DeallocateDeviceData()
+{
+  mSurfTex = nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -459,6 +465,7 @@ SurfaceTextureHost::gl() const
 bool
 SurfaceTextureHost::Lock()
 {
+  MOZ_ASSERT(mSurfTex);
   if (!mCompositor) {
     return false;
   }
@@ -481,6 +488,7 @@ SurfaceTextureHost::Lock()
 void
 SurfaceTextureHost::Unlock()
 {
+  MOZ_ASSERT(mSurfTex);
   mSurfTex->Detach();
 }
 
@@ -500,6 +508,15 @@ SurfaceTextureHost::GetFormat() const
 {
   MOZ_ASSERT(mTextureSource);
   return mTextureSource->GetFormat();
+}
+
+void
+SurfaceTextureHost::DeallocateDeviceData()
+{
+  if (mTextureSource) {
+    mTextureSource->DeallocateDeviceData();
+  }
+  mSurfTex = nullptr;
 }
 
 #endif // MOZ_WIDGET_ANDROID

@@ -69,6 +69,16 @@ class TypedArrayObject : public NativeObject
     template<typename T> struct OfType;
 
     static bool sameBuffer(Handle<TypedArrayObject*> a, Handle<TypedArrayObject*> b) {
+        // Inline buffers.
+        if (!a->hasBuffer() || !b->hasBuffer())
+            return a.get() == b.get();
+
+        // Shared buffers.
+        if (a->isSharedMemory() && b->isSharedMemory()) {
+            return (a->bufferObject()->as<SharedArrayBufferObject>().globalID() ==
+                    b->bufferObject()->as<SharedArrayBufferObject>().globalID());
+        }
+
         return a->bufferObject() == b->bufferObject();
     }
 
@@ -141,7 +151,7 @@ class TypedArrayObject : public NativeObject
     Value getElement(uint32_t index);
     static void setElement(TypedArrayObject& obj, uint32_t index, double d);
 
-    void neuter(void* newData);
+    void notifyBufferDetached(void* newData);
 
     /*
      * Byte length above which created typed arrays and data views will have
@@ -197,8 +207,18 @@ class TypedArrayObject : public NativeObject
         return viewDataEither_();
     }
 
-    bool isNeutered() const {
-        return !isSharedMemory() && bufferUnshared() && bufferUnshared()->isNeutered();
+    bool hasDetachedBuffer() const {
+        // Shared buffers can't be detached.
+        if (isSharedMemory())
+            return false;
+
+        // A typed array with a null buffer has never had its buffer exposed to
+        // become detached.
+        ArrayBufferObject* buffer = bufferUnshared();
+        if (!buffer)
+            return false;
+
+        return buffer->isDetached();
     }
 
   private:
@@ -480,7 +500,7 @@ class DataViewObject : public NativeObject
     static bool fun_setFloat64(JSContext* cx, unsigned argc, Value* vp);
 
     static bool initClass(JSContext* cx);
-    static void neuter(JSObject* view);
+    static void notifyBufferDetached(JSObject* view);
     template<typename NativeType>
     static bool read(JSContext* cx, Handle<DataViewObject*> obj,
                      const CallArgs& args, NativeType* val, const char* method);
@@ -488,7 +508,7 @@ class DataViewObject : public NativeObject
     static bool write(JSContext* cx, Handle<DataViewObject*> obj,
                       const CallArgs& args, const char* method);
 
-    void neuter(void* newData);
+    void notifyBufferDetached(void* newData);
 
   private:
     static const JSFunctionSpec jsfuncs[];

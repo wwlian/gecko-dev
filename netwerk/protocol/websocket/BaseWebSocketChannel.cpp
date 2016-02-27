@@ -8,6 +8,7 @@
 #include "BaseWebSocketChannel.h"
 #include "MainThreadUtils.h"
 #include "nsILoadGroup.h"
+#include "nsINode.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsAutoPtr.h"
 #include "nsProxyRelease.h"
@@ -359,11 +360,8 @@ BaseWebSocketChannel::ListenerAndContextContainer::~ListenerAndContextContainer(
 {
   MOZ_ASSERT(mListener);
 
-  nsCOMPtr<nsIThread> mainThread;
-  NS_GetMainThread(getter_AddRefs(mainThread));
-
-  NS_ProxyRelease(mainThread, mListener, false);
-  NS_ProxyRelease(mainThread, mContext, false);
+  NS_ReleaseOnMainThread(mListener.forget());
+  NS_ReleaseOnMainThread(mContext.forget());
 }
 
 } // namespace net

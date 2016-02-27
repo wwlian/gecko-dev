@@ -14,6 +14,7 @@
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/Preferences.h"
+#include "nsCanvasFrame.h"
 #include "nsDocShell.h"
 #include "nsFocusManager.h"
 #include "nsFrameSelection.h"
@@ -326,9 +327,22 @@ public:
       rv = nsEventStatus_eConsumeNoDefault;
     }
 
+    return rv;
+  }
+
+  virtual nsEventStatus OnRelease(AccessibleCaretEventHub* aContext) override
+  {
     aContext->SetState(aContext->NoActionState());
 
-    return rv;
+    // Do not consume the release since the press is not consumed in
+    // PressNoCaretState either.
+    return nsEventStatus_eIgnore;
+  }
+
+  virtual void OnScrollStart(AccessibleCaretEventHub* aContext) override
+  {
+    aContext->mManager->OnScrollStart();
+    aContext->SetState(aContext->ScrollState());
   }
 
   virtual void OnReflow(AccessibleCaretEventHub* aContext) override
@@ -445,7 +459,7 @@ AccessibleCaretEventHub::Terminate()
     mScrollEndInjectorTimer->Cancel();
   }
 
-  mManager = nullptr;
+  mManager->Terminate();
   mPresShell = nullptr;
   mInitialized = false;
 }
@@ -458,6 +472,8 @@ AccessibleCaretEventHub::HandleEvent(WidgetEvent* aEvent)
   if (!mInitialized) {
     return status;
   }
+
+  MOZ_ASSERT(mRefCnt.get() > 1, "Expect caller holds us as well!");
 
   switch (aEvent->mClass) {
   case eMouseEventClass:
@@ -629,7 +645,7 @@ AccessibleCaretEventHub::CancelLongTapInjector()
 AccessibleCaretEventHub::FireLongTap(nsITimer* aTimer,
                                      void* aAccessibleCaretEventHub)
 {
-  auto self = static_cast<AccessibleCaretEventHub*>(aAccessibleCaretEventHub);
+  auto* self = static_cast<AccessibleCaretEventHub*>(aAccessibleCaretEventHub);
   self->mState->OnLongTap(self, self->mPressPoint);
 }
 
@@ -640,6 +656,8 @@ AccessibleCaretEventHub::Reflow(DOMHighResTimeStamp aStart,
   if (!mInitialized) {
     return NS_OK;
   }
+
+  MOZ_ASSERT(mRefCnt.get() > 1, "Expect caller holds us as well!");
 
   AC_LOG("%s, state: %s", __FUNCTION__, mState->Name());
   mState->OnReflow(this);
@@ -654,6 +672,8 @@ AccessibleCaretEventHub::ReflowInterruptible(DOMHighResTimeStamp aStart,
     return NS_OK;
   }
 
+  MOZ_ASSERT(mRefCnt.get() > 1, "Expect caller holds us as well!");
+
   return Reflow(aStart, aEnd);
 }
 
@@ -663,6 +683,8 @@ AccessibleCaretEventHub::AsyncPanZoomStarted()
   if (!mInitialized) {
     return;
   }
+
+  MOZ_ASSERT(mRefCnt.get() > 1, "Expect caller holds us as well!");
 
   AC_LOG("%s, state: %s", __FUNCTION__, mState->Name());
   mState->OnScrollStart(this);
@@ -675,6 +697,8 @@ AccessibleCaretEventHub::AsyncPanZoomStopped()
     return;
   }
 
+  MOZ_ASSERT(mRefCnt.get() > 1, "Expect caller holds us as well!");
+
   AC_LOG("%s, state: %s", __FUNCTION__, mState->Name());
   mState->OnScrollEnd(this);
 }
@@ -685,6 +709,8 @@ AccessibleCaretEventHub::ScrollPositionChanged()
   if (!mInitialized) {
     return;
   }
+
+  MOZ_ASSERT(mRefCnt.get() > 1, "Expect caller holds us as well!");
 
   AC_LOG("%s, state: %s", __FUNCTION__, mState->Name());
   mState->OnScrollPositionChanged(this);
@@ -715,7 +741,7 @@ AccessibleCaretEventHub::CancelScrollEndInjector()
 AccessibleCaretEventHub::FireScrollEnd(nsITimer* aTimer,
                                        void* aAccessibleCaretEventHub)
 {
-  auto self = static_cast<AccessibleCaretEventHub*>(aAccessibleCaretEventHub);
+  auto* self = static_cast<AccessibleCaretEventHub*>(aAccessibleCaretEventHub);
   self->mState->OnScrollEnd(self);
 }
 
@@ -728,6 +754,8 @@ AccessibleCaretEventHub::NotifySelectionChanged(nsIDOMDocument* aDoc,
     return NS_OK;
   }
 
+  MOZ_ASSERT(mRefCnt.get() > 1, "Expect caller holds us as well!");
+
   AC_LOG("%s, state: %s, reason: %d", __FUNCTION__, mState->Name(), aReason);
   mState->OnSelectionChanged(this, aDoc, aSel, aReason);
   return NS_OK;
@@ -739,6 +767,8 @@ AccessibleCaretEventHub::NotifyBlur(bool aIsLeavingDocument)
   if (!mInitialized) {
     return;
   }
+
+  MOZ_ASSERT(mRefCnt.get() > 1, "Expect caller holds us as well!");
 
   AC_LOG("%s, state: %s", __FUNCTION__, mState->Name());
   mState->OnBlur(this, aIsLeavingDocument);

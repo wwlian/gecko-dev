@@ -50,6 +50,7 @@ stage-package: $(MOZ_PKG_MANIFEST) $(MOZ_PKG_MANIFEST_DEPS)
 		) \
 		$(if $(JARLOG_DIR),$(addprefix --jarlog ,$(wildcard $(JARLOG_FILE_AB_CD)))) \
 		$(if $(OPTIMIZEJARS),--optimizejars) \
+		$(if $(DISABLE_JAR_COMPRESSION),--disable-compression) \
 		$(addprefix --unify ,$(UNIFY_DIST)) \
 		$(MOZ_PKG_MANIFEST) $(DIST) $(DIST)/$(STAGEPATH)$(MOZ_PKG_DIR)$(if $(MOZ_PKG_MANIFEST),,$(_BINPATH)) \
 		$(if $(filter omni,$(MOZ_PACKAGER_FORMAT)),$(if $(NON_OMNIJAR_FILES),--non-resource $(NON_OMNIJAR_FILES)))
@@ -58,7 +59,7 @@ ifndef MOZ_THUNDERBIRD
 	# Package mozharness
 	$(call py_action,test_archive, \
 		mozharness \
-		$(abspath $(DIST))/$(PKG_PATH)$(MOZHARNESS_PACKAGE))
+		$(ABS_DIST)/$(PKG_PATH)$(MOZHARNESS_PACKAGE))
 endif # MOZ_THUNDERBIRD
 ifdef MOZ_PACKAGE_JSSHELL
 	# Package JavaScript Shell
@@ -95,8 +96,8 @@ GARBAGE += make-package
 make-sourcestamp-file::
 	$(NSINSTALL) -D $(DIST)/$(PKG_PATH)
 	@echo '$(BUILDID)' > $(MOZ_SOURCESTAMP_FILE)
-ifdef MOZ_SOURCE_REPO
-	@echo '$(MOZ_SOURCE_REPO)/rev/$(MOZ_SOURCE_STAMP)' >> $(MOZ_SOURCESTAMP_FILE)
+ifdef MOZ_INCLUDE_SOURCE_INFO
+	@awk '$$2 == "MOZ_SOURCE_URL" {print $$3}' $(DEPTH)/source-repo.h >> $(MOZ_SOURCESTAMP_FILE)
 endif
 
 .PHONY: make-buildinfo-file
@@ -104,9 +105,10 @@ make-buildinfo-file:
 	$(PYTHON) $(MOZILLA_DIR)/toolkit/mozapps/installer/informulate.py \
 		$(MOZ_BUILDINFO_FILE) \
 		BUILDID=$(BUILDID) \
-		$(addprefix MOZ_SOURCE_REPO=,MOZ_SOURCE_REPO=$(MOZ_SOURCE_REPO)) \
-		MOZ_SOURCE_STAMP=$(MOZ_SOURCE_STAMP) \
+		$(addprefix MOZ_SOURCE_REPO=,MOZ_SOURCE_REPO=$(shell awk '$$2 == "MOZ_SOURCE_REPO" {print $$3}' $(DEPTH)/source-repo.h)) \
+		MOZ_SOURCE_STAMP=$(shell awk '$$2 == "MOZ_SOURCE_STAMP" {print $$3}' $(DEPTH)/source-repo.h) \
 		MOZ_PKG_PLATFORM=$(MOZ_PKG_PLATFORM)
+	echo "buildID=$(BUILDID)" > $(MOZ_BUILDID_INFO_TXT_FILE)
 
 .PHONY: make-mozinfo-file
 make-mozinfo-file:

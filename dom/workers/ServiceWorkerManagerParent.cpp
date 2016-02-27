@@ -73,9 +73,11 @@ class UnregisterServiceWorkerCallback final : public nsRunnable
 {
 public:
   UnregisterServiceWorkerCallback(const PrincipalInfo& aPrincipalInfo,
-                                  const nsString& aScope)
+                                  const nsString& aScope,
+                                  uint64_t aParentID)
     : mPrincipalInfo(aPrincipalInfo)
     , mScope(aScope)
+    , mParentID(aParentID)
   {
     AssertIsInMainProcess();
     AssertIsOnBackgroundThread();
@@ -93,12 +95,21 @@ public:
 
     service->UnregisterServiceWorker(mPrincipalInfo,
                                      NS_ConvertUTF16toUTF8(mScope));
+
+    RefPtr<ServiceWorkerManagerService> managerService =
+      ServiceWorkerManagerService::Get();
+    if (managerService) {
+      managerService->PropagateUnregister(mParentID, mPrincipalInfo,
+                                          mScope);
+    }
+
     return NS_OK;
   }
 
 private:
   const PrincipalInfo mPrincipalInfo;
   nsString mScope;
+  uint64_t mParentID;
 };
 
 class CheckPrincipalWithCallbackRunnable final : public nsRunnable
@@ -150,6 +161,7 @@ private:
 ServiceWorkerManagerParent::ServiceWorkerManagerParent()
   : mService(ServiceWorkerManagerService::GetOrCreate())
   , mID(++sServiceWorkerManagerParentID)
+  , mActorDestroyed(false)
 {
   AssertIsOnBackgroundThread();
   mService->RegisterActor(this);
@@ -158,6 +170,17 @@ ServiceWorkerManagerParent::ServiceWorkerManagerParent()
 ServiceWorkerManagerParent::~ServiceWorkerManagerParent()
 {
   AssertIsOnBackgroundThread();
+}
+
+already_AddRefed<ContentParent>
+ServiceWorkerManagerParent::GetContentParent() const
+{
+  AssertIsOnBackgroundThread();
+
+  // This object must be released on main-thread.
+  RefPtr<ContentParent> parent =
+    BackgroundParent::GetContentParent(Manager());
+  return parent.forget();
 }
 
 bool
@@ -169,7 +192,6 @@ ServiceWorkerManagerParent::RecvRegister(
 
   // Basic validation.
   if (aData.scope().IsEmpty() ||
-      aData.scriptSpec().IsEmpty() ||
       aData.principal().type() == PrincipalInfo::TNullPrincipalInfo ||
       aData.principal().type() == PrincipalInfo::TSystemPrincipalInfo) {
     return false;
@@ -211,7 +233,7 @@ ServiceWorkerManagerParent::RecvUnregister(const PrincipalInfo& aPrincipalInfo,
   }
 
   RefPtr<UnregisterServiceWorkerCallback> callback =
-    new UnregisterServiceWorkerCallback(aPrincipalInfo, aScope);
+    new UnregisterServiceWorkerCallback(aPrincipalInfo, aScope, mID);
 
   RefPtr<ContentParent> parent =
     BackgroundParent::GetContentParent(Manager());
@@ -305,6 +327,8 @@ void
 ServiceWorkerManagerParent::ActorDestroy(ActorDestroyReason aWhy)
 {
   AssertIsOnBackgroundThread();
+
+  mActorDestroyed = true;
 
   if (mService) {
     // This object is about to be released and with it, also mService will be

@@ -187,3 +187,16 @@ SSL_SignatureMaxCount;
 ;+    local:
 ;+*;
 ;+};
+;+NSS_3.22 {    # NSS 3.22 release
+;+    global:
+SSL_PeerSignedCertTimestamps;
+SSL_SetSignedCertTimestamps;
+;+    local:
+;+*;
+;+};
+;+NSS_3.23 {    # NSS 3.23 release
+;+    global:
+SSL_SetDowngradeCheckVersion;
+;+    local:
+;+*;
+;+};

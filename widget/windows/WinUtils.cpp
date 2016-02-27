@@ -6,17 +6,22 @@
 
 #include "WinUtils.h"
 
+#include <knownfolders.h>
+#include <winioctl.h>
+
 #include "gfxPlatform.h"
 #include "gfxUtils.h"
 #include "nsWindow.h"
 #include "nsWindowDefs.h"
 #include "KeyboardLayout.h"
 #include "nsIDOMMouseEvent.h"
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/WindowsVersion.h"
+#include "mozilla/unused.h"
 #include "nsIContentPolicy.h"
 #include "nsContentUtils.h"
 
@@ -43,6 +48,7 @@
 #include "nsIThread.h"
 #include "MainThreadUtils.h"
 #include "nsLookAndFeel.h"
+#include "nsWindowsHelpers.h"
 
 #ifdef NS_ENABLE_TSF
 #include <textstor.h>
@@ -429,6 +435,18 @@ WinUtils::DwmDefWindowProcProc WinUtils::dwmDwmDefWindowProcPtr = nullptr;
 WinUtils::DwmGetCompositionTimingInfoProc WinUtils::dwmGetCompositionTimingInfoPtr = nullptr;
 WinUtils::DwmFlushProc WinUtils::dwmFlushProcPtr = nullptr;
 
+// Prefix for path used by NT calls.
+const wchar_t kNTPrefix[] = L"\\??\\";
+const size_t kNTPrefixLen = ArrayLength(kNTPrefix) - 1;
+
+struct CoTaskMemFreePolicy
+{
+  void operator()(void* aPtr) {
+    ::CoTaskMemFree(aPtr);
+  }
+};
+
+
 /* static */
 void
 WinUtils::Initialize()
@@ -524,45 +542,131 @@ WinUtils::Log(const char *fmt, ...)
   delete[] buffer;
 }
 
-/* static */
+// static
 double
-WinUtils::LogToPhysFactor()
+WinUtils::SystemScaleFactor()
 {
-  // dpi / 96.0
-  HDC hdc = ::GetDC(nullptr);
-  double result = ::GetDeviceCaps(hdc, LOGPIXELSY) / 96.0;
-  ::ReleaseDC(nullptr, hdc);
+  // The result of GetDeviceCaps won't change dynamically, as it predates
+  // per-monitor DPI and support for on-the-fly resolution changes.
+  // Therefore, we only need to look it up once.
+  static double systemScale = 0;
+  if (systemScale == 0) {
+    HDC screenDC = GetDC(nullptr);
+    systemScale = GetDeviceCaps(screenDC, LOGPIXELSY) / 96.0;
+    ReleaseDC(nullptr, screenDC);
 
-  if (result == 0) {
-    // Bug 1012487 - This can occur when the Screen DC is used off the
-    // main thread on windows. For now just assume a 100% DPI for this
-    // drawing call.
-    // XXX - fixme!
-    result = 1.0;
+    if (systemScale == 0) {
+      // Bug 1012487 - This can occur when the Screen DC is used off the
+      // main thread on windows. For now just assume a 100% DPI for this
+      // drawing call.
+      // XXX - fixme!
+      return 1.0;
+    }
   }
-  return result;
+  return systemScale;
+}
+
+#ifndef WM_DPICHANGED
+typedef enum {
+  MDT_EFFECTIVE_DPI = 0,
+  MDT_ANGULAR_DPI = 1,
+  MDT_RAW_DPI = 2,
+  MDT_DEFAULT = MDT_EFFECTIVE_DPI
+} MONITOR_DPI_TYPE;
+
+typedef enum {
+  PROCESS_DPI_UNAWARE = 0,
+  PROCESS_SYSTEM_DPI_AWARE = 1,
+  PROCESS_PER_MONITOR_DPI_AWARE = 2
+} PROCESS_DPI_AWARENESS;
+#endif
+
+typedef HRESULT
+(WINAPI *GETDPIFORMONITORPROC)(HMONITOR, MONITOR_DPI_TYPE, UINT*, UINT*);
+
+typedef HRESULT
+(WINAPI *GETPROCESSDPIAWARENESSPROC)(HANDLE, PROCESS_DPI_AWARENESS*);
+
+GETDPIFORMONITORPROC sGetDpiForMonitor;
+GETPROCESSDPIAWARENESSPROC sGetProcessDpiAwareness;
+
+static bool
+SlowIsPerMonitorDPIAware()
+{
+  if (IsVistaOrLater()) {
+    // Intentionally leak the handle.
+    HMODULE shcore =
+      LoadLibraryEx(L"shcore", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (shcore) {
+      sGetDpiForMonitor =
+        (GETDPIFORMONITORPROC) GetProcAddress(shcore, "GetDpiForMonitor");
+      sGetProcessDpiAwareness =
+        (GETPROCESSDPIAWARENESSPROC) GetProcAddress(shcore, "GetProcessDpiAwareness");
+    }
+  }
+  PROCESS_DPI_AWARENESS dpiAwareness;
+  return sGetDpiForMonitor && sGetProcessDpiAwareness &&
+      SUCCEEDED(sGetProcessDpiAwareness(GetCurrentProcess(), &dpiAwareness)) &&
+      dpiAwareness == PROCESS_PER_MONITOR_DPI_AWARE;
+}
+
+/* static */ bool
+WinUtils::IsPerMonitorDPIAware()
+{
+  static bool perMonitorDPIAware = SlowIsPerMonitorDPIAware();
+  return perMonitorDPIAware;
 }
 
 /* static */
 double
-WinUtils::PhysToLogFactor()
+WinUtils::LogToPhysFactor(HMONITOR aMonitor)
 {
-  // 1.0 / (dpi / 96.0)
-  return 1.0 / LogToPhysFactor();
-}
+  if (IsPerMonitorDPIAware()) {
+    UINT dpiX, dpiY = 96;
+    sGetDpiForMonitor(aMonitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
+    return dpiY / 96.0;
+  }
 
-/* static */
-double
-WinUtils::PhysToLog(int32_t aValue)
-{
-  return double(aValue) * PhysToLogFactor();
+  return SystemScaleFactor();
 }
 
 /* static */
 int32_t
-WinUtils::LogToPhys(double aValue)
+WinUtils::LogToPhys(HMONITOR aMonitor, double aValue)
 {
-  return int32_t(NS_round(aValue * LogToPhysFactor()));
+  return int32_t(NS_round(aValue * LogToPhysFactor(aMonitor)));
+}
+
+/* static */
+HMONITOR
+WinUtils::GetPrimaryMonitor()
+{
+  const POINT pt = { 0, 0 };
+  return ::MonitorFromPoint(pt, MONITOR_DEFAULTTOPRIMARY);
+}
+
+/* static */
+HMONITOR
+WinUtils::MonitorFromRect(const gfx::Rect& rect)
+{
+  // convert coordinates from logical to device pixels for MonitorFromRect
+  double dpiScale = nsIWidget::DefaultScaleOverride();
+  if (dpiScale <= 0.0) {
+    if (IsPerMonitorDPIAware()) {
+      dpiScale = 1.0;
+    } else {
+      dpiScale = LogToPhysFactor(GetPrimaryMonitor());
+    }
+  }
+
+  RECT globalWindowBounds = {
+    NSToIntRound(dpiScale * rect.x),
+    NSToIntRound(dpiScale * rect.y),
+    NSToIntRound(dpiScale * (rect.x + rect.width)),
+    NSToIntRound(dpiScale * (rect.y + rect.height))
+  };
+
+  return ::MonitorFromRect(&globalWindowBounds, MONITOR_DEFAULTTONEAREST);
 }
 
 /* static */
@@ -1293,9 +1397,8 @@ NS_IMETHODIMP AsyncEncodeAndWriteIcon::Run()
   fclose(file);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // Cleanup
   if (mURLShortcut) {
-    SendMessage(HWND_BROADCAST, WM_SETTINGCHANGE, SPI_SETNONCLIENTMETRICS, 0);
+    SendNotifyMessage(HWND_BROADCAST, WM_SETTINGCHANGE, SPI_SETNONCLIENTMETRICS, 0);
   }
   return rv;
 }
@@ -1607,7 +1710,7 @@ WinUtils::ConvertHRGNToRegion(HRGN aRgn)
   nsIntRegion rgn;
 
   DWORD size = ::GetRegionData(aRgn, 0, nullptr);
-  nsAutoTArray<uint8_t,100> buffer;
+  AutoTArray<uint8_t,100> buffer;
   buffer.SetLength(size);
 
   RGNDATA* data = reinterpret_cast<RGNDATA*>(buffer.Elements());
@@ -1689,6 +1792,119 @@ WinUtils::GetMaxTouchPoints()
     return GetSystemMetrics(SM_MAXIMUMTOUCHES);
   }
   return 0;
+}
+
+#pragma pack(push, 1)
+typedef struct REPARSE_DATA_BUFFER {
+  ULONG  ReparseTag;
+  USHORT ReparseDataLength;
+  USHORT Reserved;
+  union {
+    struct {
+      USHORT SubstituteNameOffset;
+      USHORT SubstituteNameLength;
+      USHORT PrintNameOffset;
+      USHORT PrintNameLength;
+      ULONG  Flags;
+      WCHAR  PathBuffer[1];
+    } SymbolicLinkReparseBuffer;
+    struct {
+      USHORT SubstituteNameOffset;
+      USHORT SubstituteNameLength;
+      USHORT PrintNameOffset;
+      USHORT PrintNameLength;
+      WCHAR  PathBuffer[1];
+    } MountPointReparseBuffer;
+    struct {
+      UCHAR DataBuffer[1];
+    } GenericReparseBuffer;
+  };
+} REPARSE_DATA_BUFFER, *PREPARSE_DATA_BUFFER;
+#pragma pack(pop)
+
+/* static */
+bool
+WinUtils::ResolveMovedUsersFolder(std::wstring& aPath)
+{
+  // Users folder was introduced with Vista.
+  if (!IsVistaOrLater()) {
+    return true;
+  }
+
+  wchar_t* usersPath;
+  if (FAILED(WinUtils::SHGetKnownFolderPath(FOLDERID_UserProfiles, 0, nullptr,
+                                            &usersPath))) {
+    return false;
+  }
+
+  // Ensure usersPath gets freed properly.
+  UniquePtr<wchar_t, CoTaskMemFreePolicy> autoFreePath(usersPath);
+
+  // Is aPath in Users folder?
+  size_t usersLen = wcslen(usersPath);
+  if (_wcsnicmp(aPath.c_str(), usersPath, usersLen) != 0 ||
+      aPath[usersLen] != L'\\') {
+    return true;
+  }
+
+  DWORD attributes = ::GetFileAttributesW(usersPath);
+  if (attributes == INVALID_FILE_ATTRIBUTES) {
+    return false;
+  }
+
+  // Junction points are implemented as reparse points, is the Users folder one?
+  if (!(attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+    return true;
+  }
+
+  // Get the reparse point data.
+  nsAutoHandle usersHandle(
+    ::CreateFileW(usersPath, 0,
+                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                  nullptr, OPEN_EXISTING,
+                  FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                  nullptr));
+
+  char maxReparseBuf[MAXIMUM_REPARSE_DATA_BUFFER_SIZE] = {0};
+  REPARSE_DATA_BUFFER* reparseBuf = (REPARSE_DATA_BUFFER*)maxReparseBuf;
+  DWORD bytesReturned = 0;
+  if (!::DeviceIoControl(usersHandle, FSCTL_GET_REPARSE_POINT, nullptr, 0,
+                         reparseBuf, MAXIMUM_REPARSE_DATA_BUFFER_SIZE,
+                         &bytesReturned, nullptr)) {
+    return false;
+  }
+
+  // Check to see if the reparse point is a junction point.
+  if (reparseBuf->ReparseTag != IO_REPARSE_TAG_MOUNT_POINT) {
+    return true;
+  }
+
+  // The offset and length are in bytes. Length doesn't include null.
+  wchar_t* substituteName = reparseBuf->MountPointReparseBuffer.PathBuffer +
+    reparseBuf->MountPointReparseBuffer.SubstituteNameOffset / sizeof(wchar_t);
+  std::wstring::size_type substituteLen =
+    reparseBuf->MountPointReparseBuffer.SubstituteNameLength / sizeof(wchar_t);
+
+  // If the substitute path starts with the NT namespace then remove it.
+  if (wcsncmp(substituteName, kNTPrefix, kNTPrefixLen) == 0) {
+    substituteName += kNTPrefixLen;
+    substituteLen -= kNTPrefixLen;
+  }
+
+  // Check that what remains looks like a drive letter path.
+  if (substituteName[1] != L':' || substituteName[2] != L'\\') {
+    return false;
+  }
+
+  // The documentation for SHGetKnownFolderPath says that it doesn't return a
+  // trailing backslash. The REPARSE_DATA_BUFFER path doesn't seem to have one
+  // either, but the documentation doesn't mention it, so let's make sure.
+  if (substituteName[substituteLen - 1] == L'\\') {
+    --substituteLen;
+  }
+
+  aPath.replace(0, usersLen, substituteName, substituteLen);
+  return true;
 }
 
 } // namespace widget

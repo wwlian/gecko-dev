@@ -284,27 +284,7 @@ class MacroAssembler : public MacroAssemblerSpecific
             type_(type)
         { }
 
-        void emit(MacroAssembler& masm) {
-            MOZ_ASSERT(isInitialized());
-            MIRType mirType = MIRType_None;
-
-            if (type_.isPrimitive()) {
-                if (type_.isMagicArguments())
-                    mirType = MIRType_MagicOptimizedArguments;
-                else
-                    mirType = MIRTypeFromValueType(type_.primitive());
-            } else if (type_.isAnyObject()) {
-                mirType = MIRType_Object;
-            } else {
-                MOZ_CRASH("Unknown conversion to mirtype");
-            }
-
-            if (mirType == MIRType_Double)
-                masm.branchTestNumber(cond(), reg(), jump());
-            else
-                masm.branchTestMIRType(cond(), reg(), mirType, jump());
-        }
-
+        void emit(MacroAssembler& masm);
     };
 
     /*
@@ -325,10 +305,7 @@ class MacroAssembler : public MacroAssemblerSpecific
             ptr_(ptr)
         { }
 
-        void emit(MacroAssembler& masm) {
-            MOZ_ASSERT(isInitialized());
-            masm.branchPtr(cond(), reg(), ptr_, jump());
-        }
+        void emit(MacroAssembler& masm);
     };
 
     mozilla::Maybe<AutoRooter> autoRooter_;
@@ -338,12 +315,6 @@ class MacroAssembler : public MacroAssemblerSpecific
   private:
     // Labels for handling exceptions and failures.
     NonAssertingLabel failureLabel_;
-
-    // Asm failure labels
-    NonAssertingLabel asmStackOverflowLabel_;
-    NonAssertingLabel asmSyncInterruptLabel_;
-    NonAssertingLabel asmOnConversionErrorLabel_;
-    NonAssertingLabel asmOnOutOfBoundsLabel_;
 
   public:
     MacroAssembler()
@@ -381,15 +352,14 @@ class MacroAssembler : public MacroAssemblerSpecific
 
     // asm.js compilation handles its own JitContext-pushing
     struct AsmJSToken {};
-    explicit MacroAssembler(AsmJSToken, TempAllocator *alloc)
+    explicit MacroAssembler(AsmJSToken, TempAllocator& alloc)
       : framePushed_(0),
 #ifdef DEBUG
         inCall_(false),
 #endif
         emitProfilingInstrumentation_(false)
     {
-        if (alloc)
-            moveResolver_.setAllocator(*alloc);
+        moveResolver_.setAllocator(alloc);
 
 #if defined(JS_CODEGEN_ARM)
         initWithAllocator();
@@ -505,11 +475,17 @@ class MacroAssembler : public MacroAssemblerSpecific
     void call(JitCode* c) PER_SHARED_ARCH;
 
     inline void call(const wasm::CallSiteDesc& desc, const Register reg);
-    inline void call(const wasm::CallSiteDesc& desc, Label* label);
     inline void call(const wasm::CallSiteDesc& desc, AsmJSInternalCallee callee);
 
     CodeOffset callWithPatch() PER_SHARED_ARCH;
     void patchCall(uint32_t callerOffset, uint32_t calleeOffset) PER_SHARED_ARCH;
+
+    // Thunks provide the ability to jump to any uint32_t offset from any other
+    // uint32_t offset without using a constant pool (thus returning a simple
+    // CodeOffset instead of a CodeOffsetJump).
+    CodeOffset thunkWithPatch() PER_SHARED_ARCH;
+    void patchThunk(uint32_t thunkOffset, uint32_t targetOffset) PER_SHARED_ARCH;
+    static void repatchThunk(uint8_t* code, uint32_t thunkOffset, uint32_t targetOffset) PER_SHARED_ARCH;
 
     // Push the return address and make a call. On platforms where this function
     // is not defined, push the link register (pushReturnAddress) at the entry
@@ -613,10 +589,10 @@ class MacroAssembler : public MacroAssemblerSpecific
 
     // The frame descriptor is the second field of all Jit frames, pushed before
     // calling the Jit function.  It is a composite value defined in JitFrames.h
-    inline void makeFrameDescriptor(Register frameSizeReg, FrameType type);
+    inline void makeFrameDescriptor(Register frameSizeReg, FrameType type, uint32_t headerSize);
 
     // Push the frame descriptor, based on the statically known framePushed.
-    inline void pushStaticFrameDescriptor(FrameType type);
+    inline void pushStaticFrameDescriptor(FrameType type, uint32_t headerSize);
 
     // Push the callee token of a JSFunction which pointer is stored in the
     // |callee| register. The callee token is packed with a |constructing| flag
@@ -697,6 +673,12 @@ class MacroAssembler : public MacroAssemblerSpecific
 
   public:
     // ===============================================================
+    // Move instructions
+
+    inline void move64(Imm64 imm, Register64 dest) PER_ARCH;
+    inline void move64(Register64 src, Register64 dest) PER_ARCH;
+
+    // ===============================================================
     // Logical instructions
 
     inline void not32(Register reg) PER_SHARED_ARCH;
@@ -711,6 +693,8 @@ class MacroAssembler : public MacroAssemblerSpecific
     inline void andPtr(Imm32 imm, Register dest) PER_ARCH;
 
     inline void and64(Imm64 imm, Register64 dest) PER_ARCH;
+    inline void or64(Imm64 imm, Register64 dest) PER_ARCH;
+    inline void xor64(Imm64 imm, Register64 dest) PER_ARCH;
 
     inline void or32(Register src, Register dest) PER_SHARED_ARCH;
     inline void or32(Imm32 imm, Register dest) PER_SHARED_ARCH;
@@ -731,11 +715,59 @@ class MacroAssembler : public MacroAssemblerSpecific
     // ===============================================================
     // Arithmetic functions
 
+    inline void add32(Register src, Register dest) PER_SHARED_ARCH;
+    inline void add32(Imm32 imm, Register dest) PER_SHARED_ARCH;
+    inline void add32(Imm32 imm, const Address& dest) PER_SHARED_ARCH;
+    inline void add32(Imm32 imm, const AbsoluteAddress& dest) DEFINED_ON(x86_shared);
+
+    inline void addPtr(Register src, Register dest) PER_ARCH;
+    inline void addPtr(Register src1, Register src2, Register dest) DEFINED_ON(arm64);
+    inline void addPtr(Imm32 imm, Register dest) PER_ARCH;
+    inline void addPtr(Imm32 imm, Register src, Register dest) DEFINED_ON(arm64);
+    inline void addPtr(ImmWord imm, Register dest) PER_ARCH;
+    inline void addPtr(ImmPtr imm, Register dest);
+    inline void addPtr(Imm32 imm, const Address& dest) DEFINED_ON(mips_shared, arm, arm64, x86, x64);
+    inline void addPtr(Imm32 imm, const AbsoluteAddress& dest) DEFINED_ON(x86, x64);
+    inline void addPtr(const Address& src, Register dest) DEFINED_ON(mips_shared, arm, arm64, x86, x64);
+
+    inline void add64(Register64 src, Register64 dest) PER_ARCH;
+    inline void add64(Imm32 imm, Register64 dest) PER_ARCH;
+
+    inline void addFloat32(FloatRegister src, FloatRegister dest) DEFINED_ON(x86_shared);
+
+    inline void addDouble(FloatRegister src, FloatRegister dest) PER_SHARED_ARCH;
+    inline void addConstantDouble(double d, FloatRegister dest) DEFINED_ON(x86);
+
     inline void sub32(const Address& src, Register dest) PER_SHARED_ARCH;
     inline void sub32(Register src, Register dest) PER_SHARED_ARCH;
     inline void sub32(Imm32 imm, Register dest) PER_SHARED_ARCH;
 
-    inline void add64(Register64 src, Register64 dest) PER_ARCH;
+    inline void subPtr(Register src, Register dest) PER_ARCH;
+    inline void subPtr(Register src, const Address& dest) DEFINED_ON(mips_shared, arm, arm64, x86, x64);
+    inline void subPtr(Imm32 imm, Register dest) PER_ARCH;
+    inline void subPtr(const Address& addr, Register dest) DEFINED_ON(mips_shared, arm, arm64, x86, x64);
+
+    inline void subDouble(FloatRegister src, FloatRegister dest) PER_SHARED_ARCH;
+
+    inline void mul32(Register src1, Register src2, Register dest, Label* onOver, Label* onZero) DEFINED_ON(arm64);
+
+    inline void mul64(Imm64 imm, const Register64& dest) PER_ARCH;
+
+    inline void mulBy3(Register src, Register dest) PER_ARCH;
+
+    inline void mulDouble(FloatRegister src, FloatRegister dest) PER_SHARED_ARCH;
+
+    inline void mulDoublePtr(ImmPtr imm, Register temp, FloatRegister dest) DEFINED_ON(mips_shared, arm, arm64, x86, x64);
+
+    inline void divDouble(FloatRegister src, FloatRegister dest) PER_SHARED_ARCH;
+
+    inline void inc64(AbsoluteAddress dest) PER_ARCH;
+
+    inline void neg32(Register reg) PER_SHARED_ARCH;
+
+    inline void negateFloat(FloatRegister reg) DEFINED_ON(arm64, x86_shared);
+
+    inline void negateDouble(FloatRegister reg) PER_SHARED_ARCH;
 
     // ===============================================================
     // Shift functions
@@ -750,6 +782,154 @@ class MacroAssembler : public MacroAssemblerSpecific
     inline void rshiftPtrArithmetic(Imm32 imm, Register dest) PER_ARCH;
 
     inline void rshift64(Imm32 imm, Register64 dest) PER_ARCH;
+
+    // ===============================================================
+    // Branch functions
+
+    inline void branch32(Condition cond, Register lhs, Register rhs, Label* label) PER_SHARED_ARCH;
+    template <class L>
+    inline void branch32(Condition cond, Register lhs, Imm32 rhs, L label) PER_SHARED_ARCH;
+    inline void branch32(Condition cond, const Address& lhs, Register rhs, Label* label) PER_SHARED_ARCH;
+    inline void branch32(Condition cond, const Address& lhs, Imm32 rhs, Label* label) PER_SHARED_ARCH;
+
+    inline void branch32(Condition cond, const AbsoluteAddress& lhs, Register rhs, Label* label)
+        DEFINED_ON(arm, arm64, mips_shared, x86, x64);
+    inline void branch32(Condition cond, const AbsoluteAddress& lhs, Imm32 rhs, Label* label)
+        DEFINED_ON(arm, arm64, mips_shared, x86, x64);
+
+    inline void branch32(Condition cond, const BaseIndex& lhs, Register rhs, Label* label)
+        DEFINED_ON(x86_shared);
+    inline void branch32(Condition cond, const BaseIndex& lhs, Imm32 rhs, Label* label) PER_SHARED_ARCH;
+
+    inline void branch32(Condition cond, const Operand& lhs, Register rhs, Label* label) PER_SHARED_ARCH;
+    inline void branch32(Condition cond, const Operand& lhs, Imm32 rhs, Label* label) PER_SHARED_ARCH;
+
+    inline void branch32(Condition cond, wasm::SymbolicAddress lhs, Imm32 rhs, Label* label)
+        DEFINED_ON(arm, arm64, mips_shared, x86, x64);
+
+    inline void branchPtr(Condition cond, Register lhs, Register rhs, Label* label) PER_SHARED_ARCH;
+    inline void branchPtr(Condition cond, Register lhs, Imm32 rhs, Label* label) PER_SHARED_ARCH;
+    inline void branchPtr(Condition cond, Register lhs, ImmPtr rhs, Label* label) PER_SHARED_ARCH;
+    inline void branchPtr(Condition cond, Register lhs, ImmGCPtr rhs, Label* label) PER_SHARED_ARCH;
+    inline void branchPtr(Condition cond, Register lhs, ImmWord rhs, Label* label) PER_SHARED_ARCH;
+
+    inline void branchPtr(Condition cond, const Address& lhs, Register rhs, Label* label) PER_SHARED_ARCH;
+    inline void branchPtr(Condition cond, const Address& lhs, ImmPtr rhs, Label* label) PER_SHARED_ARCH;
+    inline void branchPtr(Condition cond, const Address& lhs, ImmGCPtr rhs, Label* label) PER_SHARED_ARCH;
+    inline void branchPtr(Condition cond, const Address& lhs, ImmWord rhs, Label* label) PER_SHARED_ARCH;
+
+    inline void branchPtr(Condition cond, const AbsoluteAddress& lhs, Register rhs, Label* label)
+        DEFINED_ON(arm, arm64, mips_shared, x86, x64);
+    inline void branchPtr(Condition cond, const AbsoluteAddress& lhs, ImmWord rhs, Label* label)
+        DEFINED_ON(arm, arm64, mips_shared, x86, x64);
+
+    inline void branchPtr(Condition cond, wasm::SymbolicAddress lhs, Register rhs, Label* label)
+        DEFINED_ON(arm, arm64, mips_shared, x86, x64);
+
+    template <typename T>
+    inline CodeOffsetJump branchPtrWithPatch(Condition cond, Register lhs, T rhs, RepatchLabel* label) PER_SHARED_ARCH;
+    template <typename T>
+    inline CodeOffsetJump branchPtrWithPatch(Condition cond, Address lhs, T rhs, RepatchLabel* label) PER_SHARED_ARCH;
+
+    void branchPtrInNurseryRange(Condition cond, Register ptr, Register temp, Label* label)
+        DEFINED_ON(arm, arm64, mips_shared, x86, x64);
+    void branchValueIsNurseryObject(Condition cond, ValueOperand value, Register temp, Label* label) PER_ARCH;
+
+    // This function compares a Value (lhs) which is having a private pointer
+    // boxed inside a js::Value, with a raw pointer (rhs).
+    inline void branchPrivatePtr(Condition cond, const Address& lhs, Register rhs, Label* label) PER_ARCH;
+
+    inline void branchFloat(DoubleCondition cond, FloatRegister lhs, FloatRegister rhs,
+                            Label* label) PER_SHARED_ARCH;
+    inline void branchTruncateFloat32(FloatRegister src, Register dest, Label* fail)
+        DEFINED_ON(arm, arm64, mips_shared, x86, x64);
+
+    inline void branchDouble(DoubleCondition cond, FloatRegister lhs, FloatRegister rhs,
+                             Label* label) PER_SHARED_ARCH;
+    inline void branchTruncateDouble(FloatRegister src, Register dest, Label* fail)
+        DEFINED_ON(arm, arm64, mips_shared, x86, x64);
+
+    template <typename T>
+    inline void branchAdd32(Condition cond, T src, Register dest, Label* label) PER_SHARED_ARCH;
+    template <typename T>
+    inline void branchSub32(Condition cond, T src, Register dest, Label* label) PER_SHARED_ARCH;
+
+    inline void decBranchPtr(Condition cond, Register lhs, Imm32 rhs, Label* label) PER_SHARED_ARCH;
+
+    template <class L>
+    inline void branchTest32(Condition cond, Register lhs, Register rhs, L label) PER_SHARED_ARCH;
+    template <class L>
+    inline void branchTest32(Condition cond, Register lhs, Imm32 rhs, L label) PER_SHARED_ARCH;
+    inline void branchTest32(Condition cond, const Address& lhs, Imm32 rhh, Label* label) PER_SHARED_ARCH;
+    inline void branchTest32(Condition cond, const AbsoluteAddress& lhs, Imm32 rhs, Label* label)
+        DEFINED_ON(arm, arm64, mips_shared, x86, x64);
+
+    inline void branchTestPtr(Condition cond, Register lhs, Register rhs, Label* label) PER_SHARED_ARCH;
+    inline void branchTestPtr(Condition cond, Register lhs, Imm32 rhs, Label* label) PER_SHARED_ARCH;
+    inline void branchTestPtr(Condition cond, const Address& lhs, Imm32 rhs, Label* label) PER_SHARED_ARCH;
+
+    inline void branchTest64(Condition cond, Register64 lhs, Register64 rhs, Register temp,
+                             Label* label) PER_ARCH;
+
+    // Branches to |label| if |reg| is false. |reg| should be a C++ bool.
+    template <class L>
+    inline void branchIfFalseBool(Register reg, L label);
+
+    // Branches to |label| if |reg| is true. |reg| should be a C++ bool.
+    inline void branchIfTrueBool(Register reg, Label* label);
+
+    inline void branchIfRope(Register str, Label* label);
+
+    inline void branchLatin1String(Register string, Label* label);
+    inline void branchTwoByteString(Register string, Label* label);
+
+    inline void branchIfFunctionHasNoScript(Register fun, Label* label);
+    inline void branchIfInterpreted(Register fun, Label* label);
+
+    inline void branchFunctionKind(Condition cond, JSFunction::FunctionKind kind, Register fun,
+                                   Register scratch, Label* label);
+
+    void branchIfNotInterpretedConstructor(Register fun, Register scratch, Label* label);
+
+    inline void branchTestObjClass(Condition cond, Register obj, Register scratch, const js::Class* clasp,
+                                   Label* label);
+    inline void branchTestObjShape(Condition cond, Register obj, const Shape* shape, Label* label);
+    inline void branchTestObjShape(Condition cond, Register obj, Register shape, Label* label);
+    inline void branchTestObjGroup(Condition cond, Register obj, ObjectGroup* group, Label* label);
+    inline void branchTestObjGroup(Condition cond, Register obj, Register group, Label* label);
+
+    inline void branchTestObjectTruthy(bool truthy, Register objReg, Register scratch,
+                                       Label* slowCheck, Label* checked);
+
+    inline void branchTestClassIsProxy(bool proxy, Register clasp, Label* label);
+
+    inline void branchTestObjectIsProxy(bool proxy, Register object, Register scratch, Label* label);
+
+    inline void branchTestProxyHandlerFamily(Condition cond, Register proxy, Register scratch,
+                                             const void* handlerp, Label* label);
+
+    template <typename Value>
+    inline void branchTestMIRType(Condition cond, const Value& val, MIRType type, Label* label);
+
+    // Emit type case branch on tag matching if the type tag in the definition
+    // might actually be that type.
+    void branchEqualTypeIfNeeded(MIRType type, MDefinition* maybeDef, Register tag, Label* label);
+
+    template <typename T>
+    inline void branchKey(Condition cond, const T& length, const Int32Key& key, Label* label);
+
+    inline void branchTestNeedsIncrementalBarrier(Condition cond, Label* label);
+
+    inline void branchTestInt32(Condition cond, Register tag, Label* label)
+        DEFINED_ON(arm, arm64, mips_shared, x86, x64);
+    inline void branchTestInt32(Condition cond, const Address& address, Label* label)
+        DEFINED_ON(arm, arm64, mips_shared, x86, x64);
+    inline void branchTestInt32(Condition cond, const BaseIndex& address, Label* label)
+        DEFINED_ON(arm, arm64, mips_shared, x86, x64);
+    inline void branchTestInt32(Condition cond, const ValueOperand& src, Label* label) PER_ARCH;
+
+    inline void branchTestInt32Truthy(bool truthy, const ValueOperand& operand, Label* label)
+        DEFINED_ON(arm, arm64, mips32, mips64, x86_shared);
 
     //}}} check_macroassembler_style
   public:
@@ -778,61 +958,6 @@ class MacroAssembler : public MacroAssemblerSpecific
         loadObjGroup(objReg, dest);
         loadPtr(Address(dest, ObjectGroup::offsetOfClasp()), dest);
     }
-    void branchTestObjClass(Condition cond, Register obj, Register scratch, const js::Class* clasp,
-                            Label* label) {
-        loadObjGroup(obj, scratch);
-        branchPtr(cond, Address(scratch, ObjectGroup::offsetOfClasp()), ImmPtr(clasp), label);
-    }
-    void branchTestObjShape(Condition cond, Register obj, const Shape* shape, Label* label) {
-        branchPtr(cond, Address(obj, JSObject::offsetOfShape()), ImmGCPtr(shape), label);
-    }
-    void branchTestObjShape(Condition cond, Register obj, Register shape, Label* label) {
-        branchPtr(cond, Address(obj, JSObject::offsetOfShape()), shape, label);
-    }
-    void branchTestObjGroup(Condition cond, Register obj, ObjectGroup* group, Label* label) {
-        branchPtr(cond, Address(obj, JSObject::offsetOfGroup()), ImmGCPtr(group), label);
-    }
-    void branchTestObjGroup(Condition cond, Register obj, Register group, Label* label) {
-        branchPtr(cond, Address(obj, JSObject::offsetOfGroup()), group, label);
-    }
-    void branchTestProxyHandlerFamily(Condition cond, Register proxy, Register scratch,
-                                      const void* handlerp, Label* label) {
-        Address handlerAddr(proxy, ProxyObject::offsetOfHandler());
-        loadPtr(handlerAddr, scratch);
-        Address familyAddr(scratch, BaseProxyHandler::offsetOfFamily());
-        branchPtr(cond, familyAddr, ImmPtr(handlerp), label);
-    }
-
-    template <typename Value>
-    void branchTestMIRType(Condition cond, const Value& val, MIRType type, Label* label) {
-        switch (type) {
-          case MIRType_Null:      return branchTestNull(cond, val, label);
-          case MIRType_Undefined: return branchTestUndefined(cond, val, label);
-          case MIRType_Boolean:   return branchTestBoolean(cond, val, label);
-          case MIRType_Int32:     return branchTestInt32(cond, val, label);
-          case MIRType_String:    return branchTestString(cond, val, label);
-          case MIRType_Symbol:    return branchTestSymbol(cond, val, label);
-          case MIRType_Object:    return branchTestObject(cond, val, label);
-          case MIRType_Double:    return branchTestDouble(cond, val, label);
-          case MIRType_MagicOptimizedArguments: // Fall through.
-          case MIRType_MagicIsConstructing:
-          case MIRType_MagicHole: return branchTestMagic(cond, val, label);
-          default:
-            MOZ_CRASH("Bad MIRType");
-        }
-    }
-
-    // Branches to |label| if |reg| is false. |reg| should be a C++ bool.
-    void branchIfFalseBool(Register reg, Label* label) {
-        // Note that C++ bool is only 1 byte, so ignore the higher-order bits.
-        branchTest32(Assembler::Zero, reg, Imm32(0xFF), label);
-    }
-
-    // Branches to |label| if |reg| is true. |reg| should be a C++ bool.
-    void branchIfTrueBool(Register reg, Label* label) {
-        // Note that C++ bool is only 1 byte, so ignore the higher-order bits.
-        branchTest32(Assembler::NonZero, reg, Imm32(0xFF), label);
-    }
 
     void loadObjPrivate(Register obj, uint32_t nfixed, Register dest) {
         loadPtr(Address(obj, NativeObject::getPrivateDataOffset(nfixed)), dest);
@@ -849,12 +974,6 @@ class MacroAssembler : public MacroAssemblerSpecific
 
     void loadStringChars(Register str, Register dest);
     void loadStringChar(Register str, Register index, Register output);
-
-    void branchIfRope(Register str, Label* label) {
-        Address flags(str, JSString::offsetOfFlags());
-        static_assert(JSString::ROPE_FLAGS == 0, "Rope type flags must be 0");
-        branchTest32(Assembler::Zero, flags, Imm32(JSString::TYPE_FLAGS_MASK), label);
-    }
 
     void loadJSContext(Register dest) {
         loadPtr(AbsoluteAddress(GetJitContext()->runtime->addressOfJSContext()), dest);
@@ -902,15 +1021,7 @@ class MacroAssembler : public MacroAssemblerSpecific
     }
 
     template <typename T>
-    void storeObjectOrNull(Register src, const T& dest) {
-        Label notNull, done;
-        branchTestPtr(Assembler::NonZero, src, src, &notNull);
-        storeValue(NullValue(), dest);
-        jump(&done);
-        bind(&notNull);
-        storeValue(JSVAL_TYPE_OBJECT, src, dest);
-        bind(&done);
-    }
+    inline void storeObjectOrNull(Register src, const T& dest);
 
     template <typename T>
     void storeConstantOrRegister(ConstantOrRegister src, const T& dest) {
@@ -930,15 +1041,7 @@ class MacroAssembler : public MacroAssemblerSpecific
             moveDouble(ReturnDoubleReg, reg);
     }
 
-    void storeCallResultValue(AnyRegister dest) {
-#if defined(JS_NUNBOX32)
-        unboxValue(ValueOperand(JSReturnReg_Type, JSReturnReg_Data), dest);
-#elif defined(JS_PUNBOX64)
-        unboxValue(ValueOperand(JSReturnReg), dest);
-#else
-#error "Bad architecture"
-#endif
-    }
+    inline void storeCallResultValue(AnyRegister dest);
 
     void storeCallResultValue(ValueOperand dest) {
 #if defined(JS_NUNBOX32)
@@ -969,66 +1072,20 @@ class MacroAssembler : public MacroAssemblerSpecific
 #endif
     }
 
-    void storeCallResultValue(TypedOrValueRegister dest) {
-        if (dest.hasValue())
-            storeCallResultValue(dest.valueReg());
-        else
-            storeCallResultValue(dest.typedReg());
-    }
+    inline void storeCallResultValue(TypedOrValueRegister dest);
 
     template <typename T>
     Register extractString(const T& source, Register scratch) {
         return extractObject(source, scratch);
     }
 
-    void branchIfFunctionHasNoScript(Register fun, Label* label) {
-        // 16-bit loads are slow and unaligned 32-bit loads may be too so
-        // perform an aligned 32-bit load and adjust the bitmask accordingly.
-        MOZ_ASSERT(JSFunction::offsetOfNargs() % sizeof(uint32_t) == 0);
-        MOZ_ASSERT(JSFunction::offsetOfFlags() == JSFunction::offsetOfNargs() + 2);
-        Address address(fun, JSFunction::offsetOfNargs());
-        int32_t bit = IMM32_16ADJ(JSFunction::INTERPRETED);
-        branchTest32(Assembler::Zero, address, Imm32(bit), label);
-    }
-    void branchIfInterpreted(Register fun, Label* label) {
-        // 16-bit loads are slow and unaligned 32-bit loads may be too so
-        // perform an aligned 32-bit load and adjust the bitmask accordingly.
-        MOZ_ASSERT(JSFunction::offsetOfNargs() % sizeof(uint32_t) == 0);
-        MOZ_ASSERT(JSFunction::offsetOfFlags() == JSFunction::offsetOfNargs() + 2);
-        Address address(fun, JSFunction::offsetOfNargs());
-        int32_t bit = IMM32_16ADJ(JSFunction::INTERPRETED);
-        branchTest32(Assembler::NonZero, address, Imm32(bit), label);
-    }
-
-    void branchIfNotInterpretedConstructor(Register fun, Register scratch, Label* label);
-
-    void bumpKey(Int32Key* key, int diff) {
-        if (key->isRegister())
-            add32(Imm32(diff), key->reg());
-        else
-            key->bumpConstant(diff);
-    }
+    inline void bumpKey(Int32Key* key, int diff);
 
     void storeKey(const Int32Key& key, const Address& dest) {
         if (key.isRegister())
             store32(key.reg(), dest);
         else
             store32(Imm32(key.constant()), dest);
-    }
-
-    template<typename T>
-    void branchKey(Condition cond, const T& length, const Int32Key& key, Label* label) {
-        if (key.isRegister())
-            branch32(cond, length, key.reg(), label);
-        else
-            branch32(cond, length, Imm32(key.constant()), label);
-    }
-
-    void branchTestNeedsIncrementalBarrier(Condition cond, Label* label) {
-        MOZ_ASSERT(cond == Zero || cond == NonZero);
-        CompileZone* zone = GetJitContext()->compartment->zone();
-        AbsoluteAddress needsBarrierAddr(zone->addressOfNeedsIncrementalBarrier());
-        branchTest32(cond, needsBarrierAddr, Imm32(0x1), label);
     }
 
     template <typename T>
@@ -1066,19 +1123,9 @@ class MacroAssembler : public MacroAssemblerSpecific
         bind(&done);
     }
 
-    void canonicalizeDouble(FloatRegister reg) {
-        Label notNaN;
-        branchDouble(DoubleOrdered, reg, reg, &notNaN);
-        loadConstantDouble(JS::GenericNaN(), reg);
-        bind(&notNaN);
-    }
+    inline void canonicalizeDouble(FloatRegister reg);
 
-    void canonicalizeFloat(FloatRegister reg) {
-        Label notNaN;
-        branchFloat(DoubleOrdered, reg, reg, &notNaN);
-        loadConstantFloat32(float(JS::GenericNaN()), reg);
-        bind(&notNaN);
-    }
+    inline void canonicalizeFloat(FloatRegister reg);
 
     template<typename T>
     void loadFromTypedArray(Scalar::Type arrayType, const T& src, AnyRegister dest, Register temp, Label* fail,
@@ -1172,10 +1219,6 @@ class MacroAssembler : public MacroAssemblerSpecific
         bind(&done);
     }
 
-    // Emit type case branch on tag matching if the type tag in the definition
-    // might actually be that type.
-    void branchEqualTypeIfNeeded(MIRType type, MDefinition* maybeDef, Register tag, Label* label);
-
     // Inline allocation.
   private:
     void checkAllocatorState(Label* fail);
@@ -1218,46 +1261,13 @@ class MacroAssembler : public MacroAssemblerSpecific
     // Generates code used to complete a bailout.
     void generateBailoutTail(Register scratch, Register bailoutInfo);
 
-    void branchTestObjectTruthy(bool truthy, Register objReg, Register scratch,
-                                Label* slowCheck, Label* checked)
-    {
-        // The branches to out-of-line code here implement a conservative version
-        // of the JSObject::isWrapper test performed in EmulatesUndefined.  If none
-        // of the branches are taken, we can check class flags directly.
-        loadObjClass(objReg, scratch);
-        Address flags(scratch, Class::offsetOfFlags());
-
-        branchTestClassIsProxy(true, scratch, slowCheck);
-
-        Condition cond = truthy ? Assembler::Zero : Assembler::NonZero;
-        branchTest32(cond, flags, Imm32(JSCLASS_EMULATES_UNDEFINED), checked);
-    }
-
-    void branchTestClassIsProxy(bool proxy, Register clasp, Label* label)
-    {
-        branchTest32(proxy ? Assembler::NonZero : Assembler::Zero,
-                     Address(clasp, Class::offsetOfFlags()),
-                     Imm32(JSCLASS_IS_PROXY), label);
-    }
-
-    void branchTestObjectIsProxy(bool proxy, Register object, Register scratch, Label* label)
-    {
-        loadObjClass(object, scratch);
-        branchTestClassIsProxy(proxy, scratch, label);
-    }
-
-    inline void branchFunctionKind(Condition cond, JSFunction::FunctionKind kind, Register fun,
-                                   Register scratch, Label* label);
-
   public:
 #ifndef JS_CODEGEN_ARM64
     // StackPointer manipulation functions.
     // On ARM64, the StackPointer is implemented as two synchronized registers.
     // Code shared across platforms must use these functions to be valid.
-    template <typename T>
-    void addToStackPtr(T t) { addPtr(t, getStackPointer()); }
-    template <typename T>
-    void addStackPtrTo(T t) { addPtr(getStackPointer(), t); }
+    template <typename T> inline void addToStackPtr(T t);
+    template <typename T> inline void addStackPtrTo(T t);
 
     template <typename T>
     void subFromStackPtr(T t) { subPtr(t, getStackPointer()); }
@@ -1283,17 +1293,11 @@ class MacroAssembler : public MacroAssemblerSpecific
     // On ARM64, sp can function as the zero register depending on context.
     // Code shared across platforms must use these functions to be valid.
     template <typename T>
-    void branchTestStackPtr(Condition cond, T t, Label* label) {
-        branchTestPtr(cond, getStackPointer(), t, label);
-    }
+    inline void branchTestStackPtr(Condition cond, T t, Label* label);
     template <typename T>
-    void branchStackPtr(Condition cond, T rhs, Label* label) {
-        branchPtr(cond, getStackPointer(), rhs, label);
-    }
+    inline void branchStackPtr(Condition cond, T rhs, Label* label);
     template <typename T>
-    void branchStackPtrRhs(Condition cond, T lhs, Label* label) {
-        branchPtr(cond, lhs, getStackPointer(), label);
-    }
+    inline void branchStackPtrRhs(Condition cond, T lhs, Label* label);
 #endif // !JS_CODEGEN_ARM64
 
   public:
@@ -1342,6 +1346,11 @@ class MacroAssembler : public MacroAssemblerSpecific
         push(scratch);
     }
 
+    void PushBaselineFramePtr(Register framePtr, Register scratch) {
+        loadBaselineFramePtr(framePtr, scratch);
+        Push(scratch);
+    }
+
   private:
     void handleFailure();
 
@@ -1355,32 +1364,6 @@ class MacroAssembler : public MacroAssemblerSpecific
         return &failureLabel_;
     }
 
-    Label* asmSyncInterruptLabel() {
-        return &asmSyncInterruptLabel_;
-    }
-    const Label* asmSyncInterruptLabel() const {
-        return &asmSyncInterruptLabel_;
-    }
-    Label* asmStackOverflowLabel() {
-        return &asmStackOverflowLabel_;
-    }
-    const Label* asmStackOverflowLabel() const {
-        return &asmStackOverflowLabel_;
-    }
-    Label* asmOnOutOfBoundsLabel() {
-        return &asmOnOutOfBoundsLabel_;
-    }
-    const Label* asmOnOutOfBoundsLabel() const {
-        return &asmOnOutOfBoundsLabel_;
-    }
-    Label* asmOnConversionErrorLabel() {
-        return &asmOnConversionErrorLabel_;
-    }
-    const Label* asmOnConversionErrorLabel() const {
-        return &asmOnConversionErrorLabel_;
-    }
-
-    bool asmMergeWith(const MacroAssembler& masm);
     void finish();
     void link(JitCode* code);
 
@@ -1642,32 +1625,7 @@ class MacroAssembler : public MacroAssemblerSpecific
     void alignJitStackBasedOnNArgs(Register nargs);
     void alignJitStackBasedOnNArgs(uint32_t nargs);
 
-    void assertStackAlignment(uint32_t alignment, int32_t offset = 0) {
-#ifdef DEBUG
-        Label ok, bad;
-        MOZ_ASSERT(IsPowerOfTwo(alignment));
-
-        // Wrap around the offset to be a non-negative number.
-        offset %= alignment;
-        if (offset < 0)
-            offset += alignment;
-
-        // Test if each bit from offset is set.
-        uint32_t off = offset;
-        while (off) {
-            uint32_t lowestBit = 1 << mozilla::CountTrailingZeroes32(off);
-            branchTestStackPtr(Assembler::Zero, Imm32(lowestBit), &bad);
-            off ^= lowestBit;
-        }
-
-        // Check that all remaining bits are zero.
-        branchTestStackPtr(Assembler::Zero, Imm32((alignment - 1) ^ offset), &ok);
-
-        bind(&bad);
-        breakpoint();
-        bind(&ok);
-#endif
-    }
+    inline void assertStackAlignment(uint32_t alignment, int32_t offset = 0);
 };
 
 static inline Assembler::DoubleCondition

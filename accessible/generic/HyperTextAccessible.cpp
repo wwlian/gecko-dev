@@ -284,7 +284,7 @@ HyperTextAccessible::DOMPointToOffset(nsINode* aNode, int32_t aNodeOffset,
       if (container) {
         TreeWalker walker(container, findNode->AsContent(),
                           TreeWalker::eWalkContextTree);
-        descendant = walker.NextChild();
+        descendant = walker.Next();
         if (!descendant)
           descendant = container;
       }
@@ -1360,7 +1360,7 @@ HyperTextAccessible::SetSelectionRange(int32_t aStartPos, int32_t aEndPos)
     NS_ENSURE_TRUE(mDoc, NS_ERROR_FAILURE);
     nsIDocument* docNode = mDoc->DocumentNode();
     NS_ENSURE_TRUE(docNode, NS_ERROR_FAILURE);
-    nsCOMPtr<nsPIDOMWindow> window = docNode->GetWindow();
+    nsCOMPtr<nsPIDOMWindowOuter> window = docNode->GetWindow();
     nsCOMPtr<nsIDOMElement> result;
     DOMFocusManager->MoveFocus(window, nullptr, nsIFocusManager::MOVEFOCUS_CARET,
                                nsIFocusManager::FLAG_BYMOVEFOCUS, getter_AddRefs(result));
@@ -1466,7 +1466,7 @@ HyperTextAccessible::CaretLineNumber()
       break;
 
     // Add lines for the sibling frames before the caret
-    nsIFrame *sibling = parentFrame->GetFirstPrincipalChild();
+    nsIFrame *sibling = parentFrame->PrincipalChildList().FirstChild();
     while (sibling && sibling != caretFrame) {
       nsAutoLineIterator lineIterForSibling = sibling->GetLineIterator();
       if (lineIterForSibling) {
@@ -1769,7 +1769,7 @@ HyperTextAccessible::EnclosingRange(a11y::TextRange& aRange) const
 void
 HyperTextAccessible::SelectionRanges(nsTArray<a11y::TextRange>* aRanges) const
 {
-  NS_ASSERTION(aRanges->Length() != 0, "TextRange array supposed to be empty");
+  MOZ_ASSERT(aRanges->Length() == 0, "TextRange array supposed to be empty");
 
   dom::Selection* sel = DOMSelection();
   if (!sel)
@@ -1933,31 +1933,6 @@ HyperTextAccessible::RelationByType(RelationType aType)
   }
 
   return rel;
-}
-
-void
-HyperTextAccessible::CacheChildren()
-{
-  // Trailing HTML br element don't play any difference. We don't need to expose
-  // it to AT (see bug https://bugzilla.mozilla.org/show_bug.cgi?id=899433#c16
-  // for details).
-
-  TreeWalker walker(this, mContent);
-  Accessible* child = nullptr;
-  Accessible* lastChild = nullptr;
-  while ((child = walker.NextChild())) {
-    if (lastChild)
-      AppendChild(lastChild);
-
-    lastChild = child;
-  }
-
-  if (lastChild) {
-    if (lastChild->IsHTMLBr())
-      Document()->UnbindFromDocument(lastChild);
-    else
-      AppendChild(lastChild);
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

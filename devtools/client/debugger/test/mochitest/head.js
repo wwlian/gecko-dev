@@ -1,5 +1,8 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
 // shared-head.js handles imports, constants, and utility functions
@@ -16,7 +19,6 @@ var { DebuggerServer } = require("devtools/server/main");
 var { DebuggerClient, ObjectClient } = require("devtools/shared/client/main");
 var { AddonManager } = Cu.import("resource://gre/modules/AddonManager.jsm", {});
 var EventEmitter = require("devtools/shared/event-emitter");
-const { promiseInvoke } = require("devtools/shared/async-utils");
 var { Toolbox } = require("devtools/client/framework/toolbox")
 
 // Override promise with deprecated-sync-thenables
@@ -526,13 +528,8 @@ function initDebugger(aTarget, aWindow) {
       let debuggerPanel = aToolbox.getCurrentPanel();
       let panelWin = debuggerPanel.panelWin;
 
-      // Wait for the initial resume...
-      panelWin.gClient.addOneTimeListener("resumed", () => {
-        info("Debugger client resumed successfully.");
-
-        prepareDebugger(debuggerPanel);
-        deferred.resolve([aTab, debuggee, debuggerPanel, aWindow]);
-      });
+      prepareDebugger(debuggerPanel);
+      deferred.resolve([aTab, debuggee, debuggerPanel, aWindow]);
     });
 
     return deferred.promise;
@@ -570,9 +567,7 @@ AddonDebugger.prototype = {
     let transport = DebuggerServer.connectPipe();
     this.client = new DebuggerClient(transport);
 
-    let connected = promise.defer();
-    this.client.connect(connected.resolve);
-    yield connected.promise;
+    yield this.client.connect();
 
     let addonActor = yield getAddonActorForUrl(this.client, aUrl);
 
@@ -593,10 +588,9 @@ AddonDebugger.prototype = {
     info("Addon debugger panel shown successfully.");
 
     this.debuggerPanel = toolbox.getCurrentPanel();
+    yield waitForSourceShown(this.debuggerPanel, '');
 
-    // Wait for the initial resume...
-    yield waitForClientEvents(this.debuggerPanel, "resumed");
-    yield prepareDebugger(this.debuggerPanel);
+    prepareDebugger(this.debuggerPanel);
     yield this._attachConsole();
   }),
 
@@ -893,26 +887,14 @@ function attachAddonActorForUrl(aClient, aUrl) {
   return deferred.promise;
 }
 
-function rdpInvoke(aClient, aMethod, ...args) {
-  return promiseInvoke(aClient, aMethod, ...args)
-    .then((packet) => {
-      let { error, message } = packet;
-      if (error) {
-        throw new Error(error + ": " + message);
-      }
-
-      return packet;
-    });
-}
-
 function doResume(aPanel) {
   const threadClient = aPanel.panelWin.gThreadClient;
-  return rdpInvoke(threadClient, threadClient.resume);
+  return threadClient.resume();
 }
 
 function doInterrupt(aPanel) {
   const threadClient = aPanel.panelWin.gThreadClient;
-  return rdpInvoke(threadClient, threadClient.interrupt);
+  return threadClient.interrupt();
 }
 
 function pushPrefs(...aPrefs) {
@@ -1024,15 +1006,11 @@ function generateMouseClickInTab(tab, path) {
 
 function connect(client) {
   info("Connecting client.");
-  return new Promise(function (resolve) {
-    client.connect(function () {
-      resolve();
-    });
-  });
+  return client.connect();
 }
 
 function close(client) {
-  info("Closing client.\n");
+  info("Waiting for client to close.\n");
   return new Promise(function (resolve) {
     client.close(() => {
       resolve();
@@ -1042,11 +1020,7 @@ function close(client) {
 
 function listTabs(client) {
   info("Listing tabs.");
-  return new Promise(function (resolve) {
-    client.listTabs(function (response) {
-      resolve(response);
-    });
-  });
+  return client.listTabs();
 }
 
 function findTab(tabs, url) {
@@ -1127,7 +1101,7 @@ function waitForWorkerClose(workerClient) {
 
 function resume(threadClient) {
   info("Resuming thread.");
-  return rdpInvoke(threadClient, threadClient.resume);
+  return threadClient.resume();
 }
 
 function findSource(sources, url) {
@@ -1167,12 +1141,12 @@ function waitForPause(threadClient) {
 
 function setBreakpoint(sourceClient, location) {
   info("Setting breakpoint.\n");
-  return rdpInvoke(sourceClient, sourceClient.setBreakpoint, location);
+  return sourceClient.setBreakpoint(location);
 }
 
 function source(sourceClient) {
   info("Getting source.\n");
-  return rdpInvoke(sourceClient, sourceClient.source);
+  return sourceClient.source();
 }
 
 // Return a promise with a reference to jsterm, opening the split
@@ -1198,6 +1172,18 @@ function getSplitConsole(toolbox, win) {
       resolve(jsterm);
     });
   });
+}
+
+// navigation
+
+function waitForNavigation(gPanel) {
+  const target = gPanel.panelWin.gTarget;
+  const deferred = promise.defer();
+  target.once('navigate', () => {
+    deferred.resolve();
+  });
+  info("Waiting for navigation...");
+  return deferred.promise;
 }
 
 // actions

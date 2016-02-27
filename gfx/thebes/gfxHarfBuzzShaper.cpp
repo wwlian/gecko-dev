@@ -354,17 +354,6 @@ gfxHarfBuzzShaper::HBGetGlyphVAdvance(hb_font_t *font, void *font_data,
     return fcd->mShaper->GetGlyphVAdvance(glyph);
 }
 
-/* static */
-hb_bool_t
-gfxHarfBuzzShaper::HBGetGlyphHOrigin(hb_font_t *font, void *font_data,
-                                     hb_codepoint_t glyph,
-                                     hb_position_t *x, hb_position_t *y,
-                                     void *user_data)
-{
-    // We work in horizontal coordinates, so no origin adjustment needed here.
-    return true;
-}
-
 struct VORG {
     AutoSwap_PRUint16 majorVersion;
     AutoSwap_PRUint16 minorVersion;
@@ -1267,9 +1256,6 @@ gfxHarfBuzzShaper::Initialize()
         hb_font_funcs_set_glyph_v_advance_func(sHBFontFuncs,
                                                HBGetGlyphVAdvance,
                                                nullptr, nullptr);
-        hb_font_funcs_set_glyph_h_origin_func(sHBFontFuncs,
-                                              HBGetGlyphHOrigin,
-                                              nullptr, nullptr);
         hb_font_funcs_set_glyph_v_origin_func(sHBFontFuncs,
                                               HBGetGlyphVOrigin,
                                               nullptr, nullptr);
@@ -1462,7 +1448,7 @@ gfxHarfBuzzShaper::InitializeVertical()
 }
 
 bool
-gfxHarfBuzzShaper::ShapeText(gfxContext      *aContext,
+gfxHarfBuzzShaper::ShapeText(DrawTarget      *aDrawTarget,
                              const char16_t *aText,
                              uint32_t         aOffset,
                              uint32_t         aLength,
@@ -1471,11 +1457,11 @@ gfxHarfBuzzShaper::ShapeText(gfxContext      *aContext,
                              gfxShapedText   *aShapedText)
 {
     // some font back-ends require this in order to get proper hinted metrics
-    if (!mFont->SetupCairoFont(aContext)) {
+    if (!mFont->SetupCairoFont(aDrawTarget)) {
         return false;
     }
 
-    mCallbackData.mDrawTarget = aContext->GetDrawTarget();
+    mCallbackData.mDrawTarget = aDrawTarget;
     mUseVerticalPresentationForms = false;
 
     if (!Initialize()) {
@@ -1512,7 +1498,7 @@ gfxHarfBuzzShaper::ShapeText(gfxContext      *aContext,
     gfxFontEntry *entry = mFont->GetFontEntry();
 
     // insert any merged features into hb_feature array
-    nsAutoTArray<hb_feature_t,20> features;
+    AutoTArray<hb_feature_t,20> features;
     MergeFontFeatures(style,
                       entry->mFeatureSettings,
                       aShapedText->DisableLigatures(),
@@ -1565,7 +1551,7 @@ gfxHarfBuzzShaper::ShapeText(gfxContext      *aContext,
         hb_buffer_reverse(buffer);
     }
 
-    nsresult rv = SetGlyphsFromRun(aContext, aShapedText, aOffset, aLength,
+    nsresult rv = SetGlyphsFromRun(aDrawTarget, aShapedText, aOffset, aLength,
                                    aText, buffer, aVertical);
 
     NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "failed to store glyphs into gfxShapedWord");
@@ -1579,7 +1565,7 @@ gfxHarfBuzzShaper::ShapeText(gfxContext      *aContext,
                             // for charToGlyphArray
 
 nsresult
-gfxHarfBuzzShaper::SetGlyphsFromRun(gfxContext     *aContext,
+gfxHarfBuzzShaper::SetGlyphsFromRun(DrawTarget     *aDrawTarget,
                                     gfxShapedText  *aShapedText,
                                     uint32_t        aOffset,
                                     uint32_t        aLength,
@@ -1593,11 +1579,11 @@ gfxHarfBuzzShaper::SetGlyphsFromRun(gfxContext     *aContext,
         return NS_OK;
     }
 
-    nsAutoTArray<gfxTextRun::DetailedGlyph,1> detailedGlyphs;
+    AutoTArray<gfxTextRun::DetailedGlyph,1> detailedGlyphs;
 
     uint32_t wordLength = aLength;
     static const int32_t NO_GLYPH = -1;
-    AutoFallibleTArray<int32_t,SMALL_GLYPH_RUN> charToGlyphArray;
+    AutoTArray<int32_t,SMALL_GLYPH_RUN> charToGlyphArray;
     if (!charToGlyphArray.SetLength(wordLength, fallible)) {
         return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -1617,12 +1603,11 @@ gfxHarfBuzzShaper::SetGlyphsFromRun(gfxContext     *aContext,
     int32_t glyphStart = 0; // looking for a clump that starts at this glyph
     int32_t charStart = 0; // and this char index within the range of the run
 
-    bool roundI;
-    bool roundB;
+    bool roundI, roundB;
     if (aVertical) {
-        aContext->GetRoundOffsetsToPixels(&roundB, &roundI);
+        GetRoundOffsetsToPixels(aDrawTarget, &roundB, &roundI);
     } else {
-        aContext->GetRoundOffsetsToPixels(&roundI, &roundB);
+        GetRoundOffsetsToPixels(aDrawTarget, &roundI, &roundB);
     }
 
     int32_t appUnitsPerDevUnit = aShapedText->GetAppUnitsPerDevUnit();

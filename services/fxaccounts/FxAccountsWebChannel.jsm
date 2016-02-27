@@ -30,6 +30,7 @@ const COMMAND_CAN_LINK_ACCOUNT     = "fxaccounts:can_link_account";
 const COMMAND_LOGIN                = "fxaccounts:login";
 const COMMAND_LOGOUT               = "fxaccounts:logout";
 const COMMAND_DELETE               = "fxaccounts:delete";
+const COMMAND_SYNC_PREFERENCES     = "fxaccounts:sync_preferences";
 
 const PREF_LAST_FXA_USER           = "identity.fxaccounts.lastSignedInUserHash";
 const PREF_SYNC_SHOW_CUSTOMIZATION = "services.sync-setup.ui.showCustomizationDialog";
@@ -138,7 +139,10 @@ this.FxAccountsWebChannel.prototype = {
      */
     let listener = (webChannelId, message, sendingContext) => {
       if (message) {
-        log.debug("FxAccountsWebChannel message received", message);
+        log.debug("FxAccountsWebChannel message received", message.command);
+        if (logPII) {
+          log.debug("FxAccountsWebChannel message details", message);
+        }
         let command = message.command;
         let data = message.data;
 
@@ -164,6 +168,9 @@ this.FxAccountsWebChannel.prototype = {
 
             log.debug("FxAccountsWebChannel response", response);
             this._channel.send(response, sendingContext);
+            break;
+          case COMMAND_SYNC_PREFERENCES:
+            this._helpers.openSyncPreferences(sendingContext.browser, data.entryPoint);
             break;
           default:
             log.warn("Unrecognized FxAccountsWebChannel command", command);
@@ -261,7 +268,9 @@ this.FxAccountsWebChannelHelpers.prototype = {
   logout(uid) {
     return fxAccounts.getSignedInUser().then(userData => {
       if (userData.uid === uid) {
-        return fxAccounts.signOut();
+        // true argument is `localOnly`, because server-side stuff
+        // has already been taken care of by the content server
+        return fxAccounts.signOut(true);
       }
     });
   },
@@ -304,6 +313,22 @@ this.FxAccountsWebChannelHelpers.prototype = {
     hasher.update(data, data.length);
 
     return hasher.finish(true);
+  },
+
+  /**
+   * Open Sync Preferences in the current tab of the browser
+   *
+   * @param {Object} browser the browser in which to open preferences
+   * @param {String} [entryPoint] entryPoint to use for logging
+   */
+  openSyncPreferences(browser, entryPoint) {
+    let uri = "about:preferences";
+    if (entryPoint) {
+      uri += "?entrypoint=" + encodeURIComponent(entryPoint);
+    }
+    uri += "#sync";
+
+    browser.loadURI(uri);
   },
 
   /**

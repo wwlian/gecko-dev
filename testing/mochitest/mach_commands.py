@@ -12,7 +12,6 @@ import os
 import shutil
 import sys
 import warnings
-import which
 
 from mozbuild.base import (
     MachCommandBase,
@@ -61,6 +60,15 @@ test path(s):
 {}
 
 Please check spelling and make sure there are mochitests living there.
+'''.lstrip()
+
+ROBOCOP_TESTS_NOT_FOUND = '''
+The robocop command could not find any tests under the following
+test path(s):
+
+{}
+
+Please check spelling and make sure the named tests exist.
 '''.lstrip()
 
 NOW_RUNNING = '''
@@ -349,6 +357,7 @@ class MochitestRunner(MozbuildObject):
 
 # parser
 
+
 def setup_argument_parser():
     build_obj = MozbuildObject.from_environment(cwd=here)
 
@@ -528,6 +537,8 @@ class MachCommands(MachCommandBase):
         if buildapp in ('b2g',):
             run_mochitest = mochitest.run_b2g_test
         elif buildapp == 'android':
+            from mozrunner.devices.android_device import grant_runtime_permissions
+            grant_runtime_permissions(self, kwargs['app'])
             run_mochitest = mochitest.run_android_test
         else:
             run_mochitest = mochitest.run_desktop_test
@@ -565,8 +576,8 @@ class RobocopCommands(MachCommandBase):
              description='Run a Robocop test.',
              parser=setup_argument_parser)
     @CommandArgument('--serve', default=False, action='store_true',
-        help='Run no tests but start the mochi.test web server and launch '
-             'Fennec with a test profile.')
+                     help='Run no tests but start the mochi.test web server '
+                     'and launch Fennec with a test profile.')
     def run_robocop(self, serve=False, **kwargs):
         if serve:
             kwargs['autorun'] = False
@@ -592,7 +603,15 @@ class RobocopCommands(MachCommandBase):
         from mozbuild.testing import TestResolver
         resolver = self._spawn(TestResolver)
         tests = list(resolver.resolve_tests(paths=test_paths, cwd=self._mach_context.cwd,
-            flavor='instrumentation', subsuite='robocop'))
+                                            flavor='instrumentation', subsuite='robocop'))
+
+        if len(tests) < 1:
+            print(ROBOCOP_TESTS_NOT_FOUND.format('\n'.join(
+                sorted(list(test_paths)))))
+            return 1
+
+        from mozrunner.devices.android_device import grant_runtime_permissions
+        grant_runtime_permissions(self, kwargs['app'])
 
         mochitest = self._spawn(MochitestRunner)
         return mochitest.run_robocop_test(self._mach_context, tests, 'robocop', **kwargs)

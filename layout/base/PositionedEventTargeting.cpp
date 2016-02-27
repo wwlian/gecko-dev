@@ -265,11 +265,15 @@ GetClickableAncestor(nsIFrame* aFrame, nsIAtom* stopAt = nullptr, nsAutoString* 
 }
 
 static nscoord
-AppUnitsFromMM(nsIFrame* aFrame, uint32_t aMM, bool aVertical)
+AppUnitsFromMM(nsIFrame* aFrame, uint32_t aMM)
 {
   nsPresContext* pc = aFrame->PresContext();
+  nsIPresShell* presShell = pc->PresShell();
   float result = float(aMM) *
     (pc->DeviceContext()->AppUnitsPerPhysicalInch() / MM_PER_INCH_FLOAT);
+  if (presShell->ScaleToResolution()) {
+    result = result / presShell->GetResolution();
+  }
   return NSToCoordRound(result);
 }
 
@@ -291,10 +295,10 @@ GetTargetRect(nsIFrame* aRootFrame, const nsPoint& aPointRelativeToRootFrame,
               nsIFrame* aRestrictToDescendants, const EventRadiusPrefs* aPrefs,
               uint32_t aFlags)
 {
-  nsMargin m(AppUnitsFromMM(aRootFrame, aPrefs->mSideRadii[0], true),
-             AppUnitsFromMM(aRootFrame, aPrefs->mSideRadii[1], false),
-             AppUnitsFromMM(aRootFrame, aPrefs->mSideRadii[2], true),
-             AppUnitsFromMM(aRootFrame, aPrefs->mSideRadii[3], false));
+  nsMargin m(AppUnitsFromMM(aRootFrame, aPrefs->mSideRadii[0]),
+             AppUnitsFromMM(aRootFrame, aPrefs->mSideRadii[1]),
+             AppUnitsFromMM(aRootFrame, aPrefs->mSideRadii[2]),
+             AppUnitsFromMM(aRootFrame, aPrefs->mSideRadii[3]));
   nsRect r(aPointRelativeToRootFrame, nsSize(0,0));
   r.Inflate(m);
   if (!(aFlags & INPUT_IGNORE_ROOT_SCROLL_FRAME)) {
@@ -318,11 +322,9 @@ static float
 ComputeDistanceFromRegion(const nsPoint& aPoint, const nsRegion& aRegion)
 {
   MOZ_ASSERT(!aRegion.IsEmpty(), "can't compute distance between point and empty region");
-  nsRegionRectIterator iter(aRegion);
-  const nsRect* r;
   float minDist = -1;
-  while ((r = iter.Next()) != nullptr) {
-    float dist = ComputeDistanceFromRect(aPoint, *r);
+  for (auto iter = aRegion.RectIter(); !iter.Done(); iter.Next()) {
+    float dist = ComputeDistanceFromRect(aPoint, iter.Get());
     if (dist < minDist || minDist < 0) {
       minDist = dist;
     }
@@ -593,7 +595,7 @@ FindFrameTargetedByInputEvent(WidgetGUIEvent* aEvent,
                                     restrictToDescendants, prefs, aFlags);
   PET_LOG("Expanded point to target rect %s\n",
     mozilla::layers::Stringify(targetRect).c_str());
-  nsAutoTArray<nsIFrame*,8> candidates;
+  AutoTArray<nsIFrame*,8> candidates;
   nsresult rv = nsLayoutUtils::GetFramesForArea(aRootFrame, targetRect, candidates, flags);
   if (NS_FAILED(rv)) {
     return target;

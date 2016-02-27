@@ -19,7 +19,7 @@ interface Request {
 
   [Func="mozilla::dom::Request::RequestContextEnabled"]
   readonly attribute RequestContext context;
-  readonly attribute DOMString referrer;
+  readonly attribute USVString referrer;
   readonly attribute RequestMode mode;
   readonly attribute RequestCredentials credentials;
   [Func="mozilla::dom::Request::RequestCacheEnabled"]
@@ -38,7 +38,7 @@ Request implements Body;
 dictionary RequestInit {
   ByteString method;
   HeadersInit headers;
-  BodyInit body;
+  BodyInit? body;
   RequestMode mode;
   RequestCredentials credentials;
   RequestCache cache;
@@ -55,7 +55,7 @@ enum RequestContext {
   "xslt"
 };
 
-enum RequestMode { "same-origin", "no-cors", "cors" };
+enum RequestMode { "same-origin", "no-cors", "cors", "navigate" };
 enum RequestCredentials { "omit", "same-origin", "include" };
-enum RequestCache { "default", "no-store", "reload", "no-cache", "force-cache", "only-if-cached" };
+enum RequestCache { "default", "no-store", "reload", "no-cache", "force-cache" };
 enum RequestRedirect { "follow", "error", "manual" };

@@ -24,8 +24,7 @@ public class AppConstants {
     public static final String ANDROID_PACKAGE_NAME = "@ANDROID_PACKAGE_NAME@";
     public static final String MANGLED_ANDROID_PACKAGE_NAME = "@MANGLED_ANDROID_PACKAGE_NAME@";
 
-    public static final String MOZ_ANDROID_SHARED_ACCOUNT_TYPE = "@MOZ_ANDROID_SHARED_ACCOUNT_TYPE@";
-    public static final String MOZ_ANDROID_SHARED_FXACCOUNT_TYPE = "@MOZ_ANDROID_SHARED_FXACCOUNT_TYPE@";
+    public static final String MOZ_ANDROID_SHARED_FXACCOUNT_TYPE = "@ANDROID_PACKAGE_NAME@_fxaccount";
 
     /**
      * Encapsulates access to compile-time version definitions, allowing
@@ -97,7 +96,7 @@ public class AppConstants {
     // For the benefit of future archaeologists:
     // GRE_BUILDID is exactly the same as MOZ_APP_BUILDID unless you're running
     // on XULRunner, which is never the case on Android.
-    public static final String MOZ_APP_BUILDID = "@MOZ_APP_BUILDID@";
+    public static final String MOZ_APP_BUILDID = "@MOZ_BUILDID@";
     public static final String MOZ_APP_ID = "@MOZ_APP_ID@";
     public static final String MOZ_APP_NAME = "@MOZ_APP_NAME@";
     public static final String MOZ_APP_VENDOR = "@MOZ_APP_VENDOR@";
@@ -194,22 +193,8 @@ public class AppConstants {
     false;
 //#endif
 
-    public static final boolean MOZ_ANDROID_READING_LIST_SERVICE =
-//#ifdef MOZ_ANDROID_READING_LIST_SERVICE
-    true;
-//#else
-    false;
-//#endif
-
     public static final boolean MOZ_TELEMETRY_ON_BY_DEFAULT =
 //#ifdef MOZ_TELEMETRY_ON_BY_DEFAULT
-    true;
-//#else
-    false;
-//#endif
-
-    public static final boolean MOZ_ANDROID_TAB_QUEUE =
-//#ifdef MOZ_ANDROID_TAB_QUEUE
     true;
 //#else
     false;

@@ -189,6 +189,30 @@ MediaPipeline::UpdateTransport_s(int level,
   }
 }
 
+void
+MediaPipeline::SelectSsrc_m(size_t ssrc_index)
+{
+  RUN_ON_THREAD(sts_thread_,
+                WrapRunnable(
+                    this,
+                    &MediaPipeline::SelectSsrc_s,
+                    ssrc_index),
+                NS_DISPATCH_NORMAL);
+}
+
+void
+MediaPipeline::SelectSsrc_s(size_t ssrc_index)
+{
+  filter_ = new MediaPipelineFilter;
+  if (ssrc_index < ssrcs_received_.size()) {
+    filter_->AddRemoteSSRC(ssrcs_received_[ssrc_index]);
+  } else {
+    MOZ_MTLOG(ML_WARNING, "SelectSsrc called with " << ssrc_index << " but we "
+                          << "have only seen " << ssrcs_received_.size()
+                          << " ssrcs");
+  }
+}
+
 void MediaPipeline::StateChange(TransportFlow *flow, TransportLayer::State state) {
   TransportInfo* info = GetTransportInfo_s(flow);
   MOZ_ASSERT(info);
@@ -474,12 +498,18 @@ void MediaPipeline::RtpPacketReceived(TransportLayer *layer,
     return;
   }
 
-  if (filter_) {
-    webrtc::RTPHeader header;
-    if (!rtp_parser_->Parse(data, len, &header) ||
-        !filter_->Filter(header)) {
-      return;
-    }
+  webrtc::RTPHeader header;
+  if (!rtp_parser_->Parse(data, len, &header)) {
+    return;
+  }
+
+  if (std::find(ssrcs_received_.begin(), ssrcs_received_.end(), header.ssrc) ==
+      ssrcs_received_.end()) {
+    ssrcs_received_.push_back(header.ssrc);
+  }
+
+  if (filter_ && !filter_->Filter(header)) {
+    return;
   }
 
   // Make a copy rather than cast away constness
@@ -854,7 +884,7 @@ UnsetTrackId(MediaStreamGraphImpl* graph) {
     }
     RefPtr<PipelineListener> listener_;
   };
-  graph->AppendMessage(new Message(this));
+  graph->AppendMessage(MakeUnique<Message>(this));
 #else
   UnsetTrackIdImpl();
 #endif
@@ -965,7 +995,7 @@ void MediaPipelineTransmit::PipelineListener::ProcessAudioChunk(
   // input audio is either mono or stereo).
   uint32_t outputChannels = chunk.ChannelCount() == 1 ? 1 : 2;
   const int16_t* samples = nullptr;
-  nsAutoArrayPtr<int16_t> convertedSamples;
+  UniquePtr<int16_t[]> convertedSamples;
 
   // If this track is not enabled, simply ignore the data in the chunk.
   if (!enabled_) {
@@ -979,7 +1009,7 @@ void MediaPipelineTransmit::PipelineListener::ProcessAudioChunk(
   if (outputChannels == 1 && chunk.mBufferFormat == AUDIO_FORMAT_S16) {
     samples = chunk.ChannelData<int16_t>().Elements()[0];
   } else {
-    convertedSamples = new int16_t[chunk.mDuration * outputChannels];
+    convertedSamples = MakeUnique<int16_t[]>(chunk.mDuration * outputChannels);
 
     switch (chunk.mBufferFormat) {
         case AUDIO_FORMAT_FLOAT32:
@@ -1054,16 +1084,15 @@ void MediaPipelineTransmit::PipelineListener::ProcessVideoChunk(
     uint32_t length = yPlaneLen + cbcrPlaneLen;
 
     // Send a black image.
-    nsAutoArrayPtr<uint8_t> pixelData;
-    pixelData = new (fallible) uint8_t[length];
+    auto pixelData = MakeUniqueFallible<uint8_t[]>(length);
     if (pixelData) {
       // YCrCb black = 0x10 0x80 0x80
-      memset(pixelData, 0x10, yPlaneLen);
+      memset(pixelData.get(), 0x10, yPlaneLen);
       // Fill Cb/Cr planes
-      memset(pixelData + yPlaneLen, 0x80, cbcrPlaneLen);
+      memset(pixelData.get() + yPlaneLen, 0x80, cbcrPlaneLen);
 
       MOZ_MTLOG(ML_DEBUG, "Sending a black video frame");
-      conduit->SendVideoFrame(pixelData, length, size.width, size.height,
+      conduit->SendVideoFrame(pixelData.get(), length, size.width, size.height,
                               mozilla::kVideoI420, 0);
     }
     return;
@@ -1343,7 +1372,7 @@ static void AddTrackAndListener(MediaStream* source,
     // atomically and have start time 0. When not queueing we have to add
     // the track on the MediaStreamGraph thread so it can be added with the
     // appropriate start time.
-    source->GraphImpl()->AppendMessage(new Message(source, track_id, track_rate, segment, listener, completed));
+    source->GraphImpl()->AppendMessage(MakeUnique<Message>(source, track_id, track_rate, segment, listener, completed));
     MOZ_MTLOG(ML_INFO, "Dispatched track-add for track id " << track_id <<
                        " on stream " << source);
     return;
@@ -1426,8 +1455,8 @@ NotifyPull(MediaStreamGraph* graph, StreamTime desired_time) {
     // the AudioConduit gives us, considering it gives us packets of 10ms and we
     // know the rate.
     uint32_t channelCount = samples_length / (track_rate_ / 100);
-    nsAutoTArray<int16_t*,2> channels;
-    nsAutoTArray<const int16_t*,2> outputChannels;
+    AutoTArray<int16_t*,2> channels;
+    AutoTArray<const int16_t*,2> outputChannels;
     size_t frames = samples_length / channelCount;
 
     channels.SetLength(channelCount);

@@ -12,8 +12,8 @@ import sys
 # load modules from parent dir
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 
-from mozharness.base.errors import BaseErrorList, TarErrorList, ZipErrorList
-from mozharness.base.log import ERROR, WARNING, FATAL, INFO
+from mozharness.base.errors import BaseErrorList, TarErrorList
+from mozharness.base.log import ERROR, FATAL, INFO
 from mozharness.base.script import (
     BaseScript,
     PreScriptAction,
@@ -121,6 +121,7 @@ class LuciddreamTest(TestingMixin, MercurialScript, MozbaseMixin, BaseScript,
         self.emulator_url = c.get('emulator_url')
         self.binary_path = c.get('binary_path')
         self.test_url = c.get('test_url')
+        self.test_packages_url = c.get('test_packages_url')
 
         if c.get('structured_output'):
             self.parser_class = StructuredOutputParser

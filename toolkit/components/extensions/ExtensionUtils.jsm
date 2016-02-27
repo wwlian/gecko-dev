@@ -14,15 +14,25 @@ const Cr = Components.results;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "AppConstants",
+                                  "resource://gre/modules/AppConstants.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "LanguageDetector",
+                                  "resource:///modules/translation/LanguageDetector.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Locale",
                                   "resource://gre/modules/Locale.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "Preferences",
+                                  "resource://gre/modules/Preferences.jsm");
+
+function filterStack(error) {
+  return String(error.stack).replace(/(^.*(Task\.jsm|Promise-backend\.js).*\n)+/gm, "<Promise Chain>\n");
+}
 
 // Run a function and report exceptions.
 function runSafeSyncWithoutClone(f, ...args) {
   try {
     return f(...args);
   } catch (e) {
-    dump(`Extension error: ${e} ${e.fileName} ${e.lineNumber}\n[[Exception stack\n${e.stack}Current stack\n${Error().stack}]]\n`);
+    dump(`Extension error: ${e} ${e.fileName} ${e.lineNumber}\n[[Exception stack\n${filterStack(e)}Current stack\n${filterStack(Error())}]]\n`);
     Cu.reportError(e);
   }
 }
@@ -30,13 +40,13 @@ function runSafeSyncWithoutClone(f, ...args) {
 // Run a function and report exceptions.
 function runSafeWithoutClone(f, ...args) {
   if (typeof(f) != "function") {
-    dump(`Extension error: expected function\n${Error().stack}`);
+    dump(`Extension error: expected function\n${filterStack(Error())}`);
     return;
   }
 
-  Services.tm.currentThread.dispatch(function() {
+  Promise.resolve().then(() => {
     runSafeSyncWithoutClone(f, ...args);
-  }, Ci.nsIEventTarget.DISPATCH_NORMAL);
+  });
 }
 
 // Run a function, cloning arguments into context.cloneScope, and
@@ -46,7 +56,7 @@ function runSafeSync(context, f, ...args) {
     args = Cu.cloneInto(args, context.cloneScope);
   } catch (e) {
     Cu.reportError(e);
-    dump(`runSafe failure: cloning into ${context.cloneScope}: ${e}\n\n${Error().stack}`);
+    dump(`runSafe failure: cloning into ${context.cloneScope}: ${e}\n\n${filterStack(Error())}`);
   }
   return runSafeSyncWithoutClone(f, ...args);
 }
@@ -58,7 +68,7 @@ function runSafe(context, f, ...args) {
     args = Cu.cloneInto(args, context.cloneScope);
   } catch (e) {
     Cu.reportError(e);
-    dump(`runSafe failure: cloning into ${context.cloneScope}: ${e}\n\n${Error().stack}`);
+    dump(`runSafe failure: cloning into ${context.cloneScope}: ${e}\n\n${filterStack(Error())}`);
   }
   return runSafeWithoutClone(f, ...args);
 }
@@ -108,16 +118,172 @@ DefaultWeakMap.prototype = {
   },
 };
 
+class SpreadArgs extends Array {
+  constructor(args) {
+    super();
+    this.push(...args);
+  }
+}
+
+class BaseContext {
+  constructor() {
+    this.onClose = new Set();
+    this.checkedLastError = false;
+    this._lastError = null;
+  }
+
+  get cloneScope() {
+    throw new Error("Not implemented");
+  }
+
+  get principal() {
+    throw new Error("Not implemented");
+  }
+
+  checkLoadURL(url, options = {}) {
+    let ssm = Services.scriptSecurityManager;
+
+    let flags = ssm.STANDARD;
+    if (!options.allowScript) {
+      flags |= ssm.DISALLOW_SCRIPT;
+    }
+    if (!options.allowInheritsPrincipal) {
+      flags |= ssm.DISALLOW_INHERIT_PRINCIPAL;
+    }
+
+    try {
+      ssm.checkLoadURIStrWithPrincipal(this.principal, url, flags);
+    } catch (e) {
+      return false;
+    }
+    return true;
+  }
+
+  callOnClose(obj) {
+    this.onClose.add(obj);
+  }
+
+  forgetOnClose(obj) {
+    this.onClose.delete(obj);
+  }
+
+  get lastError() {
+    this.checkedLastError = true;
+    return this._lastError;
+  }
+
+  set lastError(val) {
+    this.checkedLastError = false;
+    this._lastError = val;
+  }
+
+  /**
+   * Sets the value of `.lastError` to `error`, calls the given
+   * callback, and reports an error if the value has not been checked
+   * when the callback returns.
+   *
+   * @param {object} error An object with a `message` property. May
+   *     optionally be an `Error` object belonging to the target scope.
+   * @param {function} callback The callback to call.
+   * @returns {*} The return value of callback.
+   */
+  withLastError(error, callback) {
+    if (!(error instanceof this.cloneScope.Error)) {
+      error = new this.cloneScope.Error(error.message);
+    }
+    this.lastError = error;
+    try {
+      return callback();
+    } finally {
+      if (!this.checkedLastError) {
+        Cu.reportError(`Unchecked lastError value: ${error}`);
+      }
+      this.lastError = null;
+    }
+  }
+
+  /**
+   * Wraps the given promise so it can be safely returned to extension
+   * code in this context.
+   *
+   * If `callback` is provided, however, it is used as a completion
+   * function for the promise, and no promise is returned. In this case,
+   * the callback is called when the promise resolves or rejects. In the
+   * latter case, `lastError` is set to the rejection value, and the
+   * callback function must check `browser.runtime.lastError` or
+   * `extension.runtime.lastError` in order to prevent it being reported
+   * to the console.
+   *
+   * @param {Promise} promise The promise with which to wrap the
+   *     callback. May resolve to a `SpreadArgs` instance, in which case
+   *     each element will be used as a separate argument.
+   *
+   *     Unless the promise object belongs to the cloneScope global, its
+   *     resolution value is cloned into cloneScope prior to calling the
+   *     `callback` function or resolving the wrapped promise.
+   *
+   * @param {function} [callback] The callback function to wrap
+   *
+   * @returns {Promise|undefined} If callback is null, a promise object
+   *     belonging to the target scope. Otherwise, undefined.
+   */
+  wrapPromise(promise, callback = null) {
+    // Note: `promise instanceof this.cloneScope.Promise` returns true
+    // here even for promises that do not belong to the content scope.
+    let runSafe = runSafeSync.bind(null, this);
+    if (promise.constructor === this.cloneScope.Promise) {
+      runSafe = runSafeSyncWithoutClone;
+    }
+
+    if (callback) {
+      promise.then(
+        args => {
+          if (args instanceof SpreadArgs) {
+            runSafe(callback, ...args);
+          } else {
+            runSafe(callback, args);
+          }
+        },
+        error => {
+          this.withLastError(error, () => {
+            runSafeSyncWithoutClone(callback);
+          });
+        });
+    } else {
+      return new this.cloneScope.Promise((resolve, reject) => {
+        promise.then(
+          value => { runSafe(resolve, value); },
+          value => {
+            if (!(value instanceof this.cloneScope.Error)) {
+              value = new this.cloneScope.Error(value.message);
+            }
+            runSafeSyncWithoutClone(reject, value);
+          });
+      });
+    }
+  }
+
+  unload() {
+    for (let obj of this.onClose) {
+      obj.close();
+    }
+  }
+}
+
 function LocaleData(data) {
   this.defaultLocale = data.defaultLocale;
   this.selectedLocale = data.selectedLocale;
   this.locales = data.locales || new Map();
 
-  // Map(locale-name -> Map(message-key -> localized-strings))
+  // Map(locale-name -> Map(message-key -> localized-string))
   //
   // Contains a key for each loaded locale, each of which is a
   // Map of message keys to their localized strings.
   this.messages = data.messages || new Map();
+
+  if (data.builtinMessages) {
+    this.messages.set(this.BUILTIN, data.builtinMessages);
+  }
 }
 
 LocaleData.prototype = {
@@ -132,13 +298,15 @@ LocaleData.prototype = {
     };
   },
 
+  BUILTIN: "@@BUILTIN_MESSAGES",
+
   has(locale) {
     return this.messages.has(locale);
   },
 
   // https://developer.chrome.com/extensions/i18n
   localizeMessage(message, substitutions = [], locale = this.selectedLocale, defaultValue = "??") {
-    let locales = new Set([locale, this.defaultLocale]
+    let locales = new Set([this.BUILTIN, locale, this.defaultLocale]
                           .filter(locale => this.messages.has(locale)));
 
     // Message names are case-insensitive, so normalize them to lower-case.
@@ -170,18 +338,8 @@ LocaleData.prototype = {
     }
 
     // Check for certain pre-defined messages.
-    if (message == "@@extension_id") {
-      if ("uuid" in this) {
-        // Per Chrome, this isn't available before an ID is guaranteed
-        // to have been assigned, namely, in manifest files.
-        // This should only be present in instances of the |Extension|
-        // subclass.
-        return this.uuid;
-      }
-    } else if (message == "@@ui_locale") {
-      // Return the browser locale, but convert it to a Chrome-style
-      // locale code.
-      return Locale.getLocale().replace(/-/g, "_");
+    if (message == "@@ui_locale") {
+      return this.uiLocale;
     } else if (message.startsWith("@@bidi_")) {
       let registry = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(Ci.nsIXULChromeRegistry);
       let rtl = registry.isLocaleRTL("global");
@@ -271,6 +429,22 @@ LocaleData.prototype = {
 
     this.messages.set(locale, result);
     return result;
+  },
+
+  get acceptLanguages() {
+    let result = Preferences.get("intl.accept_languages", "", Ci.nsIPrefLocalizedString);
+    result = result.split(",");
+    result = result.map(lang => {
+      return lang.replace(/-/g, "_").trim();
+    });
+    return result;
+  },
+
+
+  get uiLocale() {
+    // Return the browser locale, but convert it to a Chrome-style
+    // locale code.
+    return Locale.getLocale().replace(/-/g, "_");
   },
 };
 
@@ -444,14 +618,14 @@ function injectAPI(source, dest) {
       continue;
     }
 
-    let value = source[prop];
-    if (typeof(value) == "function") {
-      Cu.exportFunction(value, dest, {defineAs: prop});
-    } else if (typeof(value) == "object") {
+    let desc = Object.getOwnPropertyDescriptor(source, prop);
+    if (typeof(desc.value) == "function") {
+      Cu.exportFunction(desc.value, dest, {defineAs: prop});
+    } else if (typeof(desc.value) == "object") {
       let obj = Cu.createObjectIn(dest, {defineAs: prop});
-      injectAPI(value, obj);
+      injectAPI(desc.value, obj);
     } else {
-      dest[prop] = value;
+      Object.defineProperty(dest, prop, desc);
     }
   }
 }
@@ -657,11 +831,10 @@ Port.prototype = {
 };
 
 function getMessageManager(target) {
-  if (target instanceof Ci.nsIDOMXULElement) {
-    return target.messageManager;
-  } else {
-    return target;
+  if (target instanceof Ci.nsIFrameLoaderOwner) {
+    return target.QueryInterface(Ci.nsIFrameLoaderOwner).frameLoader.messageManager;
   }
+  return target;
 }
 
 // Each extension scope gets its own Messenger object. It handles the
@@ -669,7 +842,7 @@ function getMessageManager(target) {
 //
 // |context| is the extension scope.
 // |broker| is a MessageBroker used to receive and send messages.
-// |sender| is an object describing the sender (usually giving its extensionId, tabId, etc.)
+// |sender| is an object describing the sender (usually giving its extension id, tabId, etc.)
 // |filter| is a recipient filter to apply to incoming messages from the broker.
 // |delegate| is an object that must implement a few methods:
 //    getSender(context, messageManagerTarget, sender): returns a MessageSender
@@ -780,11 +953,44 @@ function flushJarCache(jarFile) {
   Services.obs.notifyObservers(jarFile, "flush-cache-entry", null);
 }
 
+const PlatformInfo = Object.freeze({
+  os: (function() {
+    let os = AppConstants.platform;
+    if (os == "macosx") {
+      os = "mac";
+    }
+    return os;
+  })(),
+  arch: (function() {
+    let abi = Services.appinfo.XPCOMABI;
+    let [arch] = abi.split("-");
+    if (arch == "x86") {
+      arch = "x86-32";
+    } else if (arch == "x86_64") {
+      arch = "x86-64";
+    }
+    return arch;
+  })(),
+});
+
+function detectLanguage(text) {
+  return LanguageDetector.detectLanguage(text).then(result => ({
+    isReliable: result.confident,
+    languages: result.languages.map(lang => {
+      return {
+        language: lang.languageCode,
+        percentage: lang.percent,
+      };
+    }),
+  }));
+}
+
 this.ExtensionUtils = {
   runSafeWithoutClone,
   runSafeSyncWithoutClone,
   runSafe,
   runSafeSync,
+  BaseContext,
   DefaultWeakMap,
   EventManager,
   LocaleData,
@@ -793,7 +999,10 @@ this.ExtensionUtils = {
   injectAPI,
   MessageBroker,
   Messenger,
+  PlatformInfo,
+  SpreadArgs,
   extend,
   flushJarCache,
   instanceOf,
+  detectLanguage,
 };

@@ -12,7 +12,11 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/IncrementalClearCOMRuleArray.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/StyleSheet.h"
+#include "mozilla/StyleSheetInfo.h"
+#include "mozilla/css/SheetParsingMode.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/CSSStyleSheetBinding.h"
 
 #include "nscore.h"
 #include "nsCOMPtr.h"
@@ -33,6 +37,7 @@ class nsIPrincipal;
 class nsIURI;
 class nsMediaList;
 class nsMediaQueryResultCacheKey;
+class nsStyleSet;
 class nsPresContext;
 class nsXMLNameSpaceMap;
 
@@ -49,16 +54,15 @@ namespace dom {
 class CSSRuleList;
 } // namespace dom
 
-// -------------------------------
+  // -------------------------------
 // CSS Style Sheet Inner Data Container
 //
 
-class CSSStyleSheetInner
+class CSSStyleSheetInner : public StyleSheetInfo
 {
 public:
   friend class mozilla::CSSStyleSheet;
   friend class ::nsCSSRuleProcessor;
-  typedef net::ReferrerPolicy ReferrerPolicy;
 
 private:
   CSSStyleSheetInner(CSSStyleSheet* aPrimarySheet,
@@ -80,11 +84,7 @@ private:
 
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
 
-  nsAutoTArray<CSSStyleSheet*, 8> mSheets;
-  nsCOMPtr<nsIURI>       mSheetURI; // for error reports, etc.
-  nsCOMPtr<nsIURI>       mOriginalSheetURI;  // for GetHref.  Can be null.
-  nsCOMPtr<nsIURI>       mBaseURI; // for resolving relative URIs
-  nsCOMPtr<nsIPrincipal> mPrincipal;
+  AutoTArray<CSSStyleSheet*, 8> mSheets;
   IncrementalClearCOMRuleArray mOrderedRules;
   nsAutoPtr<nsXMLNameSpaceMap> mNameSpaceMap;
   // Linked list of child sheets.  This is al fundamentally broken, because
@@ -93,16 +93,6 @@ private:
   // child sheet that means we've already ensured unique inners throughout its
   // parent chain and things are good.
   RefPtr<CSSStyleSheet> mFirstChild;
-  CORSMode               mCORSMode;
-  // The Referrer Policy of a stylesheet is used for its child sheets, so it is
-  // stored here.
-  ReferrerPolicy         mReferrerPolicy;
-  dom::SRIMetadata       mIntegrity;
-  bool                   mComplete;
-
-#ifdef DEBUG
-  bool                   mPrincipalSet;
-#endif
 };
 
 
@@ -119,7 +109,8 @@ private:
 
 class CSSStyleSheet final : public nsIDOMCSSStyleSheet,
                             public nsICSSLoaderObserver,
-                            public nsWrapperCache
+                            public nsWrapperCache,
+                            public StyleSheet
 {
 public:
   typedef net::ReferrerPolicy ReferrerPolicy;
@@ -208,7 +199,6 @@ public:
 
   void SetTitle(const nsAString& aTitle) { mTitle = aTitle; }
   void SetMedia(nsMediaList* aMedia);
-  void SetOwningNode(nsINode* aOwningNode) { mOwningNode = aOwningNode; /* Not ref counted */ }
 
   void SetOwnerRule(css::ImportRule* aOwnerRule) { mOwnerRule = aOwnerRule; /* Not ref counted */ }
   css::ImportRule* GetOwnerRule() const { return mOwnerRule; }
@@ -245,7 +235,7 @@ public:
   nsIURI* GetOriginalURI() const { return mInner->mOriginalSheetURI; }
 
   // nsICSSLoaderObserver interface
-  NS_IMETHOD StyleSheetLoaded(CSSStyleSheet* aSheet, bool aWasAlternate,
+  NS_IMETHOD StyleSheetLoaded(StyleSheetHandle aSheet, bool aWasAlternate,
                               nsresult aStatus) override;
 
   void EnsureUniqueInner();
@@ -279,7 +269,7 @@ public:
   ReferrerPolicy GetReferrerPolicy() const { return mInner->mReferrerPolicy; }
 
   // Get this style sheet's integrity metadata
-  dom::SRIMetadata GetIntegrity() const { return mInner->mIntegrity; }
+  void GetIntegrity(dom::SRIMetadata& aResult) const { aResult = mInner->mIntegrity; }
 
   dom::Element* GetScopeElement() const { return mScopeElement; }
   void SetScopeElement(dom::Element* aScopeElement)
@@ -337,6 +327,8 @@ public:
   void WillDirty();
   void DidDirty();
 
+  mozilla::dom::CSSStyleSheetParsingMode ParsingMode();
+
 private:
   CSSStyleSheet(const CSSStyleSheet& aCopy,
                 CSSStyleSheet* aParentToUse,
@@ -381,15 +373,13 @@ protected:
 
   RefPtr<CSSRuleListImpl> mRuleCollection;
   nsIDocument*          mDocument; // weak ref; parents maintain this for their children
-  nsINode*              mOwningNode; // weak ref
-  bool                  mDisabled;
   bool                  mDirty; // has been modified 
   bool                  mInRuleProcessorCache;
   RefPtr<dom::Element> mScopeElement;
 
   CSSStyleSheetInner*   mInner;
 
-  nsAutoTArray<nsCSSRuleProcessor*, 8>* mRuleProcessors;
+  AutoTArray<nsCSSRuleProcessor*, 8>* mRuleProcessors;
   nsTArray<nsStyleSet*> mStyleSets;
 
   friend class ::nsMediaList;

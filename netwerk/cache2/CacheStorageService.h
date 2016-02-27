@@ -15,6 +15,7 @@
 #include "nsString.h"
 #include "nsThreadUtils.h"
 #include "nsProxyRelease.h"
+#include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/TimeStamp.h"
@@ -157,23 +158,35 @@ private:
    * directly from cache) for the given number of seconds
    * See nsICacheEntry.idl for more details
    */
-  void ForceEntryValidFor(nsACString &aCacheEntryKey,
+  void ForceEntryValidFor(nsACString const &aContextKey,
+                          nsACString const &aEntryKey,
                           uint32_t aSecondsToTheFuture);
+
+  /**
+   * Remove the validity info
+   */
+  void RemoveEntryForceValid(nsACString const &aContextKey,
+                             nsACString const &aEntryKey);
+
+  /**
+   * Retrieves the status of the cache entry to see if it has been forced valid
+   * (so it will loaded directly from cache without further validation)
+   */
+  bool IsForcedValidEntry(nsACString const &aContextKey,
+                          nsACString const &aEntryKey);
 
 private:
   friend class CacheIndex;
 
   /**
-   * Retrieves the status of the cache entry to see if it has been forced valid
-   * (so it will loaded directly from cache without further validation)
    * CacheIndex uses this to prevent a cache entry from being prememptively
    * thrown away when forced valid
    * See nsICacheEntry.idl for more details
    */
-  bool IsForcedValidEntry(nsACString &aCacheEntryKey);
+  bool IsForcedValidEntry(nsACString const &aEntryKeyWithContext);
 
 private:
-  // These are helpers for telemetry monitorying of the memory pools.
+  // These are helpers for telemetry monitoring of the memory pools.
   void TelemetryPrune(TimeStamp &now);
   void TelemetryRecordEntryCreation(CacheEntry const* entry);
   void TelemetryRecordEntryRemoval(CacheEntry const* entry);
@@ -189,7 +202,6 @@ private:
   nsresult AddStorageEntry(CacheStorage const* aStorage,
                            nsIURI* aURI,
                            const nsACString & aIdExtension,
-                           bool aCreateIfNotExist,
                            bool aReplace,
                            CacheEntryHandle** aResult);
 
@@ -285,7 +297,6 @@ private:
                            bool aWriteToDisk,
                            bool aSkipSizeCheck,
                            bool aPin,
-                           bool aCreateIfNotExist,
                            bool aReplace,
                            CacheEntryHandle** aResult);
 
@@ -311,7 +322,7 @@ private:
 
     nsTArray<RefPtr<CacheEntry> > mFrecencyArray;
     nsTArray<RefPtr<CacheEntry> > mExpirationArray;
-    mozilla::Atomic<uint32_t> mMemorySize;
+    Atomic<uint32_t, Relaxed> mMemorySize;
 
     bool OnMemoryConsumptionChange(uint32_t aSavedMemorySize,
                                    uint32_t aCurrentMemoryConsumption);
@@ -324,12 +335,13 @@ private:
     void PurgeAll(uint32_t aWhat);
 
   private:
-    uint32_t const Limit() const;
+    uint32_t Limit() const;
     MemoryPool() = delete;
   };
 
   MemoryPool mDiskPool;
   MemoryPool mMemoryPool;
+  TimeStamp mLastPurgeTime;
   MemoryPool& Pool(bool aUsingDisk)
   {
     return aUsingDisk ? mDiskPool : mMemoryPool;
@@ -366,13 +378,14 @@ private:
   class IOThreadSuspender : public nsRunnable
   {
   public:
-    IOThreadSuspender() : mMon("IOThreadSuspender") { }
+    IOThreadSuspender() : mMon("IOThreadSuspender"), mSignaled(false) { }
     void Notify();
   private:
     virtual ~IOThreadSuspender() { }
     NS_IMETHOD Run() override;
 
     Monitor mMon;
+    bool mSignaled;
   };
 
   RefPtr<IOThreadSuspender> mActiveIOSuspender;
@@ -381,10 +394,7 @@ private:
 template<class T>
 void ProxyRelease(nsCOMPtr<T> &object, nsIThread* thread)
 {
-  T* release;
-  object.forget(&release);
-
-  NS_ProxyRelease(thread, release);
+  NS_ProxyRelease(thread, object.forget());
 }
 
 template<class T>

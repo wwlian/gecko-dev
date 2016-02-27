@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- *//* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +14,12 @@
 #include "nsIObserver.h"
 
 #include "nsCycleCollectionParticipant.h"
+#include "nsHashKeys.h"
+#include "nsTHashtable.h"
+#include "nsWeakReference.h"
+
+#define NOTIFICATIONTELEMETRYSERVICE_CONTRACTID \
+  "@mozilla.org/notificationTelemetryService;1"
 
 class nsIPrincipal;
 class nsIVariant;
@@ -44,6 +49,35 @@ public:
   Notify(JSContext* aCx, workers::Status aStatus) override;
 };
 
+// Records telemetry probes at application startup, when a notification is
+// shown, and when the notification permission is revoked for a site.
+class NotificationTelemetryService final : public nsIObserver
+{
+public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIOBSERVER
+
+  NotificationTelemetryService();
+
+  static already_AddRefed<NotificationTelemetryService> GetInstance();
+
+  nsresult Init();
+  void RecordDNDSupported();
+  void RecordPermissions();
+  nsresult RecordSender(nsIPrincipal* aPrincipal);
+
+private:
+  virtual ~NotificationTelemetryService();
+
+  nsresult AddPermissionChangeObserver();
+  nsresult RemovePermissionChangeObserver();
+
+  bool GetNotificationPermission(nsISupports* aSupports,
+                                 uint32_t* aCapability);
+
+  bool mDNDRecorded;
+  nsTHashtable<nsStringHashKey> mOrigins;
+};
 
 /*
  * Notifications on workers introduce some lifetime issues. The property we
@@ -98,6 +132,8 @@ public:
  *
  */
 class Notification : public DOMEventTargetHelper
+                   , public nsIObserver
+                   , public nsSupportsWeakReference
 {
   friend class CloseNotificationRunnable;
   friend class NotificationTask;
@@ -107,6 +143,7 @@ class Notification : public DOMEventTargetHelper
   friend class ServiceWorkerNotificationObserver;
   friend class WorkerGetRunnable;
   friend class WorkerNotificationObserver;
+  friend class NotificationTelemetryService;
 
 public:
   IMPL_EVENT_HANDLER(click)
@@ -116,6 +153,7 @@ public:
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(Notification, DOMEventTargetHelper)
+  NS_DECL_NSIOBSERVER
 
   static bool PrefEnabled(JSContext* aCx, JSObject* aObj);
   // Returns if Notification.get() is allowed for the current global.
@@ -196,15 +234,16 @@ public:
 
   static bool RequestPermissionEnabledForScope(JSContext* aCx, JSObject* /* unused */);
 
-  static void RequestPermission(const GlobalObject& aGlobal,
-                                const Optional<OwningNonNull<NotificationPermissionCallback> >& aCallback,
-                                ErrorResult& aRv);
+  static already_AddRefed<Promise>
+  RequestPermission(const GlobalObject& aGlobal,
+                    const Optional<OwningNonNull<NotificationPermissionCallback> >& aCallback,
+                    ErrorResult& aRv);
 
   static NotificationPermission GetPermission(const GlobalObject& aGlobal,
                                               ErrorResult& aRv);
 
   static already_AddRefed<Promise>
-  Get(nsPIDOMWindow* aWindow,
+  Get(nsPIDOMWindowInner* aWindow,
       const GetNotificationOptions& aFilter,
       const nsAString& aScope,
       ErrorResult& aRv);
@@ -229,7 +268,7 @@ public:
 
   void Close();
 
-  nsPIDOMWindow* GetParentObject()
+  nsPIDOMWindowInner* GetParentObject()
   {
     return GetOwner();
   }
@@ -240,7 +279,7 @@ public:
 
   void InitFromJSVal(JSContext* aCx, JS::Handle<JS::Value> aData, ErrorResult& aRv);
 
-  void InitFromBase64(JSContext* aCx, const nsAString& aData, ErrorResult& aRv);
+  void InitFromBase64(const nsAString& aData, ErrorResult& aRv);
 
   void AssertIsOnTargetThread() const
   {
@@ -290,6 +329,8 @@ protected:
                                                        const nsAString& aTitle,
                                                        const NotificationOptions& aOptions);
 
+  nsresult Init();
+  bool IsInPrivateBrowsing();
   void ShowInternal();
   void CloseInternal();
 
@@ -308,7 +349,7 @@ protected:
     }
   }
 
-  static const NotificationDirection StringToDirection(const nsAString& aDirection)
+  static NotificationDirection StringToDirection(const nsAString& aDirection)
   {
     if (aDirection.EqualsLiteral("ltr")) {
       return NotificationDirection::Ltr;

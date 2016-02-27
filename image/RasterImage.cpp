@@ -632,7 +632,7 @@ RasterImage::GetCurrentImage(ImageContainer* aContainer, uint32_t aFlags)
   GetWidth(&size.width);
   GetHeight(&size.height);
 
-  RefPtr<layers::Image> image = new layers::CairoImage(size, surface);
+  RefPtr<layers::Image> image = new layers::SourceSurfaceImage(size, surface);
   return MakePair(drawResult, Move(image));
 }
 
@@ -721,7 +721,7 @@ RasterImage::UpdateImageContainer()
   }
 
   mLastImageContainerDrawResult = drawResult;
-  nsAutoTArray<ImageContainer::NonOwningImage, 1> imageList;
+  AutoTArray<ImageContainer::NonOwningImage, 1> imageList;
   imageList.AppendElement(ImageContainer::NonOwningImage(image));
   container->SetCurrentImages(imageList);
 }
@@ -1622,7 +1622,7 @@ RasterImage::DoError()
   if (mAnimating) {
     StopAnimation();
   }
-  mAnim.release();
+  mAnim = nullptr;
 
   // Release all locks.
   mLockCount = 0;

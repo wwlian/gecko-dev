@@ -33,7 +33,6 @@
 #include "jstypes.h"
 #include "jsutil.h"
 
-#include "asmjs/AsmJSModule.h"
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/SourceNotes.h"
 #include "gc/GCInternals.h"
@@ -130,7 +129,7 @@ js::StackUses(JSScript* script, jsbytecode* pc)
         return 2 + GET_ARGC(pc) + 1;
       default:
         /* stack: fun, this, [argc arguments] */
-        MOZ_ASSERT(op == JSOP_CALL || op == JSOP_EVAL ||
+        MOZ_ASSERT(op == JSOP_CALL || op == JSOP_EVAL || op == JSOP_CALLITER ||
                    op == JSOP_STRICTEVAL || op == JSOP_FUNCALL || op == JSOP_FUNAPPLY);
         return 2 + GET_ARGC(pc);
     }
@@ -148,12 +147,16 @@ js::StackDefs(JSScript* script, jsbytecode* pc)
 const char * PCCounts::numExecName = "interp";
 
 void
-js::DumpIonScriptCounts(Sprinter* sp, jit::IonScriptCounts* ionCounts)
+js::DumpIonScriptCounts(Sprinter* sp, HandleScript script,
+        jit::IonScriptCounts* ionCounts)
 {
     Sprint(sp, "IonScript [%lu blocks]:\n", ionCounts->numBlocks());
     for (size_t i = 0; i < ionCounts->numBlocks(); i++) {
         const jit::IonBlockCounts& block = ionCounts->block(i);
-        Sprint(sp, "BB #%lu [%05u]", block.id(), block.offset());
+        unsigned lineNumber = 0, columnNumber = 0;
+        lineNumber = PCToLineNumber(script, script->offsetToPC(block.offset()), &columnNumber);
+        Sprint(sp, "BB #%lu [%05u,%u,%u]", block.id(), block.offset(),
+               lineNumber, columnNumber);
         if (block.description())
             Sprint(sp, " [inlined %s]", block.description());
         for (size_t j = 0; j < block.numSuccessors(); j++)
@@ -190,7 +193,7 @@ js::DumpPCCounts(JSContext* cx, HandleScript script, Sprinter* sp)
     jit::IonScriptCounts* ionCounts = script->getIonCounts();
 
     while (ionCounts) {
-        DumpIonScriptCounts(sp, ionCounts);
+        DumpIonScriptCounts(sp, script, ionCounts);
         ionCounts = ionCounts->previous();
     }
 }
@@ -748,8 +751,8 @@ ToDisassemblySource(JSContext* cx, HandleValue v, JSAutoByteString* bytes)
 
     if (v.isObject()) {
         JSObject& obj = v.toObject();
-        if (obj.is<StaticBlockObject>()) {
-            Rooted<StaticBlockObject*> block(cx, &obj.as<StaticBlockObject>());
+        if (obj.is<StaticBlockScope>()) {
+            Rooted<StaticBlockScope*> block(cx, &obj.as<StaticBlockScope>());
             char* source = JS_sprintf_append(nullptr, "depth %d {", block->localOffset());
             if (!source) {
                 ReportOutOfMemory(cx);
@@ -827,6 +830,7 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
         Sprint(sp, "%4u", PCToLineNumber(script, pc));
     Sprint(sp, "  %s", CodeName[op]);
 
+    int i;
     switch (JOF_TYPE(cs->format)) {
       case JOF_BYTE:
           // Scan the trynotes to find the associated catch block
@@ -902,7 +906,7 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
       }
 
       case JOF_REGEXP: {
-        JSObject* obj = script->getRegExp(GET_UINT32_INDEX(pc));
+        js::RegExpObject* obj = script->getRegExp(pc);
         JSAutoByteString bytes;
         RootedValue v(cx, ObjectValue(*obj));
         if (!ToDisassemblySource(cx, v, &bytes))
@@ -943,9 +947,6 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
         Sprint(sp, " %u", GET_UINT32(pc));
         break;
 
-      {
-        int i;
-
       case JOF_UINT16:
         i = (int)GET_UINT16(pc);
         goto print_int;
@@ -969,11 +970,10 @@ js::Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
       print_int:
         Sprint(sp, " %d", i);
         break;
-      }
 
       default: {
         char numBuf[12];
-        JS_snprintf(numBuf, sizeof numBuf, "%lx", (unsigned long) cs->format);
+        JS_snprintf(numBuf, sizeof numBuf, "%x", cs->format);
         JS_ReportErrorNumber(cx, GetErrorMessage, nullptr,
                              JSMSG_UNKNOWN_FORMAT, numBuf);
         return 0;
@@ -1021,14 +1021,12 @@ struct ExpressionDecompiler
 {
     JSContext* cx;
     RootedScript script;
-    RootedFunction fun;
     BytecodeParser parser;
     Sprinter sprinter;
 
-    ExpressionDecompiler(JSContext* cx, JSScript* script, JSFunction* fun)
+    ExpressionDecompiler(JSContext* cx, JSScript* script)
         : cx(cx),
           script(cx, script),
-          fun(cx, fun),
           parser(cx, script),
           sprinter(cx)
     {}
@@ -1167,6 +1165,7 @@ ExpressionDecompiler::decompilePC(jsbytecode* pc)
       case JSOP_NEWTARGET:
         return write("new.target");
       case JSOP_CALL:
+      case JSOP_CALLITER:
       case JSOP_FUNCALL:
         return decompilePCForStackOperand(pc, -int32_t(GET_ARGC(pc) + 2)) &&
                write("(...)");
@@ -1178,9 +1177,7 @@ ExpressionDecompiler::decompilePC(jsbytecode* pc)
       case JSOP_REGEXP:
       case JSOP_OBJECT:
       case JSOP_NEWARRAY_COPYONWRITE: {
-        JSObject* obj = (op == JSOP_REGEXP)
-                        ? script->getRegExp(GET_UINT32_INDEX(pc))
-                        : script->getObject(GET_UINT32_INDEX(pc));
+        JSObject* obj = script->getObject(GET_UINT32_INDEX(pc));
         RootedValue objv(cx, ObjectValue(*obj));
         JSString* str = ValueToSource(cx, objv);
         if (!str)
@@ -1238,7 +1235,7 @@ ExpressionDecompiler::loadAtom(jsbytecode* pc)
 JSAtom*
 ExpressionDecompiler::getArg(unsigned slot)
 {
-    MOZ_ASSERT(fun);
+    MOZ_ASSERT(script->functionNonDelazifying());
     MOZ_ASSERT(slot < script->bindings.numArgs());
 
     for (BindingIter bi(script); bi; bi++) {
@@ -1262,13 +1259,13 @@ ExpressionDecompiler::getLocal(uint32_t local, jsbytecode* pc)
 
         MOZ_CRASH("No binding");
     }
-    for (NestedScopeObject* chain = script->getStaticBlockScope(pc);
+    for (NestedStaticScope* chain = script->getStaticBlockScope(pc);
          chain;
          chain = chain->enclosingNestedScope())
     {
-        if (!chain->is<StaticBlockObject>())
+        if (!chain->is<StaticBlockScope>())
             continue;
-        StaticBlockObject& block = chain->as<StaticBlockObject>();
+        StaticBlockScope& block = chain->as<StaticBlockScope>();
         if (local < block.localOffset())
             continue;
         local -= block.localOffset();
@@ -1384,9 +1381,6 @@ DecompileExpressionFromStack(JSContext* cx, int spindex, int skipStackHits, Hand
     RootedScript script(cx, frameIter.script());
     AutoCompartment ac(cx, &script->global());
     jsbytecode* valuepc = frameIter.pc();
-    RootedFunction fun(cx, frameIter.isFunctionFrame()
-                           ? frameIter.calleeTemplate()
-                           : nullptr);
 
     MOZ_ASSERT(script->containsPC(valuepc));
 
@@ -1399,7 +1393,7 @@ DecompileExpressionFromStack(JSContext* cx, int spindex, int skipStackHits, Hand
     if (!valuepc)
         return true;
 
-    ExpressionDecompiler ed(cx, script, fun);
+    ExpressionDecompiler ed(cx, script);
     if (!ed.init())
         return false;
     if (!ed.decompilePC(valuepc))
@@ -1408,9 +1402,7 @@ DecompileExpressionFromStack(JSContext* cx, int spindex, int skipStackHits, Hand
     return ed.getOutput(res);
 }
 
-typedef mozilla::UniquePtr<char[], JS::FreePolicy> UniquePtrChars;
-
-UniquePtrChars
+UniqueChars
 js::DecompileValueGenerator(JSContext* cx, int spindex, HandleValue v,
                             HandleString fallbackArg, int skipStackHits)
 {
@@ -1421,19 +1413,19 @@ js::DecompileValueGenerator(JSContext* cx, int spindex, HandleValue v,
             return nullptr;
         if (result) {
             if (strcmp(result, "(intermediate value)"))
-                return UniquePtrChars(result);
+                return UniqueChars(result);
             js_free(result);
         }
     }
     if (!fallback) {
         if (v.isUndefined())
-            return UniquePtrChars(JS_strdup(cx, js_undefined_str)); // Prevent users from seeing "(void 0)"
+            return UniqueChars(JS_strdup(cx, js_undefined_str)); // Prevent users from seeing "(void 0)"
         fallback = ValueToSource(cx, v);
         if (!fallback)
-            return UniquePtrChars(nullptr);
+            return UniqueChars(nullptr);
     }
 
-    return UniquePtrChars(JS_EncodeString(cx, fallback));
+    return UniqueChars(JS_EncodeString(cx, fallback));
 }
 
 static bool
@@ -1466,9 +1458,6 @@ DecompileArgumentFromStack(JSContext* cx, int formalIndex, char** res)
     RootedScript script(cx, frameIter.script());
     AutoCompartment ac(cx, &script->global());
     jsbytecode* current = frameIter.pc();
-    RootedFunction fun(cx, frameIter.isFunctionFrame()
-                           ? frameIter.calleeTemplate()
-                           : nullptr);
 
     MOZ_ASSERT(script->containsPC(current));
 
@@ -1488,7 +1477,7 @@ DecompileArgumentFromStack(JSContext* cx, int formalIndex, char** res)
     if (uint32_t(formalStackIndex) >= parser.stackDepthAtPC(current))
         return true;
 
-    ExpressionDecompiler ed(cx, script, fun);
+    ExpressionDecompiler ed(cx, script);
     if (!ed.init())
         return false;
     if (!ed.decompilePCForStackOperand(current, formalStackIndex))
@@ -1812,7 +1801,7 @@ GetPCCountJSON(JSContext* cx, const ScriptAndCounts& sac, StringBuffer& buf)
         }
 
         {
-            ExpressionDecompiler ed(cx, script, script->functionDelazifying());
+            ExpressionDecompiler ed(cx, script);
             if (!ed.init())
                 return false;
             if (!ed.decompilePC(pc))

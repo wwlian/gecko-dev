@@ -542,48 +542,48 @@ void nsCSSValue::SetPairValue(const nsCSSValue& xValue,
 
 void nsCSSValue::SetTripletValue(const nsCSSValueTriplet* aValue)
 {
-    // triplet should not be used for null/inherit/initial values
-    MOZ_ASSERT(aValue &&
-               aValue->mXValue.GetUnit() != eCSSUnit_Null &&
-               aValue->mYValue.GetUnit() != eCSSUnit_Null &&
-               aValue->mZValue.GetUnit() != eCSSUnit_Null &&
-               aValue->mXValue.GetUnit() != eCSSUnit_Inherit &&
-               aValue->mYValue.GetUnit() != eCSSUnit_Inherit &&
-               aValue->mZValue.GetUnit() != eCSSUnit_Inherit &&
-               aValue->mXValue.GetUnit() != eCSSUnit_Initial &&
-               aValue->mYValue.GetUnit() != eCSSUnit_Initial &&
-               aValue->mZValue.GetUnit() != eCSSUnit_Initial &&
-               aValue->mXValue.GetUnit() != eCSSUnit_Unset &&
-               aValue->mYValue.GetUnit() != eCSSUnit_Unset &&
-               aValue->mZValue.GetUnit() != eCSSUnit_Unset,
-               "missing or inappropriate triplet value");
-    Reset();
-    mUnit = eCSSUnit_Triplet;
-    mValue.mTriplet = new nsCSSValueTriplet_heap(aValue->mXValue, aValue->mYValue, aValue->mZValue);
-    mValue.mTriplet->AddRef();
+  // triplet should not be used for null/inherit/initial values
+  MOZ_ASSERT(aValue &&
+             aValue->mXValue.GetUnit() != eCSSUnit_Null &&
+             aValue->mYValue.GetUnit() != eCSSUnit_Null &&
+             aValue->mZValue.GetUnit() != eCSSUnit_Null &&
+             aValue->mXValue.GetUnit() != eCSSUnit_Inherit &&
+             aValue->mYValue.GetUnit() != eCSSUnit_Inherit &&
+             aValue->mZValue.GetUnit() != eCSSUnit_Inherit &&
+             aValue->mXValue.GetUnit() != eCSSUnit_Initial &&
+             aValue->mYValue.GetUnit() != eCSSUnit_Initial &&
+             aValue->mZValue.GetUnit() != eCSSUnit_Initial &&
+             aValue->mXValue.GetUnit() != eCSSUnit_Unset &&
+             aValue->mYValue.GetUnit() != eCSSUnit_Unset &&
+             aValue->mZValue.GetUnit() != eCSSUnit_Unset,
+             "missing or inappropriate triplet value");
+  Reset();
+  mUnit = eCSSUnit_Triplet;
+  mValue.mTriplet = new nsCSSValueTriplet_heap(aValue->mXValue, aValue->mYValue, aValue->mZValue);
+  mValue.mTriplet->AddRef();
 }
 
 void nsCSSValue::SetTripletValue(const nsCSSValue& xValue,
                                  const nsCSSValue& yValue,
                                  const nsCSSValue& zValue)
 {
-    // Only allow Null for the z component
-    MOZ_ASSERT(xValue.GetUnit() != eCSSUnit_Null &&
-               yValue.GetUnit() != eCSSUnit_Null &&
-               xValue.GetUnit() != eCSSUnit_Inherit &&
-               yValue.GetUnit() != eCSSUnit_Inherit &&
-               zValue.GetUnit() != eCSSUnit_Inherit &&
-               xValue.GetUnit() != eCSSUnit_Initial &&
-               yValue.GetUnit() != eCSSUnit_Initial &&
-               zValue.GetUnit() != eCSSUnit_Initial &&
-               xValue.GetUnit() != eCSSUnit_Unset &&
-               yValue.GetUnit() != eCSSUnit_Unset &&
-               zValue.GetUnit() != eCSSUnit_Unset,
-               "inappropriate triplet value");
-    Reset();
-    mUnit = eCSSUnit_Triplet;
-    mValue.mTriplet = new nsCSSValueTriplet_heap(xValue, yValue, zValue);
-    mValue.mTriplet->AddRef();
+  // Only allow Null for the z component
+  MOZ_ASSERT(xValue.GetUnit() != eCSSUnit_Null &&
+             yValue.GetUnit() != eCSSUnit_Null &&
+             xValue.GetUnit() != eCSSUnit_Inherit &&
+             yValue.GetUnit() != eCSSUnit_Inherit &&
+             zValue.GetUnit() != eCSSUnit_Inherit &&
+             xValue.GetUnit() != eCSSUnit_Initial &&
+             yValue.GetUnit() != eCSSUnit_Initial &&
+             zValue.GetUnit() != eCSSUnit_Initial &&
+             xValue.GetUnit() != eCSSUnit_Unset &&
+             yValue.GetUnit() != eCSSUnit_Unset &&
+             zValue.GetUnit() != eCSSUnit_Unset,
+             "inappropriate triplet value");
+  Reset();
+  mUnit = eCSSUnit_Triplet;
+  mValue.mTriplet = new nsCSSValueTriplet_heap(xValue, yValue, zValue);
+  mValue.mTriplet->AddRef();
 }
 
 nsCSSRect& nsCSSValue::SetRectValue()
@@ -1017,19 +1017,22 @@ nsCSSValue::AppendAlignJustifyValueToString(int32_t aValue, nsAString& aResult)
     aValue &= ~legacy;
     aResult.AppendLiteral("legacy ");
   }
-  auto overflowPos = aValue & (NS_STYLE_ALIGN_SAFE | NS_STYLE_ALIGN_TRUE);
+  auto overflowPos = aValue & (NS_STYLE_ALIGN_SAFE | NS_STYLE_ALIGN_UNSAFE);
   aValue &= ~overflowPos;
   MOZ_ASSERT(!(aValue & NS_STYLE_ALIGN_FLAG_BITS),
              "unknown bits in align/justify value");
   MOZ_ASSERT((aValue != NS_STYLE_ALIGN_AUTO &&
+              aValue != NS_STYLE_ALIGN_NORMAL &&
               aValue != NS_STYLE_ALIGN_BASELINE &&
               aValue != NS_STYLE_ALIGN_LAST_BASELINE) ||
              (!legacy && !overflowPos),
-             "auto/baseline/last-baseline never have any flags");
+             "auto/normal/baseline/last-baseline never have any flags");
+  MOZ_ASSERT(legacy == 0 || overflowPos == 0,
+             "'legacy' together with <overflow-position>");
   const auto& kwtable(nsCSSProps::kAlignAllKeywords);
   AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(aValue, kwtable), aResult);
-  if (MOZ_UNLIKELY(overflowPos != 0)) {
-    MOZ_ASSERT(legacy == 0, "'legacy' together with <overflow-position>");
+  // Don't serialize the 'unsafe' keyword; it's the default.
+  if (MOZ_UNLIKELY(overflowPos == NS_STYLE_ALIGN_SAFE)) {
     aResult.Append(' ');
     AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(overflowPos, kwtable),
                        aResult);
@@ -1513,12 +1516,12 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult,
                    gradient->mBgPos.mYValue.GetUnit() == eCSSUnit_Enumerated,
                    "unexpected unit");
         aResult.AppendLiteral("to");
-        if (!(gradient->mBgPos.mXValue.GetIntValue() & NS_STYLE_BG_POSITION_CENTER)) {
+        if (!(gradient->mBgPos.mXValue.GetIntValue() & NS_STYLE_IMAGELAYER_POSITION_CENTER)) {
           aResult.Append(' ');
           gradient->mBgPos.mXValue.AppendToString(eCSSProperty_background_position,
                                                   aResult, aSerialization);
         }
-        if (!(gradient->mBgPos.mYValue.GetIntValue() & NS_STYLE_BG_POSITION_CENTER)) {
+        if (!(gradient->mBgPos.mYValue.GetIntValue() & NS_STYLE_IMAGELAYER_POSITION_CENTER)) {
           aResult.Append(' ');
           gradient->mBgPos.mYValue.AppendToString(eCSSProperty_background_position,
                                                   aResult, aSerialization);
@@ -1637,7 +1640,7 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult,
 
       // functional values
       const nsCSSValueList *list = GetPairValue().mYValue.GetListValue();
-      nsAutoTArray<gfxAlternateValue,8> altValues;
+      AutoTArray<gfxAlternateValue,8> altValues;
 
       nsStyleUtil::ComputeFunctionalAlternates(list, altValues);
       nsStyleUtil::SerializeFunctionalAlternates(altValues, out);
@@ -1972,9 +1975,9 @@ nsCSSValueList::Clone() const
 void
 nsCSSValueList::CloneInto(nsCSSValueList* aList) const
 {
-    NS_ASSERTION(!aList->mNext, "Must be an empty list!");
-    aList->mValue = mValue;
-    aList->mNext = mNext ? mNext->Clone() : nullptr;
+  NS_ASSERTION(!aList->mNext, "Must be an empty list!");
+  aList->mValue = mValue;
+  aList->mNext = mNext ? mNext->Clone() : nullptr;
 }
 
 static void
@@ -2008,8 +2011,47 @@ AppendGridTemplateToString(const nsCSSValueList* val,
 
     if (unit == eCSSUnit_Enumerated &&
         val->mValue.GetIntValue() == NS_STYLE_GRID_TEMPLATE_SUBGRID) {
+      MOZ_ASSERT(!isSubgrid, "saw subgrid once already");
       isSubgrid = true;
       aResult.AppendLiteral("subgrid");
+
+    } else if (unit == eCSSUnit_Pair) {
+      // This is a repeat 'auto-fill' / 'auto-fit'.
+      const nsCSSValuePair& pair = val->mValue.GetPairValue();
+      switch (pair.mXValue.GetIntValue()) {
+        case NS_STYLE_GRID_REPEAT_AUTO_FILL:
+          aResult.AppendLiteral("repeat(auto-fill, ");
+          break;
+        case NS_STYLE_GRID_REPEAT_AUTO_FIT:
+          aResult.AppendLiteral("repeat(auto-fit, ");
+          break;
+        default:
+          MOZ_ASSERT_UNREACHABLE("unexpected enum value");
+      }
+      const nsCSSValueList* repeatList = pair.mYValue.GetListValue();
+      if (repeatList->mValue.GetUnit() != eCSSUnit_Null) {
+        aResult.Append('[');
+        AppendValueListToString(repeatList->mValue.GetListValue(), aProperty,
+                                aResult, aSerialization);
+        aResult.Append(']');
+        if (!isSubgrid) {
+          aResult.Append(' ');
+        }
+      } else if (isSubgrid) {
+        aResult.AppendLiteral("[]");
+      }
+      if (!isSubgrid) {
+        repeatList = repeatList->mNext;
+        repeatList->mValue.AppendToString(aProperty, aResult, aSerialization);
+        repeatList = repeatList->mNext;
+        if (repeatList->mValue.GetUnit() != eCSSUnit_Null) {
+          aResult.AppendLiteral(" [");
+          AppendValueListToString(repeatList->mValue.GetListValue(), aProperty,
+                                  aResult, aSerialization);
+          aResult.Append(']');
+        }
+      }
+      aResult.Append(')');
 
     } else if (unit == eCSSUnit_Null) {
       // Empty or omitted <line-names>.
@@ -2094,9 +2136,13 @@ nsCSSValueList::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 size_t
 nsCSSValueList_heap::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mValue.SizeOfExcludingThis(aMallocSizeOf);
-  n += mNext ? mNext->SizeOfIncludingThis(aMallocSizeOf) : 0;
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mValue.SizeOfExcludingThis(aMallocSizeOf);
+    n += mNext ? mNext->SizeOfIncludingThis(aMallocSizeOf) : 0;
+  }
   return n;
 }
 
@@ -2129,9 +2175,12 @@ nsCSSValueSharedList::operator==(const nsCSSValueSharedList& aOther) const
 size_t
 nsCSSValueSharedList::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
+  // Only measure it if it's unshared, to avoid double-counting.
   size_t n = 0;
-  n += aMallocSizeOf(this);
-  n += mHead->SizeOfIncludingThis(aMallocSizeOf);
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mHead->SizeOfIncludingThis(aMallocSizeOf);
+  }
   return n;
 }
 
@@ -2204,11 +2253,15 @@ void nsCSSRect::SetAllSidesTo(const nsCSSValue& aValue)
 size_t
 nsCSSRect_heap::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mTop   .SizeOfExcludingThis(aMallocSizeOf);
-  n += mRight .SizeOfExcludingThis(aMallocSizeOf);
-  n += mBottom.SizeOfExcludingThis(aMallocSizeOf);
-  n += mLeft  .SizeOfExcludingThis(aMallocSizeOf);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mTop   .SizeOfExcludingThis(aMallocSizeOf);
+    n += mRight .SizeOfExcludingThis(aMallocSizeOf);
+    n += mBottom.SizeOfExcludingThis(aMallocSizeOf);
+    n += mLeft  .SizeOfExcludingThis(aMallocSizeOf);
+  }
   return n;
 }
 
@@ -2249,9 +2302,13 @@ nsCSSValuePair::SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 size_t
 nsCSSValuePair_heap::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
-  n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
+    n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
+  }
   return n;
 }
 
@@ -2262,24 +2319,28 @@ nsCSSValueTriplet::AppendToString(nsCSSProperty aProperty,
                                   nsAString& aResult,
                                   nsCSSValue::Serialization aSerialization) const
 {
-    mXValue.AppendToString(aProperty, aResult, aSerialization);
-    if (mYValue.GetUnit() != eCSSUnit_Null) {
-        aResult.Append(char16_t(' '));
-        mYValue.AppendToString(aProperty, aResult, aSerialization);
-        if (mZValue.GetUnit() != eCSSUnit_Null) {
-            aResult.Append(char16_t(' '));
-            mZValue.AppendToString(aProperty, aResult, aSerialization);
-        }
+  mXValue.AppendToString(aProperty, aResult, aSerialization);
+  if (mYValue.GetUnit() != eCSSUnit_Null) {
+    aResult.Append(char16_t(' '));
+    mYValue.AppendToString(aProperty, aResult, aSerialization);
+    if (mZValue.GetUnit() != eCSSUnit_Null) {
+      aResult.Append(char16_t(' '));
+      mZValue.AppendToString(aProperty, aResult, aSerialization);
     }
+  }
 }
 
 size_t
 nsCSSValueTriplet_heap::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
-  n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
-  n += mZValue.SizeOfExcludingThis(aMallocSizeOf);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
+    n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
+    n += mZValue.SizeOfExcludingThis(aMallocSizeOf);
+  }
   return n;
 }
 
@@ -2370,10 +2431,14 @@ nsCSSValuePairList::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) con
 size_t
 nsCSSValuePairList_heap::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
-  n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
-  n += mNext ? mNext->SizeOfIncludingThis(aMallocSizeOf) : 0;
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
+    n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
+    n += mNext ? mNext->SizeOfIncludingThis(aMallocSizeOf) : 0;
+  }
   return n;
 }
 
@@ -2460,16 +2525,18 @@ css::URLValue::GetURI() const
 size_t
 css::URLValue::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mString->SizeOfIncludingThisIfUnshared(aMallocSizeOf);
 
-  n += mString->SizeOfIncludingThisIfUnshared(aMallocSizeOf);
-
-  // Measurement of the following members may be added later if DMD finds it is
-  // worthwhile:
-  // - mURI
-  // - mReferrer
-  // - mOriginPrincipal
-
+    // Measurement of the following members may be added later if DMD finds it
+    // is worthwhile:
+    // - mURI
+    // - mReferrer
+    // - mOriginPrincipal
+  }
   return n;
 }
 
@@ -2562,14 +2629,18 @@ nsCSSValueGradient::nsCSSValueGradient(bool aIsRadial,
 size_t
 nsCSSValueGradient::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mBgPos.SizeOfExcludingThis(aMallocSizeOf);
-  n += mAngle.SizeOfExcludingThis(aMallocSizeOf);
-  n += mRadialValues[0].SizeOfExcludingThis(aMallocSizeOf);
-  n += mRadialValues[1].SizeOfExcludingThis(aMallocSizeOf);
-  n += mStops.ShallowSizeOfExcludingThis(aMallocSizeOf);
-  for (uint32_t i = 0; i < mStops.Length(); i++) {
-    n += mStops[i].SizeOfExcludingThis(aMallocSizeOf);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mBgPos.SizeOfExcludingThis(aMallocSizeOf);
+    n += mAngle.SizeOfExcludingThis(aMallocSizeOf);
+    n += mRadialValues[0].SizeOfExcludingThis(aMallocSizeOf);
+    n += mRadialValues[1].SizeOfExcludingThis(aMallocSizeOf);
+    n += mStops.ShallowSizeOfExcludingThis(aMallocSizeOf);
+    for (uint32_t i = 0; i < mStops.Length(); i++) {
+      n += mStops[i].SizeOfExcludingThis(aMallocSizeOf);
+    }
   }
   return n;
 }
@@ -2592,8 +2663,12 @@ nsCSSValueTokenStream::~nsCSSValueTokenStream()
 size_t
 nsCSSValueTokenStream::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
-  n += mTokenStream.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mTokenStream.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+  }
   return n;
 }
 
@@ -2680,7 +2755,11 @@ size_t
 nsCSSValueFloatColor::SizeOfIncludingThis(
                                       mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = aMallocSizeOf(this);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+  }
   return n;
 }
 
@@ -2728,7 +2807,12 @@ nsCSSCornerSizes::corners[4] = {
 size_t
 mozilla::css::GridTemplateAreasValue::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
-  size_t n = mNamedAreas.ShallowSizeOfExcludingThis(aMallocSizeOf);
-  n += mTemplates.ShallowSizeOfExcludingThis(aMallocSizeOf);
+  // Only measure it if it's unshared, to avoid double-counting.
+  size_t n = 0;
+  if (mRefCnt <= 1) {
+    n += aMallocSizeOf(this);
+    n += mNamedAreas.ShallowSizeOfExcludingThis(aMallocSizeOf);
+    n += mTemplates.ShallowSizeOfExcludingThis(aMallocSizeOf);
+  }
   return n;
 }

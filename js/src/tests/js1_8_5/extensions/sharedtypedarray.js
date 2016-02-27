@@ -12,8 +12,10 @@
 // These tests cannot test that sharing works across workers.  There
 // are or will be tests, in dom/workers, that do that.
 
-if (!this.SharedArrayBuffer)
+if (!this.SharedArrayBuffer) {
+    reportCompare(true,true);
     quit(0);
+}
 
 var b;
 
@@ -30,10 +32,10 @@ function testSharedArrayBuffer() {
     SharedArrayBuffer.prototype.abracadabra = "no wishing for wishes!";
     assertEq(b.abracadabra, "no wishing for wishes!");
 
-    // can "convert" a buffer (really works as an assertion)
-    assertEq(SharedArrayBuffer(b), b);
+    // SharedArrayBuffer is not a conversion operator, not even for instances of itself
+    assertThrowsInstanceOf(() => SharedArrayBuffer(b), TypeError);
 
-    // can't convert any other object
+    // can't convert any other object either
     assertThrowsInstanceOf(() => SharedArrayBuffer({}), TypeError);
 
     // byteLength can be invoked as per normal, indirectly

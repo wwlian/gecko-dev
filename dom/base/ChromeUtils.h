@@ -49,7 +49,7 @@ class ChromeUtils : public ThreadSafeChromeUtils
 {
 public:
   static void
-  OriginAttributesToSuffix(dom::GlobalObject& aGlobal,
+  OriginAttributesToSuffix(GlobalObject& aGlobal,
                            const dom::OriginAttributesDictionary& aAttrs,
                            nsCString& aSuffix);
 
@@ -57,6 +57,18 @@ public:
   OriginAttributesMatchPattern(dom::GlobalObject& aGlobal,
                                const dom::OriginAttributesDictionary& aAttrs,
                                const dom::OriginAttributesPatternDictionary& aPattern);
+
+  static void
+  CreateOriginAttributesWithUserContextId(dom::GlobalObject& aGlobal,
+                                          const nsAString& aOrigin,
+                                          uint32_t aUserContextId,
+                                          dom::OriginAttributesDictionary& aAttrs,
+                                          ErrorResult& aRv);
+
+  static bool
+  IsOriginAttributesEqual(dom::GlobalObject& aGlobal,
+                          const dom::OriginAttributesDictionary& aA,
+                          const dom::OriginAttributesDictionary& aB);
 };
 
 } // namespace dom

@@ -7,68 +7,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //// Test Functions
 
-function asyncClone(db, readOnly) {
-  let deferred = Promise.defer();
-  db.asyncClone(readOnly, function (status, db2) {
-    if (Components.isSuccessCode(status)) {
-      deferred.resolve(db2);
-    } else {
-      deferred.reject(status);
-    }
-  });
-  return deferred.promise;
-}
-
-function asyncClose(db) {
-  let deferred = Promise.defer();
-  db.asyncClose(function (status) {
-    if (Components.isSuccessCode(status)) {
-      deferred.resolve();
-    } else {
-      deferred.reject(status);
-    }
-  });
-  return deferred.promise;
-}
-
-function openAsyncDatabase(file, options) {
-  let deferred = Promise.defer();
-  let properties;
-  if (options) {
-    properties = Cc["@mozilla.org/hash-property-bag;1"].
-        createInstance(Ci.nsIWritablePropertyBag);
-    for (let k in options) {
-      properties.setProperty(k, options[k]);
-    }
-  }
-  getService().openAsyncDatabase(file, properties, function (status, db) {
-    if (Components.isSuccessCode(status)) {
-      deferred.resolve(db.QueryInterface(Ci.mozIStorageAsyncConnection));
-    } else {
-      deferred.reject(status);
-    }
-  });
-  return deferred.promise;
-}
-
-function executeAsync(statement, onResult) {
-  let deferred = Promise.defer();
-  statement.executeAsync({
-    handleError: function (error) {
-      deferred.reject(error);
-    },
-    handleResult: function (result) {
-      if (onResult) {
-        onResult(result);
-      }
-    },
-    handleCompletion: function (result) {
-      deferred.resolve(result);
-    }
-  });
-  return deferred.promise;
-}
-
 add_task(function* test_connectionReady_open() {
   // there doesn't seem to be a way for the connection to not be ready (unless
   // we close it with mozIStorageConnection::Close(), but we don't for this).
@@ -130,12 +68,8 @@ add_task(function* test_indexExists_created() {
 add_task(function* test_createTable_already_created() {
   var msc = getOpenedDatabase();
   do_check_true(msc.tableExists("test"));
-  try {
-    msc.createTable("test", "id INTEGER PRIMARY KEY, name TEXT");
-    do_throw("We shouldn't get here!");
-  } catch (e) {
-    do_check_eq(Cr.NS_ERROR_FAILURE, e.result);
-  }
+  Assert.throws(() => msc.createTable("test", "id INTEGER PRIMARY KEY, name TEXT"),
+                /NS_ERROR_FAILURE/);
 });
 
 add_task(function* test_attach_createTable_tableExists_indexExists() {
@@ -147,15 +81,8 @@ add_task(function* test_attach_createTable_tableExists_indexExists() {
   do_check_false(msc.tableExists("sample.test"));
   msc.createTable("sample.test", "id INTEGER PRIMARY KEY, name TEXT");
   do_check_true(msc.tableExists("sample.test"));
-  try {
-    msc.createTable("sample.test", "id INTEGER PRIMARY KEY, name TEXT");
-    do_throw("We shouldn't get here!");
-  } catch (e) {
-    if (e.result != Components.results.NS_ERROR_FAILURE) {
-      throw e;
-    }
-    // we expect to fail because this table should exist already.
-  }
+  Assert.throws(() => msc.createTable("sample.test", "id INTEGER PRIMARY KEY, name TEXT"),
+                /NS_ERROR_FAILURE/);
 
   do_check_false(msc.indexExists("sample.test_ind"));
   msc.executeSimpleSQL("CREATE INDEX sample.test_ind ON test (name)");
@@ -197,23 +124,13 @@ add_task(function* test_transactionInProgress_yes() {
 add_task(function* test_commitTransaction_no_transaction() {
   var msc = getOpenedDatabase();
   do_check_false(msc.transactionInProgress);
-  try {
-    msc.commitTransaction();
-    do_throw("We should not get here!");
-  } catch (e) {
-    do_check_eq(Cr.NS_ERROR_UNEXPECTED, e.result);
-  }
+  Assert.throws(() => msc.commitTransaction(), /NS_ERROR_UNEXPECTED/);
 });
 
 add_task(function* test_rollbackTransaction_no_transaction() {
   var msc = getOpenedDatabase();
   do_check_false(msc.transactionInProgress);
-  try {
-    msc.rollbackTransaction();
-    do_throw("We should not get here!");
-  } catch (e) {
-    do_check_eq(Cr.NS_ERROR_UNEXPECTED, e.result);
-  }
+  Assert.throws(() => msc.rollbackTransaction(), /NS_ERROR_UNEXPECTED/);
 });
 
 add_task(function* test_get_schemaVersion_not_set() {
@@ -354,21 +271,15 @@ add_task(function* test_close_fails_with_async_statement_ran() {
   stmt.finalize();
 
   let db = getOpenedDatabase();
-  try {
-    db.close();
-    do_throw("should have thrown");
-  }
-  catch (e) {
-    do_check_eq(e.result, Cr.NS_ERROR_UNEXPECTED);
-  }
-  finally {
-    // Clean up after ourselves.
-    db.asyncClose(function () {
-      // Reset gDBConn so that later tests will get a new connection object.
-      gDBConn = null;
-      deferred.resolve();
-    });
-  }
+  Assert.throws(() => db.close(), /NS_ERROR_UNEXPECTED/);
+
+  // Clean up after ourselves.
+  db.asyncClose(function () {
+    // Reset gDBConn so that later tests will get a new connection object.
+    gDBConn = null;
+    deferred.resolve();
+  });
+
   yield deferred.promise;
 });
 

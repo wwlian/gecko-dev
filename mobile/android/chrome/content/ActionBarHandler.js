@@ -4,12 +4,14 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
+XPCOMUtils.defineLazyModuleGetter(this, "Snackbars", "resource://gre/modules/Snackbars.jsm");
+
 const PHONE_REGEX = /^\+?[0-9\s,-.\(\)*#pw]{1,30}$/; // Are we a phone #?
 
 
 /**
  * ActionBarHandler Object and methods. Interface between Gecko Text Selection code
- * (TouchCaret, SelectionCarets, etc) and the Mobile ActionBar UI.
+ * (AccessibleCaret, etc) and the Mobile ActionBar UI.
  */
 var ActionBarHandler = {
   // Error codes returned from _init().
@@ -30,6 +32,26 @@ var ActionBarHandler = {
     // Close an open ActionBar, if carets no longer logically visible.
     if (this._selectionID && !e.caretVisible) {
       this._uninit(false);
+      return;
+    }
+
+    if (!this._selectionID && e.collapsed) {
+      switch (e.reason) {
+        case 'longpressonemptycontent':
+        case 'taponcaret':
+          // Show ActionBar when long pressing on an empty input or single
+          // tapping on the caret.
+          this._init();
+          break;
+
+        case 'updateposition':
+          // Do not show ActionBar when single tapping on an non-empty editable
+          // input.
+          break;
+
+        default:
+          break;
+      }
       return;
     }
 
@@ -98,7 +120,7 @@ var ActionBarHandler = {
   },
 
   /**
-   * Called when Gecko TouchCaret or SelectionCarets become visible.
+   * Called when Gecko AccessibleCaret becomes visible.
    */
   _init: function() {
     let [element, win] = this._getSelectionTargets();
@@ -143,7 +165,7 @@ var ActionBarHandler = {
   },
 
   /**
-   * Called when Gecko TouchCaret or SelectionCarets become hidden,
+   * Called when Gecko AccessibleCaret becomes hidden,
    * ActionBar is closed by user "close" request, or as a result of object
    * methods such as SELECT_ALL, PASTE, etc.
    */
@@ -164,7 +186,7 @@ var ActionBarHandler = {
     this._selectionID = null;
 
     // Clear selection required if triggered by self, or TextSelection icon
-    // actions. If called by Gecko TouchCaret/SelectionCarets state change,
+    // actions. If called by Gecko CaretStateChangedEvent,
     // visibility state is already correct.
     if (clearSelection) {
       this._clearSelection();
@@ -326,7 +348,7 @@ var ActionBarHandler = {
         clipboard.copyString(selectedText);
 
         let msg = Strings.browser.GetStringFromName("selectionHelper.textCopied");
-        NativeWindow.toast.show(msg, "short");
+        Snackbars.show(msg, Snackbars.LENGTH_LONG);
 
         // Then cut the selection text.
         ActionBarHandler._getSelection(element, win).deleteFromDocument();
@@ -361,7 +383,7 @@ var ActionBarHandler = {
         clipboard.copyString(selectedText);
 
         let msg = Strings.browser.GetStringFromName("selectionHelper.textCopied");
-        NativeWindow.toast.show(msg, "short");
+        Snackbars.show(msg, Snackbars.LENGTH_LONG);
 
         ActionBarHandler._uninit();
         UITelemetry.addEvent("action.1", "actionbar", null, "copy");

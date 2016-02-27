@@ -162,6 +162,18 @@ static MOZ_CONSTEXPR_VAR Register AsmJSIonExitRegD0 = rax;
 static MOZ_CONSTEXPR_VAR Register AsmJSIonExitRegD1 = rdi;
 static MOZ_CONSTEXPR_VAR Register AsmJSIonExitRegD2 = rbx;
 
+// Registerd used in RegExpMatcher instruction (do not use JSReturnOperand).
+static MOZ_CONSTEXPR_VAR Register RegExpMatcherRegExpReg = CallTempReg0;
+static MOZ_CONSTEXPR_VAR Register RegExpMatcherStringReg = CallTempReg1;
+static MOZ_CONSTEXPR_VAR Register RegExpMatcherLastIndexReg = CallTempReg2;
+static MOZ_CONSTEXPR_VAR Register RegExpMatcherStickyReg = CallTempReg4;
+
+// Registerd used in RegExpTester instruction (do not use ReturnReg).
+static MOZ_CONSTEXPR_VAR Register RegExpTesterRegExpReg = CallTempReg1;
+static MOZ_CONSTEXPR_VAR Register RegExpTesterStringReg = CallTempReg2;
+static MOZ_CONSTEXPR_VAR Register RegExpTesterLastIndexReg = CallTempReg3;
+static MOZ_CONSTEXPR_VAR Register RegExpTesterStickyReg = CallTempReg4;
+
 class ABIArgGenerator
 {
 #if defined(XP_WIN)
@@ -550,6 +562,15 @@ class Assembler : public AssemblerX86Shared
     void sarq(Imm32 imm, Register dest) {
         masm.sarq_ir(imm.value, dest.encoding());
     }
+    void shlq_cl(Register dest) {
+        masm.shlq_CLr(dest.encoding());
+    }
+    void shrq_cl(Register dest) {
+        masm.shrq_CLr(dest.encoding());
+    }
+    void sarq_cl(Register dest) {
+        masm.sarq_CLr(dest.encoding());
+    }
     void orq(Imm32 imm, Register dest) {
         masm.orq_ir(imm.value, dest.encoding());
     }
@@ -577,6 +598,21 @@ class Assembler : public AssemblerX86Shared
     void xorq(Imm32 imm, Register dest) {
         masm.xorq_ir(imm.value, dest.encoding());
     }
+    void xorq(const Operand& src, Register dest) {
+        switch (src.kind()) {
+          case Operand::REG:
+            masm.xorq_rr(src.reg(), dest.encoding());
+            break;
+          case Operand::MEM_REG_DISP:
+            masm.xorq_mr(src.disp(), src.base(), dest.encoding());
+            break;
+          case Operand::MEM_ADDRESS32:
+            masm.xorq_mr(src.address(), dest.encoding());
+            break;
+          default:
+            MOZ_CRASH("unexpected operand kind");
+        }
+    }
 
     void imulq(Register src, Register dest) {
         masm.imulq_rr(src.encoding(), dest.encoding());
@@ -601,7 +637,7 @@ class Assembler : public AssemblerX86Shared
     }
     void mov(wasm::SymbolicAddress imm, Register dest) {
         masm.movq_i64r(-1, dest.encoding());
-        append(AsmJSAbsoluteLink(CodeOffset(masm.currentOffset()), imm));
+        append(AsmJSAbsoluteAddress(CodeOffset(masm.currentOffset()), imm));
     }
     void mov(const Operand& src, Register dest) {
         movq(src, dest);
@@ -672,7 +708,7 @@ class Assembler : public AssemblerX86Shared
         return CodeOffset(masm.leaq_rip(dest.encoding()).offset());
     }
 
-    void loadAsmJSActivation(Register dest) {
+    void loadWasmActivation(Register dest) {
         CodeOffset label = loadRipRelativeInt64(dest);
         append(AsmJSGlobalAccess(label, wasm::ActivationGlobalDataOffset));
     }

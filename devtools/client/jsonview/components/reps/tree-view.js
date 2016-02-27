@@ -7,10 +7,10 @@
 define(function(require, exports, module) {
 
 // Dependencies
-const React = require("react");
-const { createFactories } = require("./rep-utils");
-const { Rep } = createFactories(require("./rep"));
-const { StringRep } = require("./string");
+const React = require("devtools/client/shared/vendor/react");
+const { createFactories } = require("devtools/client/shared/components/reps/rep-utils");
+const { Rep } = createFactories(require("devtools/client/shared/components/reps/rep"));
+const { StringRep } = require("devtools/client/shared/components/reps/string");
 const DOM = React.DOM;
 
 var uid = 0;
@@ -51,9 +51,8 @@ var TreeView = React.createClass({
     }
 
     return (
-      DOM.div({className: "domTable", cellPadding: 0, cellSpacing: 0,
-        onClick: this.onClick},
-          children
+      DOM.div({className: "domTable", cellPadding: 0, cellSpacing: 0},
+        children
       )
     );
   },
@@ -151,8 +150,9 @@ var TreeNode = React.createFactory(React.createClass({
     }
 
     return (
-      DOM.div({className: classNames.join(" "), onClick: this.onClick},
-        DOM.span({className: "memberLabelCell"},
+      DOM.div({className: classNames.join(" ")},
+        DOM.span({className: "memberLabelCell", onClick: this.onClick},
+          DOM.span({className: "memberIcon"}),
           DOM.span({className: "memberLabel " + member.type + "Label"},
             member.name)
         ),

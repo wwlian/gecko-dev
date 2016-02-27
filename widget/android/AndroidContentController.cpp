@@ -9,6 +9,7 @@
 #include "base/message_loop.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/APZCTreeManager.h"
+#include "nsIObserverService.h"
 #include "nsLayoutUtils.h"
 #include "nsWindow.h"
 
@@ -16,37 +17,30 @@ using mozilla::layers::APZCTreeManager;
 
 namespace mozilla {
 namespace widget {
-namespace android {
 
-NativePanZoomController::GlobalRef AndroidContentController::sNativePanZoomController = nullptr;
-
-NativePanZoomController::LocalRef
-AndroidContentController::SetNativePanZoomController(NativePanZoomController::Param obj)
+void
+AndroidContentController::Destroy()
 {
-    NativePanZoomController::LocalRef old = sNativePanZoomController;
-    sNativePanZoomController = obj;
-    return old;
+    mAndroidWindow = nullptr;
+    ChromeProcessController::Destroy();
 }
 
 void
-AndroidContentController::NotifyDefaultPrevented(uint64_t aInputBlockId,
+AndroidContentController::NotifyDefaultPrevented(APZCTreeManager* aManager,
+                                                 uint64_t aInputBlockId,
                                                  bool aDefaultPrevented)
 {
     if (!AndroidBridge::IsJavaUiThread()) {
         // The notification must reach the APZ on the Java UI thread (aka the
         // APZ "controller" thread) but we get it from the Gecko thread, so we
         // have to throw it onto the other thread.
-        AndroidBridge::Bridge()->PostTaskToUiThread(NewRunnableFunction(
-            &AndroidContentController::NotifyDefaultPrevented,
+        AndroidBridge::Bridge()->PostTaskToUiThread(NewRunnableMethod(
+            aManager, &APZCTreeManager::ContentReceivedInputBlock,
             aInputBlockId, aDefaultPrevented), 0);
         return;
     }
 
-    MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
-    APZCTreeManager* controller = nsWindow::GetAPZCTreeManager();
-    if (controller) {
-        controller->ContentReceivedInputBlock(aInputBlockId, aDefaultPrevented);
-    }
+    aManager->ContentReceivedInputBlock(aInputBlockId, aDefaultPrevented);
 }
 
 void
@@ -77,7 +71,7 @@ AndroidContentController::HandleSingleTap(const CSSPoint& aPoint,
 
         CSSIntPoint rounded = RoundedToInt(point);
         nsCString data = nsPrintfCString("{ \"x\": %d, \"y\": %d }", rounded.x, rounded.y);
-        nsAppShell::gAppShell->PostEvent(AndroidGeckoEvent::MakeBroadcastEvent(
+        nsAppShell::PostEvent(AndroidGeckoEvent::MakeBroadcastEvent(
                 NS_LITERAL_CSTRING("Gesture:SingleTap"), data));
     }
 
@@ -89,7 +83,39 @@ AndroidContentController::PostDelayedTask(Task* aTask, int aDelayMs)
 {
     AndroidBridge::Bridge()->PostTaskToUiThread(aTask, aDelayMs);
 }
+void
+AndroidContentController::UpdateOverscrollVelocity(const float aX, const float aY)
+{
+  if (mAndroidWindow) {
+    mAndroidWindow->UpdateOverscrollVelocity(aX, aY);
+  }
+}
 
-} // namespace android
+void
+AndroidContentController::UpdateOverscrollOffset(const float aX,const  float aY)
+{
+  if (mAndroidWindow) {
+    mAndroidWindow->UpdateOverscrollOffset(aX, aY);
+  }
+}
+
+void
+AndroidContentController::NotifyAPZStateChange(const ScrollableLayerGuid& aGuid,
+                                               APZStateChange aChange,
+                                               int aArg)
+{
+  // This function may get invoked twice, if the first invocation is not on
+  // the main thread then the ChromeProcessController version of this function
+  // will redispatch to the main thread. We want to make sure that our handling
+  // only happens on the main thread.
+  ChromeProcessController::NotifyAPZStateChange(aGuid, aChange, aArg);
+  if (NS_IsMainThread() && aChange == layers::GeckoContentController::APZStateChange::TransformEnd) {
+    // This is used by tests to determine when the APZ is done doing whatever
+    // it's doing. XXX generify this as needed when writing additional tests.
+    nsCOMPtr<nsIObserverService> observerService = mozilla::services::GetObserverService();
+    observerService->NotifyObservers(nullptr, "APZ:TransformEnd", nullptr);
+  }
+}
+
 } // namespace widget
 } // namespace mozilla

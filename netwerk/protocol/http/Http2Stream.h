@@ -13,8 +13,11 @@
 #include "mozilla/UniquePtr.h"
 #include "nsAHttpTransaction.h"
 #include "nsISupportsPriority.h"
+#include "SimpleBuffer.h"
 
 class nsStandardURL;
+class nsIInputStream;
+class nsIOutputStream;
 
 namespace mozilla {
 namespace net {
@@ -172,6 +175,12 @@ protected:
   // The session that this stream is a subset of
   Http2Session *mSession;
 
+  // These are temporary state variables to hold the argument to
+  // Read/WriteSegments so it can be accessed by On(read/write)segment
+  // further up the stack.
+  nsAHttpSegmentReader        *mSegmentReader;
+  nsAHttpSegmentWriter        *mSegmentWriter;
+
   nsCString     mOrigin;
   nsCString     mHeaderHost;
   nsCString     mHeaderScheme;
@@ -200,6 +209,9 @@ protected:
 
   void     ChangeState(enum upstreamStateType);
 
+  virtual void AdjustInitialWindow();
+  nsresult TransmitFrame(const char *, uint32_t *, bool forceCommitment);
+
 private:
   friend class nsAutoPtr<Http2Stream>;
 
@@ -207,8 +219,6 @@ private:
   nsresult GenerateOpen();
 
   void     AdjustPushedPriority();
-  void     AdjustInitialWindow();
-  nsresult TransmitFrame(const char *, uint32_t *, bool forceCommitment);
   void     GenerateDataFrameHeader(uint32_t, bool);
 
   nsresult BufferInput(uint32_t , uint32_t *);
@@ -221,12 +231,6 @@ private:
 
   // The underlying socket transport object is needed to propogate some events
   nsISocketTransport         *mSocketTransport;
-
-  // These are temporary state variables to hold the argument to
-  // Read/WriteSegments so it can be accessed by On(read/write)segment
-  // further up the stack.
-  nsAHttpSegmentReader        *mSegmentReader;
-  nsAHttpSegmentWriter        *mSegmentWriter;
 
   // The quanta upstream data frames are chopped into
   uint32_t                    mChunkSize;
@@ -319,10 +323,9 @@ private:
   // For Http2Push
   Http2PushedStream *mPushSource;
 
-  // A pipe used to store stream data when the transaction cannot keep up
+  // Used to store stream data when the transaction channel cannot keep up
   // and flow control has not yet kicked in.
-  nsCOMPtr<nsIInputStream> mInputBufferIn;
-  nsCOMPtr<nsIOutputStream> mInputBufferOut;
+  SimpleBuffer mSimpleBuffer;
 
 /// connect tunnels
 public:

@@ -281,8 +281,9 @@ class Vector final : private AllocPolicy
 
   friend struct detail::VectorTesting;
 
-  bool growStorageBy(size_t aIncr);
-  bool convertToHeapStorage(size_t aNewCap);
+  MOZ_WARN_UNUSED_RESULT bool growStorageBy(size_t aIncr);
+  MOZ_WARN_UNUSED_RESULT bool convertToHeapStorage(size_t aNewCap);
+  MOZ_WARN_UNUSED_RESULT bool maybeCheckSimulatedOOM(size_t aRequestedSize);
 
   /* magic constants */
 
@@ -519,10 +520,15 @@ public:
   /* mutators */
 
   /**
+   * Reverse the order of the elements in the vector in place.
+   */
+  void reverse();
+
+  /**
    * Given that the vector is empty and has no inline storage, grow to
    * |capacity|.
    */
-  bool initCapacity(size_t aRequest);
+  MOZ_WARN_UNUSED_RESULT bool initCapacity(size_t aRequest);
 
   /**
    * If reserve(aRequest) succeeds and |aRequest >= length()|, then appending
@@ -532,7 +538,7 @@ public:
    * A request to reserve an amount less than the current length does not affect
    * reserved space.
    */
-  bool reserve(size_t aRequest);
+  MOZ_WARN_UNUSED_RESULT bool reserve(size_t aRequest);
 
   /**
    * Destroy elements in the range [end() - aIncr, end()). Does not deallocate
@@ -540,19 +546,25 @@ public:
    */
   void shrinkBy(size_t aIncr);
 
+  /**
+   * Destroy elements in the range [aNewLength, end()). Does not deallocate
+   * or unreserve storage for those elements.
+   */
+  void shrinkTo(size_t aNewLength);
+
   /** Grow the vector by aIncr elements. */
-  bool growBy(size_t aIncr);
+  MOZ_WARN_UNUSED_RESULT bool growBy(size_t aIncr);
 
   /** Call shrinkBy or growBy based on whether newSize > length(). */
-  bool resize(size_t aNewLength);
+  MOZ_WARN_UNUSED_RESULT bool resize(size_t aNewLength);
 
   /**
    * Increase the length of the vector, but don't initialize the new elements
    * -- leave them as uninitialized memory.
    */
-  bool growByUninitialized(size_t aIncr);
+  MOZ_WARN_UNUSED_RESULT bool growByUninitialized(size_t aIncr);
   void infallibleGrowByUninitialized(size_t aIncr);
-  bool resizeUninitialized(size_t aNewLength);
+  MOZ_WARN_UNUSED_RESULT bool resizeUninitialized(size_t aNewLength);
 
   /** Shorthand for shrinkBy(length()). */
   void clear();
@@ -575,13 +587,13 @@ public:
    * vector, instead of copying it. If it fails, |aU| is left unmoved. ("We are
    * not amused.")
    */
-  template<typename U> bool append(U&& aU);
+  template<typename U> MOZ_WARN_UNUSED_RESULT bool append(U&& aU);
 
   /**
    * Construct a T in-place as a new entry at the end of this vector.
    */
   template<typename... Args>
-  bool emplaceBack(Args&&... aArgs)
+  MOZ_WARN_UNUSED_RESULT bool emplaceBack(Args&&... aArgs)
   {
     if (!growByUninitialized(1))
       return false;
@@ -590,10 +602,10 @@ public:
   }
 
   template<typename U, size_t O, class BP>
-  bool appendAll(const Vector<U, O, BP>& aU);
-  bool appendN(const T& aT, size_t aN);
-  template<typename U> bool append(const U* aBegin, const U* aEnd);
-  template<typename U> bool append(const U* aBegin, size_t aLength);
+  MOZ_WARN_UNUSED_RESULT bool appendAll(const Vector<U, O, BP>& aU);
+  MOZ_WARN_UNUSED_RESULT bool appendN(const T& aT, size_t aN);
+  template<typename U> MOZ_WARN_UNUSED_RESULT bool append(const U* aBegin, const U* aEnd);
+  template<typename U> MOZ_WARN_UNUSED_RESULT bool append(const U* aBegin, size_t aLength);
 
   /*
    * Guaranteed-infallible append operations for use upon vectors whose
@@ -637,7 +649,7 @@ public:
    *
    * N.B. Although a T*, only the range [0, length()) is constructed.
    */
-  T* extractRawBuffer();
+  MOZ_WARN_UNUSED_RESULT T* extractRawBuffer();
 
   /**
    * Transfer ownership of an array of objects into the vector.  The caller
@@ -665,7 +677,7 @@ public:
    * This is inherently a linear-time operation.  Be careful!
    */
   template<typename U>
-  T* insert(T* aP, U&& aVal);
+  MOZ_WARN_UNUSED_RESULT T* insert(T* aP, U&& aVal);
 
   /**
    * Removes the element |aT|, which must fall in the bounds [begin, end),
@@ -779,6 +791,18 @@ Vector<T, N, AP>::~Vector()
   Impl::destroy(beginNoCheck(), endNoCheck());
   if (!usingInlineStorage()) {
     this->free_(beginNoCheck());
+  }
+}
+
+template<typename T, size_t N, class AP>
+MOZ_ALWAYS_INLINE void
+Vector<T, N, AP>::reverse() {
+  MOZ_REENTRANCY_GUARD_ET_AL;
+  T* elems = mBegin;
+  size_t len = mLength;
+  size_t mid = len / 2;
+  for (size_t i = 0; i < mid; i++) {
+    Swap(elems[i], elems[len - i - 1]);
   }
 }
 
@@ -916,6 +940,23 @@ Vector<T, N, AP>::initCapacity(size_t aRequest)
 
 template<typename T, size_t N, class AP>
 inline bool
+Vector<T, N, AP>::maybeCheckSimulatedOOM(size_t aRequestedSize)
+{
+  if (aRequestedSize <= N) {
+    return true;
+  }
+
+#ifdef DEBUG
+  if (aRequestedSize <= mReserved) {
+    return true;
+  }
+#endif
+
+  return allocPolicy().checkSimulatedOOM();
+}
+
+template<typename T, size_t N, class AP>
+inline bool
 Vector<T, N, AP>::reserve(size_t aRequest)
 {
   MOZ_REENTRANCY_GUARD_ET_AL;
@@ -923,10 +964,8 @@ Vector<T, N, AP>::reserve(size_t aRequest)
     if (MOZ_UNLIKELY(!growStorageBy(aRequest - mLength))) {
       return false;
     }
-  } else if (aRequest > N) {
-    if (!allocPolicy().checkSimulatedOOM()) {
-      return false;
-    }
+  } else if (!maybeCheckSimulatedOOM(aRequest)) {
+    return false;
   }
 #ifdef DEBUG
   if (aRequest > mReserved) {
@@ -949,6 +988,14 @@ Vector<T, N, AP>::shrinkBy(size_t aIncr)
 }
 
 template<typename T, size_t N, class AP>
+MOZ_ALWAYS_INLINE void
+Vector<T, N, AP>::shrinkTo(size_t aNewLength)
+{
+  MOZ_ASSERT(aNewLength <= mLength);
+  shrinkBy(mLength - aNewLength);
+}
+
+template<typename T, size_t N, class AP>
 MOZ_ALWAYS_INLINE bool
 Vector<T, N, AP>::growBy(size_t aIncr)
 {
@@ -957,10 +1004,8 @@ Vector<T, N, AP>::growBy(size_t aIncr)
     if (MOZ_UNLIKELY(!growStorageBy(aIncr))) {
       return false;
     }
-  } else if (aIncr + mLength > N) {
-    if (!allocPolicy().checkSimulatedOOM()) {
-      return false;
-    }
+  } else if (!maybeCheckSimulatedOOM(mLength + aIncr)) {
+    return false;
   }
   MOZ_ASSERT(mLength + aIncr <= mCapacity);
   T* newend = endNoCheck() + aIncr;
@@ -983,10 +1028,8 @@ Vector<T, N, AP>::growByUninitialized(size_t aIncr)
     if (MOZ_UNLIKELY(!growStorageBy(aIncr))) {
       return false;
     }
-  } else if (aIncr + mLength > N) {
-    if (!allocPolicy().checkSimulatedOOM()) {
-      return false;
-    }
+  } else if (!maybeCheckSimulatedOOM(mLength + aIncr)) {
+    return false;
   }
   infallibleGrowByUninitialized(aIncr);
   return true;
@@ -1090,9 +1133,8 @@ Vector<T, N, AP>::appendN(const T& aT, size_t aNeeded)
     if (MOZ_UNLIKELY(!growStorageBy(aNeeded))) {
       return false;
     }
-  } else if (mLength + aNeeded > N) {
-    if (!allocPolicy().checkSimulatedOOM())
-      return false;
+  } else if (!maybeCheckSimulatedOOM(mLength + aNeeded)) {
+    return false;
   }
 #ifdef DEBUG
   if (mLength + aNeeded > mReserved) {
@@ -1177,8 +1219,7 @@ Vector<T, N, AP>::append(const U* aInsBegin, const U* aInsEnd)
     if (MOZ_UNLIKELY(!growStorageBy(aNeeded))) {
       return false;
     }
-  } else if (mLength + aNeeded > N) {
-    if (!allocPolicy().checkSimulatedOOM())
+  } else if (!maybeCheckSimulatedOOM(mLength + aNeeded)) {
       return false;
   }
 #ifdef DEBUG
@@ -1211,8 +1252,7 @@ Vector<T, N, AP>::append(U&& aU)
     if (MOZ_UNLIKELY(!growStorageBy(1))) {
       return false;
     }
-  } else if (mLength + 1 > N) {
-    if (!allocPolicy().checkSimulatedOOM())
+  } else if (!maybeCheckSimulatedOOM(mLength + 1)) {
       return false;
   }
 #ifdef DEBUG

@@ -17,7 +17,8 @@
 #define NS_AUDIOCHANNELAGENT_CID {0xf27688e2, 0x3dd7, 0x11e2, \
       {0x90, 0x4e, 0x10, 0xbf, 0x48, 0xd6, 0x4b, 0xd4}}
 
-class nsPIDOMWindow;
+class nsPIDOMWindowInner;
+class nsPIDOMWindowOuter;
 
 namespace mozilla {
 namespace dom {
@@ -34,14 +35,15 @@ public:
   AudioChannelAgent();
 
   void WindowVolumeChanged();
-  void WindowAudioCaptureChanged(uint64_t aInnerWindowID);
+  void WindowAudioCaptureChanged(uint64_t aInnerWindowID, bool aCapture);
 
-  nsPIDOMWindow* Window() const
+  nsPIDOMWindowOuter* Window() const
   {
     return mWindow;
   }
 
   uint64_t WindowID() const;
+  uint64_t InnerWindowID() const;
 
 private:
   virtual ~AudioChannelAgent();
@@ -50,13 +52,15 @@ private:
   // nsIAudioChannelAgentCallback out of mWeakCallback.
   already_AddRefed<nsIAudioChannelAgentCallback> GetCallback();
 
-  nsresult InitInternal(nsIDOMWindow* aWindow, int32_t aAudioAgentType,
+  nsresult InitInternal(nsPIDOMWindowInner* aWindow, int32_t aAudioAgentType,
                         nsIAudioChannelAgentCallback* aCallback,
                         bool aUseWeakRef);
 
   void Shutdown();
 
-  nsCOMPtr<nsPIDOMWindow> mWindow;
+  nsresult FindCorrectWindow(nsPIDOMWindowInner* aWindow);
+
+  nsCOMPtr<nsPIDOMWindowOuter> mWindow;
   nsCOMPtr<nsIAudioChannelAgentCallback> mCallback;
 
   nsWeakPtr mWeakCallback;
@@ -64,7 +68,6 @@ private:
   int32_t mAudioChannelType;
   uint64_t mInnerWindowID;
   bool mIsRegToService;
-  bool mNotifyPlayback;
 };
 
 } // namespace dom

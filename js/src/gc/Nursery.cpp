@@ -10,6 +10,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Move.h"
+#include "mozilla/unused.h"
 
 #include "jscompartment.h"
 #include "jsfriendapi.h"
@@ -81,10 +82,10 @@ js::Nursery::init(uint32_t maxNurseryBytes)
     heapStart_ = uintptr_t(heap);
     heapEnd_ = heapStart_ + nurserySize();
     currentStart_ = start();
-    numActiveChunks_ = 1;
+    numActiveChunks_ = numNurseryChunks_;
     JS_POISON(heap, JS_FRESH_NURSERY_PATTERN, nurserySize());
+    updateNumActiveChunks(1);
     setCurrentChunk(0);
-    updateDecommittedRegion();
 
     char* env = getenv("JS_GC_PROFILE_NURSERY");
     if (env) {
@@ -110,35 +111,17 @@ js::Nursery::~Nursery()
 }
 
 void
-js::Nursery::updateDecommittedRegion()
-{
-#ifndef JS_GC_ZEAL
-    if (numActiveChunks_ < numNurseryChunks_) {
-        // Bug 994054: madvise on MacOS is too slow to make this
-        //             optimization worthwhile.
-# ifndef XP_DARWIN
-        uintptr_t decommitStart = chunk(numActiveChunks_).start();
-        uintptr_t decommitSize = heapEnd() - decommitStart;
-        MOZ_ASSERT(decommitStart == AlignBytes(decommitStart, Alignment));
-        MOZ_ASSERT(decommitSize == AlignBytes(decommitStart, Alignment));
-        MarkPagesUnused((void*)decommitStart, decommitSize);
-# endif
-    }
-#endif
-}
-
-void
 js::Nursery::enable()
 {
     MOZ_ASSERT(isEmpty());
     MOZ_ASSERT(!runtime()->gc.isVerifyPreBarriersEnabled());
     if (isEnabled())
         return;
-    numActiveChunks_ = 1;
+    updateNumActiveChunks(1);
     setCurrentChunk(0);
     currentStart_ = position();
 #ifdef JS_GC_ZEAL
-    if (runtime()->gcZeal() == ZealGenerationalGCValue)
+    if (runtime()->hasZealMode(ZealMode::GenerationalGC))
         enterZealMode();
 #endif
 }
@@ -149,9 +132,8 @@ js::Nursery::disable()
     MOZ_ASSERT(isEmpty());
     if (!isEnabled())
         return;
-    numActiveChunks_ = 0;
+    updateNumActiveChunks(0);
     currentEnd_ = 0;
-    updateDecommittedRegion();
 }
 
 bool
@@ -160,7 +142,7 @@ js::Nursery::isEmpty() const
     MOZ_ASSERT(runtime_);
     if (!isEnabled())
         return true;
-    MOZ_ASSERT_IF(runtime_->gcZeal() != ZealGenerationalGCValue, currentStart_ == start());
+    MOZ_ASSERT_IF(!runtime_->hasZealMode(ZealMode::GenerationalGC), currentStart_ == start());
     return position() == currentStart_;
 }
 
@@ -417,8 +399,7 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason, ObjectGroupList
 
     rt->gc.incMinorGcNumber();
 
-    rt->gc.stats.count(gcstats::STAT_MINOR_GC);
-
+    rt->gc.stats.beginNurseryCollection(reason);
     TraceMinorGCStart();
 
     int64_t timestampStart_total = PRMJ_Now();
@@ -496,6 +477,10 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason, ObjectGroupList
     forwardedBuffers.finish();
     TIME_END(updateJitActivations);
 
+    TIME_START(objectsTenuredCallback);
+    rt->gc.callObjectsTenuredCallback();
+    TIME_END(objectsTenuredCallback);
+
     // Sweep.
     TIME_START(freeMallocedBuffers);
     freeMallocedBuffers();
@@ -512,7 +497,7 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason, ObjectGroupList
     // Make sure hashtables have been updated after the collection.
     TIME_START(checkHashTables);
 #ifdef JS_GC_ZEAL
-    if (rt->gcZeal() == ZealCheckHashTablesOnMinorGC)
+    if (rt->hasZealMode(ZealMode::CheckHashTablesOnMinorGC))
         CheckHashTablesAfterMovingGC(rt);
 #endif
     TIME_END(checkHashTables);
@@ -535,16 +520,10 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason, ObjectGroupList
         for (size_t i = 0; i < ArrayLength(tenureCounts.entries); i++) {
             const TenureCount& entry = tenureCounts.entries[i];
             if (entry.count >= 3000)
-                pretenureGroups->append(entry.group); // ignore alloc failure
+                mozilla::Unused << pretenureGroups->append(entry.group); // ignore alloc failure
         }
     }
     TIME_END(pretenure);
-
-    TIME_START(logPromotionsToTenured);
-    for (ZonesIter zone(rt, SkipAtoms); !zone.done(); zone.next()) {
-        zone->logPromotionsToTenured();
-    }
-    TIME_END(logPromotionsToTenured);
 
     // We ignore gcMaxBytes when allocating for minor collection. However, if we
     // overflowed, we disable the nursery. The next time we allocate, we'll fail
@@ -558,6 +537,7 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason, ObjectGroupList
     if (totalTime > 1000)
         rt->addTelemetry(JS_TELEMETRY_GC_MINOR_REASON_LONG, reason);
 
+    rt->gc.stats.endNurseryCollection(reason);
     TraceMinorGCEnd();
 
     if (enableProfiling_ && totalTime >= profileThreshold_) {
@@ -576,14 +556,14 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason, ObjectGroupList
             {"mkDbgr", TIME_TOTAL(markDebugger)},
             {"clrNOC", TIME_TOTAL(clearNewObjectCache)},
             {"collct", TIME_TOTAL(collectToFP)},
+            {" tenCB", TIME_TOTAL(objectsTenuredCallback)},
             {"swpABO", TIME_TOTAL(sweepArrayBufferViewList)},
             {"updtIn", TIME_TOTAL(updateJitActivations)},
             {"frSlts", TIME_TOTAL(freeMallocedBuffers)},
             {" clrSB", TIME_TOTAL(clearStoreBuffer)},
             {" sweep", TIME_TOTAL(sweep)},
             {"resize", TIME_TOTAL(resize)},
-            {"pretnr", TIME_TOTAL(pretenure)},
-            {"logPtT", TIME_TOTAL(logPromotionsToTenured)}
+            {"pretnr", TIME_TOTAL(pretenure)}
         };
         static int printedHeader = 0;
         if ((printedHeader++ % 200) == 0) {
@@ -594,7 +574,7 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason, ObjectGroupList
         }
 
 #define FMT " %6" PRIu64
-        fprintf(stderr, "MinorGC: %20s %5.1f%% %4d " FMT, js::gcstats::ExplainReason(reason),
+        fprintf(stderr, "MinorGC: %20s %5.1f%% %4d " FMT, JS::gcreason::ExplainReason(reason),
                 promotionRate * 100, numActiveChunks_, totalTime);
         for (auto &entry : PrintList) {
             fprintf(stderr, FMT, entry.time);
@@ -672,7 +652,7 @@ js::Nursery::sweep()
     for (int i = 0; i < numNurseryChunks_; ++i)
         initChunk(i);
 
-    if (runtime()->gcZeal() == ZealGenerationalGCValue) {
+    if (runtime()->hasZealMode(ZealMode::GenerationalGC)) {
         MOZ_ASSERT(numActiveChunks_ == numNurseryChunks_);
 
         /* Only reset the alloc point when we are close to the end. */
@@ -698,19 +678,41 @@ void
 js::Nursery::growAllocableSpace()
 {
 #ifdef JS_GC_ZEAL
-    MOZ_ASSERT_IF(runtime()->gcZeal() == ZealGenerationalGCValue,
+    MOZ_ASSERT_IF(runtime()->hasZealMode(ZealMode::GenerationalGC),
                   numActiveChunks_ == numNurseryChunks_);
 #endif
-    numActiveChunks_ = Min(numActiveChunks_ * 2, numNurseryChunks_);
+    updateNumActiveChunks(Min(numActiveChunks_ * 2, numNurseryChunks_));
 }
 
 void
 js::Nursery::shrinkAllocableSpace()
 {
 #ifdef JS_GC_ZEAL
-    if (runtime()->gcZeal() == ZealGenerationalGCValue)
+    if (runtime()->hasZealMode(ZealMode::GenerationalGC))
         return;
 #endif
-    numActiveChunks_ = Max(numActiveChunks_ - 1, 1);
-    updateDecommittedRegion();
+    updateNumActiveChunks(Max(numActiveChunks_ - 1, 1));
+}
+
+void
+js::Nursery::updateNumActiveChunks(int newCount)
+{
+#ifndef JS_GC_ZEAL
+    int priorChunks = numActiveChunks_;
+#endif
+    numActiveChunks_ = newCount;
+
+    // In zeal mode, we want to keep the unused memory poisoned so that we
+    // will crash sooner. Avoid decommit in that case to avoid having the
+    // system zero the pages.
+#ifndef JS_GC_ZEAL
+    if (numActiveChunks_ < priorChunks) {
+        uintptr_t decommitStart = chunk(numActiveChunks_).start();
+        uintptr_t decommitSize = chunk(priorChunks - 1).start() + ChunkSize - decommitStart;
+        MOZ_ASSERT(decommitSize != 0);
+        MOZ_ASSERT(decommitStart == AlignBytes(decommitStart, Alignment));
+        MOZ_ASSERT(decommitSize == AlignBytes(decommitSize, Alignment));
+        MarkPagesUnused((void*)decommitStart, decommitSize);
+    }
+#endif // !defined(JS_GC_ZEAL)
 }

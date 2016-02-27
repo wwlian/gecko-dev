@@ -233,6 +233,7 @@ nsSHistory::nsSHistory()
   : mIndex(-1)
   , mLength(0)
   , mRequestedIndex(-1)
+  , mRootDocShell(nullptr)
 {
   // Add this new SHistory object to the list
   PR_APPEND_LINK(this, &gSHistoryList);
@@ -1004,6 +1005,7 @@ class TransactionAndDistance
 public:
   TransactionAndDistance(nsISHTransaction* aTrans, uint32_t aDist)
     : mTransaction(aTrans)
+    , mLastTouched(0)
     , mDistance(aDist)
   {
     mViewer = GetContentViewerForTransaction(aTrans);
@@ -1017,7 +1019,6 @@ public:
       shentryInternal->GetLastTouched(&mLastTouched);
     } else {
       NS_WARNING("Can't cast to nsISHEntryInternal?");
-      mLastTouched = 0;
     }
   }
 
@@ -1404,7 +1405,7 @@ nsSHistory::RemoveDynEntries(int32_t aOldIndex, int32_t aNewIndex)
   nsCOMPtr<nsISHEntry> originalSH;
   GetEntryAtIndex(aOldIndex, false, getter_AddRefs(originalSH));
   nsCOMPtr<nsISHContainer> originalContainer = do_QueryInterface(originalSH);
-  nsAutoTArray<uint64_t, 16> toBeRemovedEntries;
+  AutoTArray<uint64_t, 16> toBeRemovedEntries;
   if (originalContainer) {
     nsTArray<uint64_t> originalDynDocShellIDs;
     GetDynamicChildren(originalContainer, originalDynDocShellIDs, true);

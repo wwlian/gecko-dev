@@ -8,8 +8,13 @@ Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/framework/test/shared-head.js",
   this);
 
+// Load the shared Redux helpers into this compartment.
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/devtools/client/framework/test/shared-redux-head.js",
+  this);
+
 var { snapshotState: states } = require("devtools/client/memory/constants");
-var { breakdownEquals, breakdownNameToSpec } = require("devtools/client/memory/utils");
+var { breakdownEquals, breakdownNameToSpec, L10N } = require("devtools/client/memory/utils");
 
 Services.prefs.setBoolPref("devtools.memory.enabled", true);
 
@@ -67,32 +72,31 @@ function makeMemoryTest(url, generator) {
   });
 }
 
-
-function waitUntilState (store, predicate) {
-  let deferred = promise.defer();
-  let unsubscribe = store.subscribe(check);
-
-  function check () {
-    if (predicate(store.getState())) {
-      unsubscribe();
-      deferred.resolve()
-    }
-  }
-
-  // Fire the check immediately incase the action has already occurred
-  check();
-
-  return deferred.promise;
+function dumpn(msg) {
+  dump(`MEMORY-TEST: ${msg}\n`);
 }
 
-function waitUntilSnapshotState (store, expected) {
+/**
+ * Returns a promise that will resolve when the provided store matches
+ * the expected array. expectedStates is an array of dominatorTree states.
+ * Expectations :
+ * - store.getState().snapshots.length == expected.length
+ * - snapshots[i].dominatorTree.state == expected[i]
+ *
+ * @param  {Store} store
+ * @param  {Array<string>} expectedStates [description]
+ * @return {Promise}
+ */
+function waitUntilDominatorTreeState(store, expected) {
   let predicate = () => {
     let snapshots = store.getState().snapshots;
-    info(snapshots.map(x => x.state));
     return snapshots.length === expected.length &&
-           expected.every((state, i) => state === "*" || snapshots[i].state === state);
+            expected.every((state, i) => {
+              return snapshots[i].dominatorTree &&
+              snapshots[i].dominatorTree.state === state;
+            });
   };
-  info(`Waiting for snapshots to be of state: ${expected}`);
+  info(`Waiting for dominator trees to be of state: ${expected}`);
   return waitUntilState(store, predicate);
 }
 
@@ -102,6 +106,14 @@ function takeSnapshot (window) {
   info(`Taking snapshot...`);
   document.querySelector(".devtools-toolbar .take-snapshot").click();
   return waitUntilState(gStore, () => gStore.getState().snapshots.length === snapshotCount + 1);
+}
+
+function clearSnapshots (window) {
+  let { gStore, document } = window;
+  document.querySelector(".devtools-toolbar .clear-snapshots").click();
+  return waitUntilState(gStore, () => gStore.getState().snapshots.every(
+    (snapshot) => snapshot.state !== states.SAVED_CENSUS)
+  );
 }
 
 /**
@@ -133,4 +145,27 @@ function setBreakdown (window, type) {
 function getDisplayedSnapshotStatus(document) {
   const status = document.querySelector(".snapshot-status");
   return status ? status.textContent.trim() : null;
+}
+
+/**
+ * Get the index of the currently selected snapshot.
+ *
+ * @return {Number}
+ */
+function getSelectedSnapshotIndex(store) {
+  let snapshots = store.getState().snapshots;
+  let selectedSnapshot = snapshots.find(s => s.selected);
+  return snapshots.indexOf(selectedSnapshot);
+}
+
+/**
+ * Returns a promise that will resolve when the snapshot with provided index
+ * becomes selected.
+ *
+ * @return {Promise}
+ */
+function waitUntilSnapshotSelected(store, snapshotIndex) {
+  return waitUntilState(store, state =>
+    state.snapshots[snapshotIndex] &&
+    state.snapshots[snapshotIndex].selected === true);
 }

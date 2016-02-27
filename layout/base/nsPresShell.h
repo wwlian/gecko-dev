@@ -29,13 +29,13 @@
 #include "nsCRT.h"
 #include "nsAutoPtr.h"
 #include "nsIWidget.h"
-#include "nsStyleSet.h"
 #include "nsContentUtils.h" // For AddScriptBlocker().
 #include "nsRefreshDriver.h"
 #include "TouchManager.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/StyleSetHandle.h"
 #include "MobileViewportManager.h"
 #include "ZoomConstraintsClient.h"
 
@@ -51,7 +51,6 @@ class nsPresShellEventCB;
 class nsAutoCauseReflowNotifier;
 
 namespace mozilla {
-class CSSStyleSheet;
 class EventDispatchingCallback;
 } // namespace mozilla
 
@@ -73,20 +72,13 @@ public:
   // nsISupports
   NS_DECL_ISUPPORTS
 
-  // Touch caret preference
-  static bool TouchCaretPrefEnabled();
-
-  // Selection caret preference
-  static bool SelectionCaretPrefEnabled();
-
   static bool AccessibleCaretEnabled();
 
   // BeforeAfterKeyboardEvent preference
   static bool BeforeAfterKeyboardEventEnabled();
 
   void Init(nsIDocument* aDocument, nsPresContext* aPresContext,
-            nsViewManager* aViewManager, nsStyleSet* aStyleSet,
-            nsCompatibility aCompatMode);
+            nsViewManager* aViewManager, mozilla::StyleSetHandle aStyleSet);
   virtual void Destroy() override;
   virtual void MakeZombie() override;
 
@@ -162,12 +154,12 @@ public:
   virtual void UnsuppressPainting() override;
 
   virtual nsresult GetAgentStyleSheets(
-      nsTArray<RefPtr<mozilla::CSSStyleSheet>>& aSheets) override;
+      nsTArray<mozilla::StyleSheetHandle::RefPtr>& aSheets) override;
   virtual nsresult SetAgentStyleSheets(
-      const nsTArray<RefPtr<mozilla::CSSStyleSheet>>& aSheets) override;
+      const nsTArray<mozilla::StyleSheetHandle::RefPtr>& aSheets) override;
 
-  virtual nsresult AddOverrideStyleSheet(mozilla::CSSStyleSheet* aSheet) override;
-  virtual nsresult RemoveOverrideStyleSheet(mozilla::CSSStyleSheet* aSheet) override;
+  virtual nsresult AddOverrideStyleSheet(mozilla::StyleSheetHandle aSheet) override;
+  virtual nsresult RemoveOverrideStyleSheet(mozilla::StyleSheetHandle aSheet) override;
 
   virtual nsresult HandleEventWithTarget(
                                  mozilla::WidgetEvent* aEvent,
@@ -202,7 +194,7 @@ public:
                   nsIntRect* aScreenRect,
                   uint32_t aFlags) override;
 
-  virtual already_AddRefed<nsPIDOMWindow> GetRootWindow() override;
+  virtual already_AddRefed<nsPIDOMWindowOuter> GetRootWindow() override;
 
   virtual LayerManager* GetLayerManager() override;
 
@@ -218,7 +210,7 @@ public:
   }
   virtual bool ScaleToResolution() const override;
   virtual float GetCumulativeResolution() override;
-  virtual float GetCumulativeScaleResolution() override;
+  virtual float GetCumulativeNonRootScaleResolution() override;
 
   //nsIViewObserver interface
 
@@ -245,14 +237,6 @@ public:
                                       bool aFlushOnHoverChange) override;
   virtual void ClearMouseCaptureOnView(nsView* aView) override;
   virtual bool IsVisible() override;
-
-  // touch caret
-  virtual already_AddRefed<mozilla::TouchCaret> GetTouchCaret() const override;
-  virtual mozilla::dom::Element* GetTouchCaretElement() const override;
-  // selection caret
-  virtual already_AddRefed<mozilla::SelectionCarets> GetSelectionCarets() const override;
-  virtual mozilla::dom::Element* GetSelectionCaretsStartElement() const override;
-  virtual mozilla::dom::Element* GetSelectionCaretsEndElement() const override;
 
   virtual already_AddRefed<mozilla::AccessibleCaretEventHub> GetAccessibleCaretEventHub() const override;
 
@@ -390,7 +374,8 @@ public:
   virtual void ScheduleImageVisibilityUpdate() override;
 
   virtual void RebuildImageVisibilityDisplayList(const nsDisplayList& aList) override;
-  virtual void RebuildImageVisibility(nsRect* aRect = nullptr) override;
+  virtual void RebuildImageVisibility(nsRect* aRect = nullptr,
+                                      bool aRemoveOnly = false) override;
 
   virtual void EnsureImageInVisibleList(nsIImageLoadingContent* aImage) override;
 
@@ -509,6 +494,8 @@ protected:
   friend class nsPresShellEventCB;
 
   bool mCaretEnabled;
+
+  bool mIsHidden;
 #ifdef DEBUG
   nsStyleSet* CloneStyleSet(nsStyleSet* aSet);
   bool VerifyIncrementalReflow();
@@ -516,7 +503,7 @@ protected:
   void ShowEventTargetDebug();
 #endif
 
-  void RecordStyleSheetChange(mozilla::CSSStyleSheet* aStyleSheet);
+  void RecordStyleSheetChange(mozilla::StyleSheetHandle aStyleSheet);
 
   void RemovePreferenceStyles();
 
@@ -658,9 +645,6 @@ protected:
   void QueryIsActive();
   nsresult UpdateImageLockingState();
 
-#ifdef ANDROID
-  nsIDocument* GetTouchEventTargetDocument();
-#endif
   bool InZombieDocument(nsIContent *aContent);
   already_AddRefed<nsIPresShell> GetParentPresShellForEventHandling();
   nsIContent* GetCurrentEventContent();
@@ -682,7 +666,7 @@ protected:
                                  nsEventStatus* aEventStatus);
   // This returns the focused DOM window under our top level window.
   //  I.e., when we are deactive, this returns the *last* focused DOM window.
-  already_AddRefed<nsPIDOMWindow> GetFocusedDOMWindowInOurWindow();
+  already_AddRefed<nsPIDOMWindowOuter> GetFocusedDOMWindowInOurWindow();
 
   /*
    * This and the next two helper methods are used to target and position the
@@ -735,8 +719,15 @@ protected:
   virtual void SysColorChanged() override { mPresContext->SysColorChanged(); }
   virtual void ThemeChanged() override { mPresContext->ThemeChanged(); }
   virtual void BackingScaleFactorChanged() override { mPresContext->UIResolutionChanged(); }
+#ifdef ANDROID
+  virtual nsIDocument* GetTouchEventTargetDocument();
+#endif
+
+  virtual void PausePainting() override;
+  virtual void ResumePainting() override;
 
   void UpdateImageVisibility();
+  void DoUpdateImageVisibility(bool aRemoveOnly);
   void UpdateActivePointerState(mozilla::WidgetGUIEvent* aEvent);
 
   nsRevocableEventPtr<nsRunnableMethod<PresShell> > mUpdateImageVisibilityEvent;
@@ -744,7 +735,8 @@ protected:
   void ClearVisibleImagesList(uint32_t aNonvisibleAction);
   static void ClearImageVisibilityVisited(nsView* aView, bool aClear);
   static void MarkImagesInListVisible(const nsDisplayList& aList);
-  void MarkImagesInSubtreeVisible(nsIFrame* aFrame, const nsRect& aRect);
+  void MarkImagesInSubtreeVisible(nsIFrame* aFrame, const nsRect& aRect,
+                                  bool aRemoveOnly = false);
 
   // Methods for dispatching KeyboardEvent and BeforeAfterKeyboardEvent.
   void HandleKeyboardEvent(nsINode* aTarget,
@@ -791,7 +783,7 @@ protected:
   nsPoint                   mMouseLocation;
 
   // mStyleSet owns it but we maintain a ref, may be null
-  RefPtr<mozilla::CSSStyleSheet> mPrefStyleSheet;
+  mozilla::StyleSheetHandle::RefPtr mPrefStyleSheet;
 
   // Set of frames that we should mark with NS_FRAME_HAS_DIRTY_CHILDREN after
   // we finish reflowing mCurrentReflowRoot.
@@ -816,15 +808,11 @@ protected:
   nsCallbackEventRequest*   mFirstCallbackEventRequest;
   nsCallbackEventRequest*   mLastCallbackEventRequest;
 
-  // TouchManager
-  TouchManager              mTouchManager;
+  mozilla::TouchManager     mTouchManager;
 
   RefPtr<ZoomConstraintsClient> mZoomConstraintsClient;
   RefPtr<MobileViewportManager> mMobileViewportManager;
 
-  // TouchCaret
-  RefPtr<mozilla::TouchCaret> mTouchCaret;
-  RefPtr<mozilla::SelectionCarets> mSelectionCarets;
   RefPtr<mozilla::AccessibleCaretEventHub> mAccessibleCaretEventHub;
 
   // This timer controls painting suppression.  Until it fires

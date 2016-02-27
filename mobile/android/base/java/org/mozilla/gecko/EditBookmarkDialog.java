@@ -10,17 +10,18 @@ import org.mozilla.gecko.db.BrowserContract.Bookmarks;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.gecko.util.UIAsyncTask;
 
+import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.database.Cursor;
+import android.support.design.widget.Snackbar;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.EditText;
-import android.widget.Toast;
 
 /**
  * A dialog that allows editing a bookmarks url, title, or keywords
@@ -216,7 +217,9 @@ public class EditBookmarkDialog {
 
                     @Override
                     public void onPostExecute(Void result) {
-                        Toast.makeText(context, R.string.bookmark_updated, Toast.LENGTH_SHORT).show();
+                        SnackbarHelper.showSnackbar((Activity) context,
+                                context.getString(R.string.bookmark_updated),
+                                Snackbar.LENGTH_LONG);
                     }
                 }).execute();
             }

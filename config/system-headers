@@ -418,7 +418,6 @@ ExDisp.h
 exe386.h
 execinfo.h
 extras.h
-fabdef.h
 fcntl.h
 features.h
 fibdef.h
@@ -488,6 +487,7 @@ fstream
 fstream.h
 ft2build.h
 fts.h
+functional
 gconf/gconf-client.h
 Gdiplus.h
 gdk/gdk.h
@@ -549,6 +549,7 @@ image.h
 imagehlp.h
 imm.h
 initguid.h
+initializer_list
 InterfaceDefs.h
 InternetConfig.h
 IntlResources.h
@@ -565,6 +566,7 @@ ios
 iosfwd
 iostream
 iostream.h
+istream
 iterator
 JavaControl.h
 JavaEmbedding/JavaControl.h
@@ -628,7 +630,6 @@ libgnome/libgnome.h
 libgnomeui/gnome-icon-lookup.h
 libgnomeui/gnome-icon-theme.h
 libgnomeui/gnome-ui-init.h
-lib$routines.h
 limits
 limits.h
 link.h
@@ -749,6 +750,7 @@ media/stagefright/foundation/hexdump.h
 media/stagefright/MediaBuffer.h
 media/stagefright/MediaBufferGroup.h
 media/stagefright/MediaCodec.h
+media/stagefright/MediaCodecList.h
 media/stagefright/MediaCodecSource.h
 media/stagefright/MediaDefs.h
 media/stagefright/MediaErrors.h
@@ -889,7 +891,6 @@ resolv.h
 Resources.h
 Retrace.h
 rld_interface.h
-rmsdef.h
 Roster.h
 rpc.h
 rpcproxy.h
@@ -927,7 +928,6 @@ someincludefile.h
 Sound.h
 soundcard.h
 sqlite3.h
-ssdef.h
 sstream
 stack
 #ifdef ANDROID
@@ -1154,7 +1154,6 @@ unikbd.h
 unistd.h
 unix.h
 unixio.h
-unixlib.h
 unknwn.h
 UPrinting.h
 UQuickTime.h
@@ -1307,6 +1306,7 @@ QtSparql/qsparqlresult.h
 pixman.h
 #endif
 #if MOZ_NATIVE_LIBVPX==1
+vpx/svc_context.h
 vpx/vpx_codec.h
 vpx/vpx_decoder.h
 vpx/vpx_encoder.h

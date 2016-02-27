@@ -147,13 +147,19 @@ class AtomicOperations
     static inline void memmoveSafeWhenRacy(void* dest, const void* src, size_t nbytes);
 
   public:
-    // Test lock-freedom for any integer value.
+    // Test lock-freedom for any int32 value.  This implements the
+    // Atomics::isLockFree() operation in the Shared Memory and
+    // Atomics specification, as follows:
     //
-    // This implements a platform-independent pattern, as follows:
+    // 1, 2, and 4 bytes are always lock free (in SpiderMonkey).
     //
-    // 1, 2, and 4 bytes are always lock free, lock-freedom for 8
-    // bytes is determined by the platform's isLockfree8(), and there
-    // is no lock-freedom for any other values on any platform.
+    // Lock-freedom for 8 bytes is determined by the platform's
+    // isLockfree8().  However, the spec stipulates that isLockFree(8)
+    // is true only if there is an integer array that admits atomic
+    // operations whose BYTES_PER_ELEMENT=8; at the moment (February
+    // 2016) there are no such arrays.
+    //
+    // There is no lock-freedom for any other values on any platform.
     static inline bool isLockfree(int32_t n);
 
     // If the return value is true then a call to the 64-bit (8-byte)
@@ -225,23 +231,35 @@ class AtomicOperations
     }
 
     template<typename T>
-    static void memcpySafeWhenRacy(SharedMem<T> dest, SharedMem<T> src, size_t nbytes) {
-        memcpySafeWhenRacy(static_cast<void*>(dest.unwrap()), static_cast<void*>(src.unwrap()), nbytes);
+    static void memcpySafeWhenRacy(SharedMem<T*> dest, SharedMem<T*> src, size_t nbytes) {
+        memcpySafeWhenRacy(dest.template cast<void*>().unwrap(),
+                           src.template cast<void*>().unwrap(), nbytes);
     }
 
     template<typename T>
-    static void memcpySafeWhenRacy(SharedMem<T> dest, T src, size_t nbytes) {
-        memcpySafeWhenRacy(static_cast<void*>(dest.unwrap()), static_cast<void*>(src), nbytes);
+    static void memcpySafeWhenRacy(SharedMem<T*> dest, T* src, size_t nbytes) {
+        memcpySafeWhenRacy(dest.template cast<void*>().unwrap(), static_cast<void*>(src), nbytes);
     }
 
     template<typename T>
-    static void memcpySafeWhenRacy(T dest, SharedMem<T> src, size_t nbytes) {
-        memcpySafeWhenRacy(static_cast<void*>(dest), static_cast<void*>(src.unwrap()), nbytes);
+    static void memcpySafeWhenRacy(T* dest, SharedMem<T*> src, size_t nbytes) {
+        memcpySafeWhenRacy(static_cast<void*>(dest), src.template cast<void*>().unwrap(), nbytes);
     }
 
     template<typename T>
-    static void memmoveSafeWhenRacy(SharedMem<T> dest, SharedMem<T> src, size_t nbytes) {
-        memmoveSafeWhenRacy(static_cast<void*>(dest.unwrap()), static_cast<void*>(src.unwrap()), nbytes);
+    static void memmoveSafeWhenRacy(SharedMem<T*> dest, SharedMem<T*> src, size_t nbytes) {
+        memmoveSafeWhenRacy(dest.template cast<void*>().unwrap(),
+                            src.template cast<void*>().unwrap(), nbytes);
+    }
+
+    template<typename T>
+    static void podCopySafeWhenRacy(SharedMem<T*> dest, SharedMem<T*> src, size_t nelem) {
+        memcpySafeWhenRacy(dest, src, nelem * sizeof(T));
+    }
+
+    template<typename T>
+    static void podMoveSafeWhenRacy(SharedMem<T*> dest, SharedMem<T*> src, size_t nelem) {
+        memmoveSafeWhenRacy(dest, src, nelem * sizeof(T));
     }
 };
 
@@ -285,7 +303,12 @@ AtomicOperations::isLockfree(int32_t size)
       case 4:
         return true;
       case 8:
-        return AtomicOperations::isLockfree8();
+        // The spec requires Atomics.isLockFree(n) to return false
+        // unless n is the BYTES_PER_ELEMENT value of some integer
+        // TypedArray that admits atomic operations.  At the time of
+        // writing (February 2016) there is no such array with n=8.
+        // return AtomicOperations::isLockfree8();
+        return false;
       default:
         return false;
     }
@@ -300,6 +323,10 @@ AtomicOperations::isLockfree(int32_t size)
 # include "jit/arm64/AtomicOperations-arm64.h"
 #elif defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
 # include "jit/mips-shared/AtomicOperations-mips-shared.h"
+#elif defined(__ppc64__) || defined(__PPC64_)       \
+    || defined(__ppc64le__) || defined(__PPC64LE__) \
+    || defined(__ppc__) || defined(__PPC__)
+# include "jit/none/AtomicOperations-ppc.h"
 #elif defined(JS_CODEGEN_NONE)
 # include "jit/none/AtomicOperations-none.h"
 #elif defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)

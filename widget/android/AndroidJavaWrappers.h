@@ -210,26 +210,6 @@ protected:
     static jfieldID jTopField;
 };
 
-class AndroidLayerRendererFrame : public WrappedJavaObject {
-public:
-    static void InitLayerRendererFrameClass(JNIEnv *jEnv);
-
-    void Init(JNIEnv *env, jobject jobj);
-    void Dispose(JNIEnv *env);
-
-    bool BeginDrawing(AutoLocalJNIFrame *jniFrame);
-    bool DrawBackground(AutoLocalJNIFrame *jniFrame);
-    bool DrawForeground(AutoLocalJNIFrame *jniFrame);
-    bool EndDrawing(AutoLocalJNIFrame *jniFrame);
-
-private:
-    static jclass jLayerRendererFrameClass;
-    static jmethodID jBeginDrawingMethod;
-    static jmethodID jDrawBackgroundMethod;
-    static jmethodID jDrawForegroundMethod;
-    static jmethodID jEndDrawingMethod;
-};
-
 enum {
     // These keycode masks are not defined in android/keycodes.h:
 #if __ANDROID_API__ < 13
@@ -448,7 +428,6 @@ private:
 
     void Init(JNIEnv *jenv, jobject jobj);
     void Init(int aType);
-    void Init(AndroidGeckoEvent *aResizeEvent);
 
 public:
     static void InitGeckoEventClass(JNIEnv *jEnv);
@@ -462,12 +441,6 @@ public:
     static AndroidGeckoEvent* MakeFromJavaObject(JNIEnv *jenv, jobject jobj) {
         AndroidGeckoEvent *event = new AndroidGeckoEvent();
         event->Init(jenv, jobj);
-        return event;
-    }
-
-    static AndroidGeckoEvent* CopyResizeEvent(AndroidGeckoEvent *aResizeEvent) {
-        AndroidGeckoEvent *event = new AndroidGeckoEvent();
-        event->Init(aResizeEvent);
         return event;
     }
 
@@ -663,12 +636,10 @@ public:
         MOTION_EVENT = 2,
         SENSOR_EVENT = 3,
         LOCATION_EVENT = 5,
-        SIZE_CHANGED = 8,
         APP_BACKGROUNDING = 9,
         APP_FOREGROUNDING = 10,
         LOAD_URI = 12,
         NOOP = 15,
-        FORCED_RESIZE = 16, // used internally in nsAppShell/nsWindow
         APZ_INPUT_EVENT = 17, // used internally in AndroidJNI/nsAppShell/nsWindow
         BROADCAST = 19,
         VIEWPORT = 20,
@@ -676,9 +647,6 @@ public:
         NETWORK_CHANGED = 22,
         THUMBNAIL = 25,
         SCREENORIENTATION_CHANGED = 27,
-        COMPOSITOR_CREATE = 28,
-        COMPOSITOR_PAUSE = 29,
-        COMPOSITOR_RESUME = 30,
         NATIVE_GESTURE_EVENT = 31,
         CALL_OBSERVER = 33,
         REMOVE_OBSERVER = 34,

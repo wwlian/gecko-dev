@@ -24,11 +24,12 @@
 #include "builtin/ModuleObject.h"
 #include "builtin/Object.h"
 #include "builtin/RegExp.h"
-#include "builtin/SIMD.h"
+#include "builtin/SelfHostingDefines.h"
 #include "builtin/SymbolObject.h"
 #include "builtin/TypedObject.h"
 #include "builtin/WeakMapObject.h"
 #include "builtin/WeakSetObject.h"
+#include "vm/Debugger.h"
 #include "vm/HelperThreads.h"
 #include "vm/PIC.h"
 #include "vm/RegExpStatics.h"
@@ -91,6 +92,23 @@ js::GlobalObject::getTypedObjectModule() const {
 }
 
 /* static */ bool
+GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key)
+{
+#ifdef ENABLE_SHARED_ARRAY_BUFFER
+    // Return true if the given constructor has been disabled at run-time.
+    switch (key) {
+      case JSProto_Atomics:
+      case JSProto_SharedArrayBuffer:
+        return !cx->compartment()->creationOptions().getSharedMemoryAndAtomicsEnabled();
+      default:
+        return false;
+    }
+#else
+    return false;
+#endif
+}
+
+/* static */ bool
 GlobalObject::ensureConstructor(JSContext* cx, Handle<GlobalObject*> global, JSProtoKey key)
 {
     if (global->isStandardClassResolved(key))
@@ -103,6 +121,17 @@ GlobalObject::resolveConstructor(JSContext* cx, Handle<GlobalObject*> global, JS
 {
     MOZ_ASSERT(!global->isStandardClassResolved(key));
 
+    // Prohibit collection of allocation metadata. Metadata builders shouldn't
+    // need to observe lazily-constructed prototype objects coming into
+    // existence. And assertions start to fail when the builder itself attempts
+    // an allocation that re-entrantly tries to create the same prototype.
+    AutoSuppressObjectMetadataCallback suppressMetadata(cx);
+
+    // Constructor resolution may execute self-hosted scripts. These
+    // self-hosted scripts do not call out to user code by construction. Allow
+    // all scripts to execute, even in debuggee compartments that are paused.
+    AutoSuppressDebuggeeNoExecuteChecks suppressNX(cx);
+
     // There are two different kinds of initialization hooks. One of them is
     // the class js::InitFoo hook, defined in a JSProtoKey-keyed table at the
     // top of this file. The other lives in the ClassSpec for classes that
@@ -114,6 +143,9 @@ GlobalObject::resolveConstructor(JSContext* cx, Handle<GlobalObject*> global, JS
     const Class* clasp = ProtoKeyToClass(key);
     if (!init && !clasp)
         return true;  // JSProto_Null or a compile-time-disabled feature.
+
+    if (skipDeselectedConstructor(cx, key))
+        return true;
 
     // Some classes have no init routine, which means that they're disabled at
     // compile-time. We could try to enforce that callers never pass such keys
@@ -158,6 +190,13 @@ GlobalObject::resolveConstructor(JSContext* cx, Handle<GlobalObject*> global, JS
         proto = clasp->spec.createPrototypeHook()(cx, key);
         if (!proto)
             return false;
+
+        // Make sure that creating the prototype didn't recursively resolve our
+        // own constructor. We can't just assert that there's no prototype; OOMs
+        // can result in incomplete resolutions in which the prototype is saved
+        // but not the constructor. So use the same criteria that protects entry
+        // into this function.
+        MOZ_ASSERT(!global->isStandardClassResolved(key));
 
         global->setPrototype(key, ObjectValue(*proto));
     }
@@ -280,20 +319,21 @@ GlobalObject::new_(JSContext* cx, const Class* clasp, JSPrincipals* principals,
 
     JSRuntime* rt = cx->runtime();
 
+    auto zoneSpecifier = options.creationOptions().zoneSpecifier();
     Zone* zone;
-    if (options.zoneSpecifier() == JS::SystemZone)
+    if (zoneSpecifier == JS::SystemZone)
         zone = rt->gc.systemZone;
-    else if (options.zoneSpecifier() == JS::FreshZone)
+    else if (zoneSpecifier == JS::FreshZone)
         zone = nullptr;
     else
-        zone = static_cast<Zone*>(options.zonePointer());
+        zone = static_cast<Zone*>(options.creationOptions().zonePointer());
 
     JSCompartment* compartment = NewCompartment(cx, zone, principals, options);
     if (!compartment)
         return nullptr;
 
     // Lazily create the system zone.
-    if (!rt->gc.systemZone && options.zoneSpecifier() == JS::SystemZone) {
+    if (!rt->gc.systemZone && zoneSpecifier == JS::SystemZone) {
         rt->gc.systemZone = compartment->zone();
         rt->gc.systemZone->isSystem = true;
     }
@@ -413,11 +453,11 @@ GlobalObject::initSelfHostingBuiltins(JSContext* cx, Handle<GlobalObject*> globa
     return InitBareBuiltinCtor(cx, global, JSProto_Array) &&
            InitBareBuiltinCtor(cx, global, JSProto_TypedArray) &&
            InitBareBuiltinCtor(cx, global, JSProto_Uint8Array) &&
-           InitBareBuiltinCtor(cx, global, JSProto_Uint32Array) &&
+           InitBareBuiltinCtor(cx, global, JSProto_Int32Array) &&
            InitBareWeakMapCtor(cx, global) &&
            InitStopIterationClass(cx, global) &&
            InitSelfHostingCollectionIteratorFunctions(cx, global) &&
-           JS_DefineFunctions(cx, global, builtins);
+           DefineFunctions(cx, global, builtins, AsIntrinsic);
 }
 
 /* static */ bool
@@ -658,16 +698,44 @@ GlobalObject::getSelfHostedFunction(JSContext* cx, Handle<GlobalObject*> global,
                                     HandlePropertyName selfHostedName, HandleAtom name,
                                     unsigned nargs, MutableHandleValue funVal)
 {
-    if (GlobalObject::maybeGetIntrinsicValue(cx, global, selfHostedName, funVal))
-        return true;
-
-    JSFunction* fun =
-        NewScriptedFunction(cx, nargs, JSFunction::INTERPRETED_LAZY,
-                            name, gc::AllocKind::FUNCTION_EXTENDED, SingletonObject);
-    if (!fun)
+    bool exists = false;
+    if (!GlobalObject::maybeGetIntrinsicValue(cx, global, selfHostedName, funVal, &exists))
         return false;
-    fun->setIsSelfHostedBuiltin();
-    fun->setExtendedSlot(LAZY_FUNCTION_NAME_SLOT, StringValue(selfHostedName));
+    if (exists) {
+        RootedFunction fun(cx, &funVal.toObject().as<JSFunction>());
+        if (fun->atom() == name)
+            return true;
+
+        if (fun->atom() == selfHostedName) {
+            // This function was initially cloned because it was called by
+            // other self-hosted code, so the clone kept its self-hosted name,
+            // instead of getting the name it's intended to have in content
+            // compartments. This can happen when a lazy builtin is initialized
+            // after self-hosted code for another builtin used the same
+            // function. In that case, we need to change the function's name,
+            // which is ok because it can't have been exposed to content
+            // before.
+            fun->initAtom(name);
+            return true;
+        }
+
+
+        // The function might be installed multiple times on the same or
+        // different builtins, under different property names, so its name
+        // might be neither "selfHostedName" nor "name". In that case, its
+        // canonical name must've been set using the `_SetCanonicalName`
+        // intrinsic.
+        cx->runtime()->assertSelfHostedFunctionHasCanonicalName(cx, selfHostedName);
+        return true;
+    }
+
+    RootedFunction fun(cx);
+    if (!cx->runtime()->createLazySelfHostedFunctionClone(cx, selfHostedName, name, nargs,
+                                                          /* proto = */ nullptr,
+                                                          SingletonObject, &fun))
+    {
+        return false;
+    }
     funVal.setObject(*fun);
 
     return GlobalObject::addIntrinsicValue(cx, global, selfHostedName, funVal);
@@ -695,5 +763,20 @@ GlobalObject::addIntrinsicValue(JSContext* cx, Handle<GlobalObject*> global,
         return false;
 
     holder->setSlot(shape->slot(), value);
+    return true;
+}
+
+/* static */ bool
+GlobalObject::ensureModulePrototypesCreated(JSContext *cx, Handle<GlobalObject*> global)
+{
+    if (global->getSlot(MODULE_PROTO).isUndefined()) {
+        MOZ_ASSERT(global->getSlot(IMPORT_ENTRY_PROTO).isUndefined() &&
+                   global->getSlot(EXPORT_ENTRY_PROTO).isUndefined());
+        if (!js::InitModuleClasses(cx, global))
+            return false;
+    }
+    MOZ_ASSERT(global->getSlot(MODULE_PROTO).isObject() &&
+               global->getSlot(IMPORT_ENTRY_PROTO).isObject() &&
+               global->getSlot(EXPORT_ENTRY_PROTO).isObject());
     return true;
 }

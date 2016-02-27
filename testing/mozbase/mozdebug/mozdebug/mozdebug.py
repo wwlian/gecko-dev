@@ -50,7 +50,12 @@ _DEBUGGER_INFO = {
     'wdexpress.exe': {
         'interactive': True,
         'args': ['-debugexe']
-    }
+    },
+
+    # Windows Development Kit super-debugger.
+    'windbg.exe': {
+        'interactive': True,
+    },
 }
 
 # Maps each OS platform to the preferred debugger programs found in _DEBUGGER_INFO.
@@ -61,6 +66,19 @@ _DEBUGGER_PRIORITIES = {
       'android': ['gdb'],
       'unknown': ['gdb']
 }
+
+def _windbg_installation_paths():
+    programFilesSuffixes = ['', ' (x86)']
+    programFiles = "C:/Program Files"
+    # Try the most recent versions first.
+    windowsKitsVersions = ['10', '8.1', '8']
+
+    for suffix in programFilesSuffixes:
+        windowsKitsPrefix = os.path.join(programFiles + suffix,
+                                         'Windows Kits')
+        for version in windowsKitsVersions:
+            yield os.path.join(windowsKitsPrefix, version,
+                               'Debuggers', 'x86', 'windbg.exe')
 
 def get_debugger_info(debugger, debuggerArgs = None, debuggerInteractive = False):
     '''
@@ -88,6 +106,16 @@ def get_debugger_info(debugger, debuggerArgs = None, debuggerInteractive = False
             debugger += '.exe'
 
         debuggerPath = find_executable(debugger)
+
+    # windbg is not installed with the standard set of tools, and it's
+    # entirely possible that the user hasn't added the install location to
+    # PATH, so we have to be a little more clever than normal to locate it.
+    # Just try to look for it in the standard installed location(s).
+    if not debuggerPath and debugger == 'windbg.exe':
+        for candidate in _windbg_installation_paths():
+            if os.path.exists(candidate):
+                debuggerPath = candidate
+                break
 
     if not debuggerPath:
         print 'Error: Could not find debugger %s.' % debugger
@@ -205,8 +233,6 @@ def get_default_valgrind_args():
              '--vex-iropt-register-updates=allregs-at-mem-access',
              '--trace-children=yes',
              '--child-silent-after-fork=yes',
-             '--leak-check=full',
-             '--show-possibly-lost=no',
              ('--trace-children-skip='
               + '/usr/bin/hg,/bin/rm,*/bin/certutil,*/bin/pk12util,'
               + '*/bin/ssltunnel,*/bin/uname,*/bin/which,*/bin/ps,'
@@ -214,7 +240,10 @@ def get_default_valgrind_args():
             ]
             + get_default_valgrind_tool_specific_args())
 
+# The default tool is Memcheck.  Feeding these arguments to a different
+# Valgrind tool will cause it to fail at startup, so don't do that!
 def get_default_valgrind_tool_specific_args():
-    return [
-            '--partial-loads-ok=yes'
-    ]
+    return ['--partial-loads-ok=yes',
+            '--leak-check=full',
+            '--show-possibly-lost=no',
+           ]

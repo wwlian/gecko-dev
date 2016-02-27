@@ -85,28 +85,22 @@ NSS_EXTRA_DLLS += freebl_64int_3
 NSS_EXTRA_DLLS += freebl_64fpu_3
 endif
 
-ABS_DIST := $(abspath $(DIST))
-ifeq ($(HOST_OS_ARCH),WINNT)
-ifdef CYGDRIVE_MOUNT
-ABS_DIST := $(shell cygpath -w $(ABS_DIST) | sed -e 's|\\|/|g')
-endif
-ifneq (,$(filter mingw%,$(host_os)))
-ABS_DIST := $(shell cd $(DIST) && pwd -W)
-endif
-endif
 # For all variables such as DLLFLAGS, that may contain $(DIST)
 DIST := $(ABS_DIST)
+# TODO: move this all to configure, but in Python
+ifndef MOZ_BUILD_NSPR
 NSPR_INCLUDE_DIR = $(firstword $(filter -I%,$(NSPR_CFLAGS)))
 ifneq (,$(strip $(NSPR_INCLUDE_DIR)))
 NSPR_INCLUDE_DIR := $(subst -I,,$(subst -I$(DIST),-I$(ABS_DIST),$(NSPR_INCLUDE_DIR)))
 else
-NSPR_INCLUDE_DIR = $(ABS_DIST)/include/nspr
+$(error Your NSPR CFLAGS are broken!)
 endif
 NSPR_LIB_DIR = $(firstword $(filter -L%,$(NSPR_LIBS)))
 ifneq (,$(strip $(NSPR_LIB_DIR)))
 NSPR_LIB_DIR := $(subst -L,,$(subst -L$(DIST),-L$(ABS_DIST),$(NSPR_LIB_DIR)))
 else
-NSPR_LIB_DIR = $(ABS_DIST)/lib
+$(error Your NSPR LDFLAGS are broken!)
+endif
 endif
 
 # To get debug symbols from NSS
@@ -181,7 +175,7 @@ endif
 
 # Turn off TLS compression support because it requires system zlib.
 # See bug 580679 comment 18.
-DEFAULT_GMAKE_FLAGS += NSS_ENABLE_ZLIB=
+DEFAULT_GMAKE_FLAGS += NSS_SSL_ENABLE_ZLIB=
 
 # Disable building of the test programs in security/nss/lib/zlib
 DEFAULT_GMAKE_FLAGS += PROGRAMS=
@@ -221,11 +215,14 @@ ifdef WRAP_LDFLAGS
 NSS_EXTRA_LDFLAGS += $(WRAP_LDFLAGS)
 endif
 
-ifdef MOZ_GLUE_WRAP_LDFLAGS
+# The SHARED_LIBS part is needed unconditionally on Android.  It's not
+# clear why this is the case, but see bug 1133073 (starting around
+# comment #8) for context.
+ifneq (,$(or $(MOZ_GLUE_WRAP_LDFLAGS), $(filter Android, $(OS_TARGET))))
 NSS_EXTRA_LDFLAGS += $(SHARED_LIBS:$(DEPTH)%=$(MOZ_BUILD_ROOT)%) $(MOZ_GLUE_WRAP_LDFLAGS)
 endif
 
-ifneq (,$(WRAP_LDFLAGS)$(MOZ_GLUE_WRAP_LDFLAGS))
+ifneq (,$(NSS_EXTRA_LDFLAGS))
 DEFAULT_GMAKE_FLAGS += \
 	LDFLAGS='$(LDFLAGS) $(NSS_EXTRA_LDFLAGS)' \
 	DSO_LDOPTS='$(DSO_LDOPTS) $(LDFLAGS) $(NSS_EXTRA_LDFLAGS)' \
@@ -265,13 +262,6 @@ DEFAULT_GMAKE_FLAGS += TARGETS='$$(LIBRARY) $$(SHARED_LIBRARY) $$(PROGRAM)'
 
 ifdef MOZ_FOLD_LIBS_FLAGS
 DEFAULT_GMAKE_FLAGS += XCFLAGS='$(MOZ_FOLD_LIBS_FLAGS)'
-endif
-
-ifndef WARNINGS_AS_ERRORS
-DEFAULT_GMAKE_FLAGS += NSS_ENABLE_WERROR=0
-endif
-ifeq ($(OS_TARGET),Android)
-DEFAULT_GMAKE_FLAGS += NSS_ENABLE_WERROR=0
 endif
 
 NSS_SRCDIR = $(topsrcdir)
@@ -344,31 +334,6 @@ ifdef MOZ_FOLD_LIBS
 # Add all static libraries for nss, smime, ssl and nssutil
 STATIC_LIBS += $(addprefix $(DEPTH)/security/,$(NSS_STATIC_LIBS))
 
-nss_def_file := $(srcdir)/nss.def
-
-ifeq (WINNT,$(OS_TARGET))
-# Create a .def file based on the various .def files for nss, smime, ssl and
-# nssutil.
-nss3.def: $(nss_def_file) $(DEPTH)/db/sqlite3/src/sqlite-processed.def $(NSS_EXTRA_SYMBOLS_FILE)
-	echo LIBRARY nss3$(DLL_SUFFIX) > $@.tmp
-	echo EXPORTS >> $@.tmp
-	grep -v -h -e ^LIBRARY -e ^EXPORTS -e ^\; $^ >> $@.tmp
-	mv $@.tmp $@
-else
-ifdef GCC_USE_GNU_LD
-sqlite_def_file := $(topsrcdir)/db/sqlite3/src/sqlite.def
-nspr_def_file := $(srcdir)/nspr-dummy.def
-
-nss3.def: $(nss_def_file) $(sqlite_def_file) $(nspr_def_file) $(NSS_EXTRA_SYMBOLS_FILE)
-	@$(call py_action,convert_def_file, \
-	  $(DEFINES) $(ACDEFINES) $(MOZ_DEBUG_DEFINES) -o $@ $^)
-
-GARBAGE += \
-  nss3.def \
-  $(NULL)
-endif # GCC_USE_GNU_LD
-endif # WINNT
-
 IMPORT_LIB_FILES = $(IMPORT_LIBRARY)
 IMPORT_LIB_DEST ?= $(DIST)/lib
 IMPORT_LIB_TARGET = target
@@ -377,6 +342,10 @@ INSTALL_TARGETS += IMPORT_LIB
 endif # MOZ_FOLD_LIBS
 
 include $(topsrcdir)/config/rules.mk
+
+ifeq (1,$(ALLOW_COMPILER_WARNINGS))
+DEFAULT_GMAKE_FLAGS += NSS_ENABLE_WERROR=0
+endif
 
 # Can't pass this in DEFAULT_GMAKE_FLAGS because that overrides
 # definitions in NSS, so just export it into the sub-make's environment.

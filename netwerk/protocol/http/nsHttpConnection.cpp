@@ -265,6 +265,9 @@ nsHttpConnection::StartSpdy(uint8_t spdyVersion)
     } else {
         mTLSFilter->SetProxiedTransaction(mSpdySession);
     }
+    if (mDontReuse) {
+        mSpdySession->DontReuse();
+    }
 }
 
 bool
@@ -558,7 +561,7 @@ nsHttpConnection::AddTransaction(nsAHttpTransaction *httpTransaction,
 }
 
 void
-nsHttpConnection::Close(nsresult reason)
+nsHttpConnection::Close(nsresult reason, bool aIsShutdown)
 {
     LOG(("nsHttpConnection::Close [this=%p reason=%x]\n", this, reason));
 
@@ -596,7 +599,8 @@ nsHttpConnection::Close(nsresult reason)
             // socket with data pending. TLS is a classic case of this where
             // a Alert record might be superfulous to a clean HTTP/SPDY shutdown.
             // Never block to do this and limit it to a small amount of data.
-            if (mSocketIn) {
+            // During shutdown just be fast!
+            if (mSocketIn && !aIsShutdown) {
                 char buffer[4000];
                 uint32_t count, total = 0;
                 nsresult rv;
@@ -656,6 +660,7 @@ nsHttpConnection::InitSSLParams(bool connectingToProxy, bool proxyStartSSL)
 void
 nsHttpConnection::DontReuse()
 {
+    LOG(("nsHttpConnection::DontReuse %p spdysession=%p\n", this, mSpdySession.get()));
     mKeepAliveMask = false;
     mKeepAlive = false;
     mDontReuse = true;
@@ -1594,8 +1599,8 @@ nsHttpConnection::OnSocketWritable()
 
             LOG(("  writing transaction request stream\n"));
             mProxyConnectInProgress = false;
-            rv = mTransaction->ReadSegments(this, nsIOService::gDefaultSegmentSize,
-                                            &transactionBytes);
+            rv = mTransaction->ReadSegmentsAgain(this, nsIOService::gDefaultSegmentSize,
+                                                 &transactionBytes, &again);
             mContentBytesWritten += transactionBytes;
         }
 
@@ -1646,7 +1651,7 @@ nsHttpConnection::OnSocketWritable()
             again = false;
         }
         // write more to the socket until error or end-of-request...
-    } while (again);
+    } while (again && gHttpHandler->Active());
 
     return rv;
 }
@@ -1764,28 +1769,33 @@ nsHttpConnection::OnSocketReadable()
             break;
         }
 
-        rv = mTransaction->WriteSegments(this, nsIOService::gDefaultSegmentSize, &n);
+        mSocketInCondition = NS_OK;
+        rv = mTransaction->
+            WriteSegmentsAgain(this, nsIOService::gDefaultSegmentSize, &n, &again);
+        LOG(("nsHttpConnection::OnSocketReadable %p trans->ws rv=%x n=%d socketin=%x\n",
+             this, rv, n, mSocketInCondition));
         if (NS_FAILED(rv)) {
             // if the transaction didn't want to take any more data, then
             // wait for the transaction to call ResumeRecv.
-            if (rv == NS_BASE_STREAM_WOULD_BLOCK)
+            if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
                 rv = NS_OK;
+            }
             again = false;
-        }
-        else {
+        } else {
             mCurrentBytesRead += n;
             mTotalBytesRead += n;
             if (NS_FAILED(mSocketInCondition)) {
                 // continue waiting for the socket if necessary...
-                if (mSocketInCondition == NS_BASE_STREAM_WOULD_BLOCK)
+                if (mSocketInCondition == NS_BASE_STREAM_WOULD_BLOCK) {
                     rv = ResumeRecv();
-                else
+                } else {
                     rv = mSocketInCondition;
+                }
                 again = false;
             }
         }
         // read more from the socket until error...
-    } while (again);
+    } while (again && gHttpHandler->Active());
 
     return rv;
 }

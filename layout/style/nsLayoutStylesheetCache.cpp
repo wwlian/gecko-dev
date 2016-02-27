@@ -10,7 +10,11 @@
 #include "mozilla/CSSStyleSheet.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ServoStyleSheet.h"
+#include "mozilla/StyleSheetHandle.h"
+#include "mozilla/StyleSheetHandleInlines.h"
 #include "mozilla/css/Loader.h"
+#include "mozilla/dom/SRIMetadata.h"
 #include "nsIFile.h"
 #include "nsNetUtil.h"
 #include "nsIObserverService.h"
@@ -65,224 +69,186 @@ nsLayoutStylesheetCache::Observe(nsISupports* aSubject,
   return NS_OK;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::ScrollbarsSheet()
 {
-  EnsureGlobal();
-
-  if (!gStyleCache->mScrollbarsSheet) {
+  if (!mScrollbarsSheet) {
     // Scrollbars don't need access to unsafe rules
     LoadSheetURL("chrome://global/skin/scrollbars.css",
-                 gStyleCache->mScrollbarsSheet, eAuthorSheetFeatures);
+                 mScrollbarsSheet, eAuthorSheetFeatures);
   }
 
-  return gStyleCache->mScrollbarsSheet;
+  return mScrollbarsSheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::FormsSheet()
 {
-  EnsureGlobal();
-
-  if (!gStyleCache->mFormsSheet) {
+  if (!mFormsSheet) {
     // forms.css needs access to unsafe rules
     LoadSheetURL("resource://gre-resources/forms.css",
-                 gStyleCache->mFormsSheet, eAgentSheetFeatures);
+                 mFormsSheet, eAgentSheetFeatures);
   }
 
-  return gStyleCache->mFormsSheet;
+  return mFormsSheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::NumberControlSheet()
 {
-  EnsureGlobal();
-
   if (!sNumberControlEnabled) {
     return nullptr;
   }
 
-  if (!gStyleCache->mNumberControlSheet) {
+  if (!mNumberControlSheet) {
     LoadSheetURL("resource://gre-resources/number-control.css",
-                 gStyleCache->mNumberControlSheet, eAgentSheetFeatures);
+                 mNumberControlSheet, eAgentSheetFeatures);
   }
 
-  return gStyleCache->mNumberControlSheet;
+  return mNumberControlSheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::UserContentSheet()
 {
-  EnsureGlobal();
-  return gStyleCache->mUserContentSheet;
+  return mUserContentSheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::UserChromeSheet()
 {
-  EnsureGlobal();
-  return gStyleCache->mUserChromeSheet;
+  return mUserChromeSheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::UASheet()
 {
-  EnsureGlobal();
-  return gStyleCache->mUASheet;
+  if (!mUASheet) {
+    LoadSheetURL("resource://gre-resources/ua.css",
+                 mUASheet, eAgentSheetFeatures);
+  }
+
+  return mUASheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::HTMLSheet()
 {
-  EnsureGlobal();
-  return gStyleCache->mHTMLSheet;
+  return mHTMLSheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::MinimalXULSheet()
 {
-  EnsureGlobal();
-  return gStyleCache->mMinimalXULSheet;
+  return mMinimalXULSheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::XULSheet()
 {
-  EnsureGlobal();
-  return gStyleCache->mXULSheet;
+  return mXULSheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::QuirkSheet()
 {
-  EnsureGlobal();
-  return gStyleCache->mQuirkSheet;
+  return mQuirkSheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::SVGSheet()
 {
-  EnsureGlobal();
-  return gStyleCache->mSVGSheet;
+  return mSVGSheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::MathMLSheet()
 {
-  EnsureGlobal();
-
-  if (!gStyleCache->mMathMLSheet) {
+  if (!mMathMLSheet) {
     LoadSheetURL("resource://gre-resources/mathml.css",
-                 gStyleCache->mMathMLSheet, eAgentSheetFeatures);
+                 mMathMLSheet, eAgentSheetFeatures);
   }
 
-  return gStyleCache->mMathMLSheet;
+  return mMathMLSheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::CounterStylesSheet()
 {
-  EnsureGlobal();
-
-  return gStyleCache->mCounterStylesSheet;
+  return mCounterStylesSheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::NoScriptSheet()
 {
-  EnsureGlobal();
-
-  if (!gStyleCache->mNoScriptSheet) {
-    // If you update the data: URL, also update noscript.css  (See bug 1194856.)
-    LoadSheetURL(
-#ifdef RELEASE_BUILD
-                 "data:text/css,noscript { display%3A none !important%3B }",
-#else
-                 "resource://gre-resources/noscript.css",
-#endif
-                 gStyleCache->mNoScriptSheet, eAgentSheetFeatures);
+  if (!mNoScriptSheet) {
+    LoadSheetURL("resource://gre-resources/noscript.css",
+                 mNoScriptSheet, eAgentSheetFeatures);
   }
 
-  return gStyleCache->mNoScriptSheet;
+  return mNoScriptSheet;
 }
 
-CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::NoFramesSheet()
 {
-  EnsureGlobal();
-
-  if (!gStyleCache->mNoFramesSheet) {
-    // If you update the data: URL, also update noframes.css  (See bug 1194856.)
-    LoadSheetURL(
-#ifdef RELEASE_BUILD
-                 "data:text/css,noframes { display%3A block%3B } "
-                 "frame%2C frameset%2C iframe { display%3A none !important%3B }",
-#else
-                 "resource://gre-resources/noframes.css",
-#endif
-                 gStyleCache->mNoFramesSheet, eAgentSheetFeatures);
+  if (!mNoFramesSheet) {
+    LoadSheetURL("resource://gre-resources/noframes.css",
+                 mNoFramesSheet, eAgentSheetFeatures);
   }
 
-  return gStyleCache->mNoFramesSheet;
+  return mNoFramesSheet;
 }
 
-/* static */ CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::ChromePreferenceSheet(nsPresContext* aPresContext)
 {
-  EnsureGlobal();
-
-  if (!gStyleCache->mChromePreferenceSheet) {
-    gStyleCache->BuildPreferenceSheet(gStyleCache->mChromePreferenceSheet,
-                                      aPresContext);
+  if (!mChromePreferenceSheet) {
+    BuildPreferenceSheet(mChromePreferenceSheet, aPresContext);
   }
 
-  return gStyleCache->mChromePreferenceSheet;
+  return mChromePreferenceSheet;
 }
 
-/* static */ CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::ContentPreferenceSheet(nsPresContext* aPresContext)
 {
-  EnsureGlobal();
-
-  if (!gStyleCache->mContentPreferenceSheet) {
-    gStyleCache->BuildPreferenceSheet(gStyleCache->mContentPreferenceSheet,
-                                      aPresContext);
+  if (!mContentPreferenceSheet) {
+    BuildPreferenceSheet(mContentPreferenceSheet, aPresContext);
   }
 
-  return gStyleCache->mContentPreferenceSheet;
+  return mContentPreferenceSheet;
 }
 
-/* static */ CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::ContentEditableSheet()
 {
-  EnsureGlobal();
-
-  if (!gStyleCache->mContentEditableSheet) {
+  if (!mContentEditableSheet) {
     LoadSheetURL("resource://gre/res/contenteditable.css",
-                 gStyleCache->mContentEditableSheet, eAgentSheetFeatures);
+                 mContentEditableSheet, eAgentSheetFeatures);
   }
 
-  return gStyleCache->mContentEditableSheet;
+  return mContentEditableSheet;
 }
 
-/* static */ CSSStyleSheet*
+StyleSheetHandle
 nsLayoutStylesheetCache::DesignModeSheet()
 {
-  EnsureGlobal();
-
-  if (!gStyleCache->mDesignModeSheet) {
+  if (!mDesignModeSheet) {
     LoadSheetURL("resource://gre/res/designmode.css",
-                 gStyleCache->mDesignModeSheet, eAgentSheetFeatures);
+                 mDesignModeSheet, eAgentSheetFeatures);
   }
 
-  return gStyleCache->mDesignModeSheet;
+  return mDesignModeSheet;
 }
 
 void
 nsLayoutStylesheetCache::Shutdown()
 {
-  NS_IF_RELEASE(gCSSLoader);
-  gStyleCache = nullptr;
+  gCSSLoader_Gecko = nullptr;
+  gCSSLoader_Servo = nullptr;
+  gStyleCache_Gecko = nullptr;
+  gStyleCache_Servo = nullptr;
 }
 
 MOZ_DEFINE_MALLOC_SIZE_OF(LayoutStylesheetCacheMallocSizeOf)
@@ -327,12 +293,14 @@ nsLayoutStylesheetCache::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf
 
   // Measurement of the following members may be added later if DMD finds it is
   // worthwhile:
-  // - gCSSLoader
+  // - gCSSLoader_Gecko
+  // - gCSSLoader_Servo
 
   return n;
 }
 
-nsLayoutStylesheetCache::nsLayoutStylesheetCache()
+nsLayoutStylesheetCache::nsLayoutStylesheetCache(StyleBackendType aType)
+  : mBackendType(aType)
 {
   nsCOMPtr<nsIObserverService> obsSvc =
     mozilla::services::GetObserverService();
@@ -359,8 +327,6 @@ nsLayoutStylesheetCache::nsLayoutStylesheetCache()
                mQuirkSheet, eAgentSheetFeatures);
   LoadSheetURL("resource://gre/res/svg.css",
                mSVGSheet, eAgentSheetFeatures);
-  LoadSheetURL("resource://gre-resources/ua.css",
-               mUASheet, eAgentSheetFeatures);
   LoadSheetURL("chrome://global/content/xul.css",
                mXULSheet, eAgentSheetFeatures);
 
@@ -372,7 +338,6 @@ nsLayoutStylesheetCache::nsLayoutStylesheetCache()
 nsLayoutStylesheetCache::~nsLayoutStylesheetCache()
 {
   mozilla::UnregisterWeakMemoryReporter(this);
-  MOZ_ASSERT(!gStyleCache);
 }
 
 void
@@ -381,26 +346,38 @@ nsLayoutStylesheetCache::InitMemoryReporter()
   mozilla::RegisterWeakMemoryReporter(this);
 }
 
-void
-nsLayoutStylesheetCache::EnsureGlobal()
+/* static */ nsLayoutStylesheetCache*
+nsLayoutStylesheetCache::For(StyleBackendType aType)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (gStyleCache) return;
+  bool mustInit = !gStyleCache_Gecko && !gStyleCache_Servo;
+  auto& cache = aType == StyleBackendType::Gecko ? gStyleCache_Gecko :
+                                                   gStyleCache_Servo;
 
-  gStyleCache = new nsLayoutStylesheetCache();
+  if (!cache) {
+    cache = new nsLayoutStylesheetCache(aType);
+    cache->InitMemoryReporter();
+  }
 
-  gStyleCache->InitMemoryReporter();
+  if (mustInit) {
+    // Initialization that only needs to be done once for both
+    // nsLayoutStylesheetCaches.
 
-  Preferences::AddBoolVarCache(&sNumberControlEnabled, NUMBER_CONTROL_PREF,
-                               true);
+    Preferences::AddBoolVarCache(&sNumberControlEnabled, NUMBER_CONTROL_PREF,
+                                 true);
 
-  // For each pref that controls a CSS feature that a UA style sheet depends
-  // on (such as a pref that enables a property that a UA style sheet uses),
-  // register DependentPrefChanged as a callback to ensure that the relevant
-  // style sheets will be re-parsed.
-  // Preferences::RegisterCallback(&DependentPrefChanged,
-  //                               "layout.css.example-pref.enabled");
+    // For each pref that controls a CSS feature that a UA style sheet depends
+    // on (such as a pref that enables a property that a UA style sheet uses),
+    // register DependentPrefChanged as a callback to ensure that the relevant
+    // style sheets will be re-parsed.
+    // Preferences::RegisterCallback(&DependentPrefChanged,
+    //                               "layout.css.example-pref.enabled");
+    Preferences::RegisterCallback(&DependentPrefChanged,
+                                  "layout.css.grid.enabled");
+  }
+
+  return cache;
 }
 
 void
@@ -433,9 +410,9 @@ nsLayoutStylesheetCache::InitFromProfile()
   LoadSheetFile(chromeFile, mUserChromeSheet, eUserSheetFeatures);
 }
 
-/* static */ void
+void
 nsLayoutStylesheetCache::LoadSheetURL(const char* aURL,
-                                      RefPtr<CSSStyleSheet>& aSheet,
+                                      StyleSheetHandle::RefPtr& aSheet,
                                       SheetParsingMode aParsingMode)
 {
   nsCOMPtr<nsIURI> uri;
@@ -448,7 +425,7 @@ nsLayoutStylesheetCache::LoadSheetURL(const char* aURL,
 
 void
 nsLayoutStylesheetCache::LoadSheetFile(nsIFile* aFile,
-                                       RefPtr<CSSStyleSheet>& aSheet,
+                                       StyleSheetHandle::RefPtr& aSheet,
                                        SheetParsingMode aParsingMode)
 {
   bool exists = false;
@@ -754,7 +731,7 @@ ErrorLoadingBuiltinSheet(nsIURI* aURI, const char* aMsg)
 
 void
 nsLayoutStylesheetCache::LoadSheet(nsIURI* aURI,
-                                   RefPtr<CSSStyleSheet>& aSheet,
+                                   StyleSheetHandle::RefPtr& aSheet,
                                    SheetParsingMode aParsingMode)
 {
   if (!aURI) {
@@ -762,21 +739,22 @@ nsLayoutStylesheetCache::LoadSheet(nsIURI* aURI,
     return;
   }
 
-  if (!gCSSLoader) {
-    gCSSLoader = new mozilla::css::Loader();
-    NS_IF_ADDREF(gCSSLoader);
-    if (!gCSSLoader) {
+  auto& loader = mBackendType == StyleBackendType::Gecko ?
+    gCSSLoader_Gecko :
+    gCSSLoader_Servo;
+
+  if (!loader) {
+    loader = new mozilla::css::Loader(mBackendType);
+    if (!loader) {
       ErrorLoadingBuiltinSheet(aURI, "no Loader");
       return;
     }
   }
 
-
 #ifdef MOZ_CRASHREPORTER
   nsZipArchive::sFileCorruptedReason = nullptr;
 #endif
-  nsresult rv = gCSSLoader->LoadSheetSync(aURI, aParsingMode, true,
-                                          getter_AddRefs(aSheet));
+  nsresult rv = loader->LoadSheetSync(aURI, aParsingMode, true, &aSheet);
   if (NS_FAILED(rv)) {
     ErrorLoadingBuiltinSheet(aURI,
       nsPrintfCString("LoadSheetSync failed with error %x", rv).get());
@@ -784,63 +762,88 @@ nsLayoutStylesheetCache::LoadSheet(nsIURI* aURI,
 }
 
 /* static */ void
-nsLayoutStylesheetCache::InvalidateSheet(RefPtr<CSSStyleSheet>& aSheet)
+nsLayoutStylesheetCache::InvalidateSheet(StyleSheetHandle::RefPtr* aGeckoSheet,
+                                         StyleSheetHandle::RefPtr* aServoSheet)
 {
-  MOZ_ASSERT(gCSSLoader, "pref changed before we loaded a sheet?");
+  MOZ_ASSERT(gCSSLoader_Gecko || gCSSLoader_Servo,
+             "pref changed before we loaded a sheet?");
 
-  if (aSheet) {
-    gCSSLoader->ObsoleteSheet(aSheet->GetSheetURI());
-    aSheet = nullptr;
+  // Make sure sheets have the expected types
+  MOZ_ASSERT(!aGeckoSheet || (*aGeckoSheet)->IsGecko());
+  MOZ_ASSERT(!aServoSheet || (*aServoSheet)->IsServo());
+  // Make sure the URIs match
+  MOZ_ASSERT(!aGeckoSheet || !aServoSheet ||
+             (*aGeckoSheet)->GetSheetURI() == (*aServoSheet)->GetSheetURI(),
+             "Sheets passed should have the same URI");
+
+  nsIURI* uri;
+  if (aGeckoSheet && *aGeckoSheet) {
+    uri = (*aGeckoSheet)->GetSheetURI();
+  } else if (aServoSheet && *aServoSheet) {
+    uri = (*aServoSheet)->GetSheetURI();
+  } else {
+    return;
+  }
+
+  if (gCSSLoader_Gecko) {
+    gCSSLoader_Gecko->ObsoleteSheet(uri);
+  }
+  if (gCSSLoader_Servo) {
+    gCSSLoader_Servo->ObsoleteSheet(uri);
+  }
+  if (aGeckoSheet) {
+    *aGeckoSheet = nullptr;
+  }
+  if (aServoSheet) {
+    *aServoSheet = nullptr;
   }
 }
 
 /* static */ void
 nsLayoutStylesheetCache::DependentPrefChanged(const char* aPref, void* aData)
 {
-  MOZ_ASSERT(gStyleCache, "pref changed after shutdown?");
+  MOZ_ASSERT(gStyleCache_Gecko || gStyleCache_Servo,
+             "pref changed after shutdown?");
 
   // Cause any UA style sheets whose parsing depends on the value of prefs
-  // to be re-parsed by dropping the sheet from gCSSLoader's cache then
-  // setting our cached sheet pointer to null.  This will only work for sheets
-  // that are loaded lazily.
-  // InvalidateSheet(gStyleCache->mSomeLazilyLoadedSheet);
+  // to be re-parsed by dropping the sheet from gCSSLoader_{Gecko,Servo}'s cache
+  // then setting our cached sheet pointer to null.  This will only work for
+  // sheets that are loaded lazily.
+
+#define INVALIDATE(sheet_) \
+  InvalidateSheet(gStyleCache_Gecko ? &gStyleCache_Gecko->sheet_ : nullptr, \
+                  gStyleCache_Servo ? &gStyleCache_Servo->sheet_ : nullptr);
+
+  INVALIDATE(mUASheet);  // for layout.css.grid.enabled
+
+#undef INVALIDATE
 }
 
 /* static */ void
 nsLayoutStylesheetCache::InvalidatePreferenceSheets()
 {
-  if (!gStyleCache) {
-    return;
+  if (gStyleCache_Gecko) {
+    gStyleCache_Gecko->mContentPreferenceSheet = nullptr;
+    gStyleCache_Gecko->mChromePreferenceSheet = nullptr;
   }
-
-  gStyleCache->mContentPreferenceSheet = nullptr;
-  gStyleCache->mChromePreferenceSheet = nullptr;
-}
-
-/* static */ void
-nsLayoutStylesheetCache::AppendPreferenceRule(CSSStyleSheet* aSheet,
-                                              const nsAString& aString)
-{
-  uint32_t result;
-  aSheet->InsertRuleInternal(aString, aSheet->StyleRuleCount(), &result);
-}
-
-/* static */ void
-nsLayoutStylesheetCache::AppendPreferenceColorRule(CSSStyleSheet* aSheet,
-                                                   const char* aString,
-                                                   nscolor aColor)
-{
-  nsAutoString rule;
-  rule.AppendPrintf(
-      aString, NS_GET_R(aColor), NS_GET_G(aColor), NS_GET_B(aColor));
-  AppendPreferenceRule(aSheet, rule);
+  if (gStyleCache_Servo) {
+    gStyleCache_Servo->mContentPreferenceSheet = nullptr;
+    gStyleCache_Servo->mChromePreferenceSheet = nullptr;
+  }
 }
 
 void
-nsLayoutStylesheetCache::BuildPreferenceSheet(RefPtr<CSSStyleSheet>& aSheet,
+nsLayoutStylesheetCache::BuildPreferenceSheet(StyleSheetHandle::RefPtr& aSheet,
                                               nsPresContext* aPresContext)
 {
-  aSheet = new CSSStyleSheet(CORS_NONE, mozilla::net::RP_Default);
+  if (mBackendType == StyleBackendType::Gecko) {
+    aSheet = new CSSStyleSheet(CORS_NONE, mozilla::net::RP_Default);
+  } else {
+    aSheet = new ServoStyleSheet(CORS_NONE, mozilla::net::RP_Default,
+                                 dom::SRIMetadata());
+  }
+
+  aSheet->SetParsingMode(eAgentSheetFeatures);
 
   nsCOMPtr<nsIURI> uri;
   NS_NewURI(getter_AddRefs(uri), "about:PreferenceStyleSheet", nullptr);
@@ -849,29 +852,37 @@ nsLayoutStylesheetCache::BuildPreferenceSheet(RefPtr<CSSStyleSheet>& aSheet,
   aSheet->SetURIs(uri, uri, uri);
   aSheet->SetComplete();
 
-  AppendPreferenceRule(aSheet,
-      NS_LITERAL_STRING("@namespace url(http://www.w3.org/1999/xhtml);"));
-  AppendPreferenceRule(aSheet,
-      NS_LITERAL_STRING("@namespace svg url(http://www.w3.org/2000/svg);"));
+  static const uint32_t kPreallocSize = 1024;
+
+  nsString sheetText;
+  sheetText.SetCapacity(kPreallocSize);
+
+#define NS_GET_R_G_B(color_) \
+  NS_GET_R(color_), NS_GET_G(color_), NS_GET_B(color_)
+
+  sheetText.AppendLiteral(
+      "@namespace url(http://www.w3.org/1999/xhtml);\n"
+      "@namespace svg url(http://www.w3.org/2000/svg);\n");
 
   // Rules for link styling.
+  nscolor linkColor = aPresContext->DefaultLinkColor();
+  nscolor activeColor = aPresContext->DefaultActiveLinkColor();
+  nscolor visitedColor = aPresContext->DefaultVisitedLinkColor();
 
-  AppendPreferenceColorRule(aSheet,
-      "*|*:link { color: #%02x%02x%02x; }",
-      aPresContext->DefaultLinkColor());
-  AppendPreferenceColorRule(aSheet,
-      "*|*:-moz-any-link:active { color: #%02x%02x%02x; }",
-      aPresContext->DefaultActiveLinkColor());
-  AppendPreferenceColorRule(aSheet,
-      "*|*:visited { color: #%02x%02x%02x; }",
-      aPresContext->DefaultVisitedLinkColor());
+  sheetText.AppendPrintf(
+      "*|*:link { color: #%02x%02x%02x; }\n"
+      "*|*:-moz-any-link:active { color: #%02x%02x%02x; }\n"
+      "*|*:visited { color: #%02x%02x%02x; }\n",
+      NS_GET_R_G_B(linkColor),
+      NS_GET_R_G_B(activeColor),
+      NS_GET_R_G_B(visitedColor));
 
-  AppendPreferenceRule(aSheet,
-      aPresContext->GetCachedBoolPref(kPresContext_UnderlineLinks) ?
-        NS_LITERAL_STRING(
-            "*|*:-moz-any-link:not(svg|a) { text-decoration: underline; }") :
-        NS_LITERAL_STRING(
-            "*|*:-moz-any-link{ text-decoration: none; }"));
+  bool underlineLinks =
+    aPresContext->GetCachedBoolPref(kPresContext_UnderlineLinks);
+  sheetText.AppendPrintf(
+      "*|*:-moz-any-link%s { text-decoration: %s; }\n",
+      underlineLinks ? ":not(svg|a)" : "",
+      underlineLinks ? "underline" : "none");
 
   // Rules for focus styling.
 
@@ -883,58 +894,67 @@ nsLayoutStylesheetCache::BuildPreferenceSheet(RefPtr<CSSStyleSheet>& aSheet,
     if (focusRingWidth != 1) {
       // If the focus ring width is different from the default, fix buttons
       // with rings.
-      nsString rule;
-      rule.AppendPrintf(
+      sheetText.AppendPrintf(
           "button::-moz-focus-inner, input[type=\"reset\"]::-moz-focus-inner, "
           "input[type=\"button\"]::-moz-focus-inner, "
           "input[type=\"submit\"]::-moz-focus-inner { "
           "padding: 1px 2px 1px 2px; "
-          "border: %d %s transparent !important; }",
+          "border: %dpx %s transparent !important; }\n",
           focusRingWidth,
-          focusRingWidth == 0 ? (const char*) "solid" : (const char*) "dotted");
-      AppendPreferenceRule(aSheet, rule);
+          focusRingStyle == 0 ? "solid" : "dotted");
 
-      // NS_LITERAL_STRING doesn't work with concatenated string literals, hence
-      // the newline escaping.
-      AppendPreferenceRule(aSheet, NS_LITERAL_STRING("\
-button:focus::-moz-focus-inner, \
-input[type=\"reset\"]:focus::-moz-focus-inner, \
-input[type=\"button\"]:focus::-moz-focus-inner, \
-input[type=\"submit\"]:focus::-moz-focus-inner { \
-border-color: ButtonText !important; }"));
+      sheetText.AppendLiteral(
+          "button:focus::-moz-focus-inner, "
+          "input[type=\"reset\"]:focus::-moz-focus-inner, "
+          "input[type=\"button\"]:focus::-moz-focus-inner, "
+          "input[type=\"submit\"]:focus::-moz-focus-inner { "
+          "border-color: ButtonText !important; }\n");
     }
 
-    nsString rule;
-    if (focusRingOnAnything) {
-      rule.AppendLiteral(":focus");
-    } else {
-      rule.AppendLiteral("*|*:link:focus, *|*:visited:focus");
-    }
-    rule.AppendPrintf(" { outline: %dpx ", focusRingWidth);
-    if (focusRingStyle == 0) { // solid
-      rule.AppendLiteral("solid -moz-mac-focusring !important; "
-                         "-moz-outline-radius: 3px; outline-offset: 1px; }");
-    } else {
-      rule.AppendLiteral("dotted WindowText !important; }");
-    }
-    AppendPreferenceRule(aSheet, rule);
+    sheetText.AppendPrintf(
+        "%s { outline: %dpx %s !important; %s}\n",
+        focusRingOnAnything ?
+          ":focus" :
+          "*|*:link:focus, *|*:visited:focus",
+        focusRingWidth,
+        focusRingStyle == 0 ? // solid
+          "solid -moz-mac-focusring" : "dotted WindowText",
+        focusRingStyle == 0 ? // solid
+          "-moz-outline-radius: 3px; outline-offset: 1px; " : "");
   }
 
   if (aPresContext->GetUseFocusColors()) {
-    nsString rule;
     nscolor focusText = aPresContext->FocusTextColor();
     nscolor focusBG = aPresContext->FocusBackgroundColor();
-    rule.AppendPrintf(
+    sheetText.AppendPrintf(
         "*:focus, *:focus > font { color: #%02x%02x%02x !important; "
-        "background-color: #%02x%02x%02x !important; }",
-        NS_GET_R(focusText), NS_GET_G(focusText), NS_GET_B(focusText),
-        NS_GET_R(focusBG), NS_GET_G(focusBG), NS_GET_B(focusBG));
-    AppendPreferenceRule(aSheet, rule);
+        "background-color: #%02x%02x%02x !important; }\n",
+        NS_GET_R_G_B(focusText),
+        NS_GET_R_G_B(focusBG));
   }
+
+  NS_ASSERTION(sheetText.Length() <= kPreallocSize,
+               "kPreallocSize should be big enough to build preference style "
+               "sheet without reallocation");
+
+  if (aSheet->IsGecko()) {
+    aSheet->AsGecko()->ReparseSheet(sheetText);
+  } else {
+    aSheet->AsServo()->ParseSheet(sheetText, uri, uri, nullptr, 0,
+                                  SheetParsingMode::eAuthorSheetFeatures);
+  }
+
+#undef NS_GET_R_G_B
 }
 
 mozilla::StaticRefPtr<nsLayoutStylesheetCache>
-nsLayoutStylesheetCache::gStyleCache;
+nsLayoutStylesheetCache::gStyleCache_Gecko;
 
-mozilla::css::Loader*
-nsLayoutStylesheetCache::gCSSLoader = nullptr;
+mozilla::StaticRefPtr<nsLayoutStylesheetCache>
+nsLayoutStylesheetCache::gStyleCache_Servo;
+
+mozilla::StaticRefPtr<mozilla::css::Loader>
+nsLayoutStylesheetCache::gCSSLoader_Gecko;
+
+mozilla::StaticRefPtr<mozilla::css::Loader>
+nsLayoutStylesheetCache::gCSSLoader_Servo;

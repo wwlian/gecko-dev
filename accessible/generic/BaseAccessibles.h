@@ -38,6 +38,8 @@ public:
   virtual bool InsertChildAt(uint32_t aIndex, Accessible* aChild) override final;
   virtual bool RemoveChild(Accessible* aChild) override final;
 
+  virtual bool IsAcceptableChild(nsIContent* aEl) const override;
+
 protected:
   virtual ~LeafAccessible() {}
 
@@ -76,7 +78,8 @@ public:
 
   // ActionAccessible helpers
   Accessible* ActionWalk(bool* aIsLink = nullptr,
-                          bool* aIsOnclick = nullptr);
+                         bool* aIsOnclick = nullptr,
+                         bool* aIsLabelWithControl = nullptr);
   // HyperLinkAccessible
   virtual already_AddRefed<nsIURI> AnchorURIAt(uint32_t aAnchorIndex) override;
 

@@ -182,8 +182,6 @@ function checkCertErrorGeneric(certdb, cert, expectedError, usage,
 }
 
 function checkEVStatus(certDB, cert, usage, isEVExpected) {
-  do_print(`cert o=${cert.organization}`);
-  do_print(`cert issuer o=${cert.issuerOrganization}`);
   let hasEVPolicy = {};
   checkCertErrorGeneric(certDB, cert, PRErrorCodeSuccess, usage, hasEVPolicy);
   Assert.equal(hasEVPolicy.value, isEVExpected,
@@ -498,7 +496,7 @@ function generateOCSPResponses(ocspRespArray, nssDBlocation)
     argArray.push(ocspRespArray[i][1]); // nick;
     argArray.push(ocspRespArray[i][2]); // extranickname
     argArray.push(filename);
-    do_print("arg_array ="+argArray);
+    do_print("argArray = " + argArray);
 
     let process = Cc["@mozilla.org/process/util;1"]
                     .createInstance(Ci.nsIProcess);
@@ -567,7 +565,7 @@ function startOCSPResponder(serverPort, identity, invalidIdentities,
     function handleServerCallback(aRequest, aResponse) {
       invalidIdentities.forEach(function(identity) {
         Assert.notEqual(aRequest.host, identity,
-                        "Request host and invalid identity should not match")
+                        "Request host and invalid identity should not match");
       });
       do_print("got request for: " + aRequest.path);
       let basePath = aRequest.path.slice(1).split("/")[0];
@@ -635,7 +633,7 @@ FakeSSLStatus.prototype = {
     }
     throw Components.results.NS_ERROR_NO_INTERFACE;
   },
-}
+};
 
 // Utility functions for adding tests relating to certificate error overrides
 
@@ -664,7 +662,11 @@ function add_cert_override(aHost, aExpectedBits, aSecurityInfo) {
 function add_cert_override_test(aHost, aExpectedBits, aExpectedError) {
   add_connection_test(aHost, aExpectedError, null,
                       add_cert_override.bind(this, aHost, aExpectedBits));
-  add_connection_test(aHost, PRErrorCodeSuccess);
+  add_connection_test(aHost, PRErrorCodeSuccess, null, aSecurityInfo => {
+    Assert.ok(aSecurityInfo.securityState &
+              Ci.nsIWebProgressListener.STATE_CERT_USER_OVERRIDDEN,
+              "Cert override flag should be set on the security state");
+  });
 }
 
 // Helper function for add_prevented_cert_override_test. This is much like

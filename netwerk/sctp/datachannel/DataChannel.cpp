@@ -196,7 +196,7 @@ DataChannelConnection::~DataChannelConnection()
     ASSERT_WEBRTC(NS_IsMainThread());
     if (mTransportFlow) {
       ASSERT_WEBRTC(mSTS);
-      NS_ProxyRelease(mSTS, mTransportFlow);
+      NS_ProxyRelease(mSTS, mTransportFlow.forget());
     }
 
     if (mInternalIOThread) {
@@ -1778,7 +1778,7 @@ DataChannelConnection::HandleStreamResetEvent(const struct sctp_stream_reset_eve
 
           LOG(("Disconnected DataChannel %p from connection %p",
                (void *) channel.get(), (void *) channel->mConnection.get()));
-          channel->Destroy();
+          channel->DestroyLocked();
           // At this point when we leave here, the object is a zombie held alive only by the DOM object
         } else {
           LOG(("Can't find incoming channel %d",i));
@@ -2417,7 +2417,7 @@ DataChannelConnection::ReadBlob(already_AddRefed<DataChannelConnection> aThis,
     // Bug 966602:  Doesn't return an error to the caller via onerror.
     // We must release DataChannelConnection on MainThread to avoid issues (bug 876167)
     // aThis is now owned by the runnable; release it there
-    NS_ProxyRelease(mainThread, runnable);
+    NS_ProxyRelease(mainThread, runnable.forget());
     return;
   }
   aBlob->Close();
@@ -2502,7 +2502,7 @@ DataChannelConnection::CloseInt(DataChannel *aChannel)
   aChannel->mState = CLOSING;
   if (mState == CLOSED) {
     // we're not going to hang around waiting
-    channel->Destroy();
+    channel->DestroyLocked();
   }
   // At this point when we leave here, the object is a zombie held alive only by the DOM object
 }
@@ -2556,13 +2556,15 @@ void
 DataChannel::Close()
 {
   ENSURE_DATACONNECTION;
+  RefPtr<DataChannelConnection> connection(mConnection);
   mConnection->Close(this);
 }
 
 // Used when disconnecting from the DataChannelConnection
 void
-DataChannel::Destroy()
+DataChannel::DestroyLocked()
 {
+  mConnection->mLock.AssertCurrentThreadOwns();
   ENSURE_DATACONNECTION;
 
   LOG(("Destroying Data channel %u", mStream));

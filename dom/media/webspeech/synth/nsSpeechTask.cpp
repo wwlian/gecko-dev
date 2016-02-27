@@ -52,15 +52,22 @@ public:
     }
   }
 
-  virtual void NotifyEvent(MediaStreamGraph* aGraph,
-                           MediaStreamListener::MediaStreamGraphEvent event) override
+  void NotifyEvent(MediaStreamGraph* aGraph,
+                   MediaStreamListener::MediaStreamGraphEvent event) override
   {
     switch (event) {
       case EVENT_FINISHED:
         {
-          nsCOMPtr<nsIRunnable> runnable =
+          if (!mStarted) {
+            mStarted = true;
+            nsCOMPtr<nsIRunnable> startRunnable =
+              NS_NewRunnableMethod(this, &SynthStreamListener::DoNotifyStarted);
+            aGraph->DispatchToMainThreadAfterStreamStateUpdate(startRunnable.forget());
+          }
+
+          nsCOMPtr<nsIRunnable> endRunnable =
             NS_NewRunnableMethod(this, &SynthStreamListener::DoNotifyFinished);
-          aGraph->DispatchToMainThreadAfterStreamStateUpdate(runnable.forget());
+          aGraph->DispatchToMainThreadAfterStreamStateUpdate(endRunnable.forget());
         }
         break;
       case EVENT_REMOVED:
@@ -73,7 +80,7 @@ public:
     }
   }
 
-  virtual void NotifyBlockingChanged(MediaStreamGraph* aGraph, Blocking aBlocked) override
+  void NotifyBlockingChanged(MediaStreamGraph* aGraph, Blocking aBlocked) override
   {
     if (aBlocked == MediaStreamListener::UNBLOCKED && !mStarted) {
       mStarted = true;
@@ -323,7 +330,7 @@ nsSpeechTask::SendAudioImpl(RefPtr<mozilla::SharedBuffer>& aSamples, uint32_t aD
   }
 
   AudioSegment segment;
-  nsAutoTArray<const int16_t*, 1> channelData;
+  AutoTArray<const int16_t*, 1> channelData;
   channelData.AppendElement(static_cast<int16_t*>(aSamples->Data()));
   segment.AppendFrames(aSamples.forget(), channelData, aDataLen);
   mStream->AppendToTrack(1, &segment);
@@ -498,9 +505,15 @@ nsSpeechTask::DispatchResumeImpl(float aElapsedTime, uint32_t aCharIndex)
 NS_IMETHODIMP
 nsSpeechTask::DispatchError(float aElapsedTime, uint32_t aCharIndex)
 {
+  LOG(LogLevel::Debug, ("nsSpeechTask::DispatchError"));
+
   if (!mIndirectAudio) {
     NS_WARNING("Can't call DispatchError() from a direct audio speech service");
     return NS_ERROR_FAILURE;
+  }
+
+  if (!mPreCanceled) {
+    nsSynthVoiceRegistry::GetInstance()->SpeakNext();
   }
 
   return DispatchErrorImpl(aElapsedTime, aCharIndex);
@@ -512,6 +525,10 @@ nsSpeechTask::DispatchErrorImpl(float aElapsedTime, uint32_t aCharIndex)
   MOZ_ASSERT(mUtterance);
   if(NS_WARN_IF(mUtterance->mState == SpeechSynthesisUtterance::STATE_ENDED)) {
     return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  if (mSpeechSynthesis) {
+    mSpeechSynthesis->OnEnd(this);
   }
 
   mUtterance->mState = SpeechSynthesisUtterance::STATE_ENDED;
@@ -696,8 +713,7 @@ nsSpeechTask::CreateAudioChannelAgent()
                                            this);
   float volume = 0.0f;
   bool muted = true;
-  mAudioChannelAgent->NotifyStartedPlaying(nsIAudioChannelAgent::AUDIO_AGENT_NOTIFY, &volume, &muted);
-  WindowVolumeChanged(volume, muted);
+  mAudioChannelAgent->NotifyStartedPlaying(&volume, &muted);
 }
 
 void
@@ -717,7 +733,7 @@ nsSpeechTask::WindowVolumeChanged(float aVolume, bool aMuted)
 }
 
 NS_IMETHODIMP
-nsSpeechTask::WindowAudioCaptureChanged()
+nsSpeechTask::WindowAudioCaptureChanged(bool aCapture)
 {
   // This is not supported yet.
   return NS_OK;

@@ -1,5 +1,4 @@
 const { ContentTaskUtils } = Cu.import("resource://testing-common/ContentTaskUtils.jsm", {});
-const TIME_INTERVAL = 500;
 const PWMGR_DLG = "chrome://passwordmgr/content/passwordManager.xul";
 
 var doc;
@@ -32,6 +31,11 @@ function synthesizeDblClickOnCell(aTree, column, row) {
                              aTree.ownerDocument.defaultView);
 }
 
+function* togglePasswords() {
+  pwmgrdlg.document.querySelector("#togglePasswords").doCommand();
+  yield new Promise(resolve => waitForFocus(resolve, pwmgrdlg));
+}
+
 function* editUsernamePromises(site, oldUsername, newUsername) {
   is(Services.logins.findLogins({}, site, "", "").length, 1, "Correct login found");
   let login = Services.logins.findLogins({}, site, "", "")[0];
@@ -50,7 +54,7 @@ function* editUsernamePromises(site, oldUsername, newUsername) {
   is(Services.logins.findLogins({}, site, "", "").length, 1, "Correct login replaced");
   login = Services.logins.findLogins({}, site, "", "")[0];
   is(login.username, newUsername, "Correct username updated");
-  is(getUsername(0), newUsername, "Correct username shown");
+  is(getUsername(0), newUsername, "Correct username shown after the update");
 }
 
 function* editPasswordPromises(site, oldPassword, newPassword) {
@@ -72,7 +76,7 @@ function* editPasswordPromises(site, oldPassword, newPassword) {
   is(Services.logins.findLogins({}, site, "", "").length, 1, "Correct login replaced");
   login = Services.logins.findLogins({}, site, "", "")[0];
   is(login.password, newPassword, "Correct password updated");
-  is(getPassword(0), newPassword, "Correct password shown");
+  is(getPassword(0), newPassword, "Correct password shown after the update");
 }
 
 add_task(function* test_setup() {
@@ -109,7 +113,9 @@ add_task(function* test_edit_multiple_logins() {
   function* testLoginChange(site, oldUsername, oldPassword, newUsername, newPassword) {
     addLogin(site, oldUsername, oldPassword);
     yield* editUsernamePromises(site, oldUsername, newUsername);
+    yield* togglePasswords();
     yield* editPasswordPromises(site, oldPassword, newPassword);
+    yield* togglePasswords();
   }
 
   yield* testLoginChange("http://c.tn/", "userC", "passC", "usernameC", "passwordC");

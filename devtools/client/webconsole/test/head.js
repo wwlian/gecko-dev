@@ -1,7 +1,7 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
@@ -38,15 +38,9 @@ const GROUP_INDENT = 12;
 
 const WEBCONSOLE_STRINGS_URI = "chrome://devtools/locale/" +
                                "webconsole.properties";
-var WCUL10n = new WebConsoleUtils.l10n(WEBCONSOLE_STRINGS_URI);
+var WCUL10n = new WebConsoleUtils.L10n(WEBCONSOLE_STRINGS_URI);
 
 DevToolsUtils.testing = true;
-
-function asyncTest(generator) {
-  return () => {
-    Task.spawn(generator).then(finishTest);
-  };
-}
 
 function loadTab(url) {
   let deferred = promise.defer();
@@ -86,6 +80,45 @@ function closeTab(tab) {
   gBrowser.removeTab(tab);
 
   return deferred.promise;
+}
+
+/**
+ * Load the page and return the associated HUD.
+ *
+ * @param string uri
+ *   The URI of the page to load.
+ * @param string consoleType [optional]
+ *   The console type, either "browserConsole" or "webConsole". Defaults to
+ *   "webConsole".
+ * @return object
+ *   The HUD associated with the console
+ */
+function* loadPageAndGetHud(uri, consoleType) {
+  let { browser } = yield loadTab("data:text/html;charset=utf-8,Loading tab for tests");
+
+  let hud;
+  if (consoleType === "browserConsole") {
+    hud = yield HUDService.openBrowserConsoleOrFocus();
+  } else {
+    hud = yield openConsole();
+  }
+
+  ok(hud, "Console was opened");
+
+  let loaded = loadBrowser(browser);
+  yield BrowserTestUtils.loadURI(gBrowser.selectedBrowser, uri);
+  yield loaded;
+
+  yield waitForMessages({
+    webconsole: hud,
+    messages: [{
+      text: uri,
+      category: CATEGORY_NETWORK,
+      severity: SEVERITY_LOG,
+    }],
+  });
+
+  return hud;
 }
 
 function afterAllTabsLoaded(callback, win) {
@@ -339,8 +372,12 @@ registerCleanupFunction(function*() {
 
   dumpConsoles();
 
-  if (HUDService.getBrowserConsole()) {
-    HUDService.toggleBrowserConsole();
+  let browserConsole = HUDService.getBrowserConsole();
+  if (browserConsole) {
+    if (browserConsole.jsterm) {
+      browserConsole.jsterm.clearOutput(true);
+    }
+    yield HUDService.toggleBrowserConsole();
   }
 
   let target = TargetFactory.forTab(gBrowser.selectedTab);
@@ -1456,8 +1493,13 @@ function checkOutputForInputs(hud, inputTests) {
       }],
     });
 
+    let msg = [...result.matched][0];
+
+    if (entry.consoleLogClick) {
+      yield checkObjectClick(entry, msg);
+    }
+
     if (typeof entry.inspectorIcon == "boolean") {
-      let msg = [...result.matched][0];
       info("Checking Inspector Link: " + entry.input);
       yield checkLinkToInspector(entry.inspectorIcon, msg);
     }
@@ -1485,11 +1527,13 @@ function checkOutputForInputs(hud, inputTests) {
     hud.jsterm.clearOutput();
     hud.jsterm.execute(entry.input);
 
+    let evalOutput = entry.evalOutput || entry.output;
+
     let [result] = yield waitForMessages({
       webconsole: hud,
       messages: [{
-        name: "JS eval output: " + entry.output,
-        text: entry.output,
+        name: "JS eval output: " + entry.evalOutput,
+        text: entry.evalOutput,
         category: CATEGORY_OUTPUT,
       }],
     });
@@ -1506,8 +1550,13 @@ function checkOutputForInputs(hud, inputTests) {
 
   function* checkObjectClick(entry, msg) {
     info("Clicking: " + entry.input);
-    let body = msg.querySelector(".message-body a") ||
-               msg.querySelector(".message-body");
+    let body;
+    if (entry.getClickableNode) {
+      body = entry.getClickableNode(msg);
+    } else {
+      body = msg.querySelector(".message-body a") ||
+             msg.querySelector(".message-body");
+    }
     ok(body, "the message body");
 
     let deferredVariablesView = promise.defer();
@@ -1520,7 +1569,10 @@ function checkOutputForInputs(hud, inputTests) {
     container.addEventListener("TabOpen", entry._onTabOpen, true);
 
     body.scrollIntoView();
-    EventUtils.synthesizeMouse(body, 2, 2, {}, hud.iframeWindow);
+
+    if (!entry.suppressClick) {
+      EventUtils.synthesizeMouse(body, 2, 2, {}, hud.iframeWindow);
+    }
 
     if (entry.inspectable) {
       info("message body tagName '" + body.tagName + "' className '" +
@@ -1573,6 +1625,23 @@ function checkOutputForInputs(hud, inputTests) {
   }
 
   return Task.spawn(runner);
+}
+
+
+/**
+ * Finish the request and resolve with the request object.
+ *
+ * @return promise
+ * @resolves The request object.
+ */
+function waitForFinishedRequest() {
+  registerCleanupFunction(function() {
+    HUDService.lastFinishedRequest.callback = null;
+  });
+
+  return new Promise(resolve => {
+    HUDService.lastFinishedRequest.callback = request => { resolve(request) };
+  });
 }
 
 /**
@@ -1638,6 +1707,21 @@ function checkLinkToInspector(hasLinkToInspector, msg) {
 function getSourceActor(sources, URL) {
   let item = sources.getItemForAttachment(a => a.source.url === URL);
   return item && item.value;
+}
+
+/**
+ * Make a request against an actor and resolve with the packet.
+ * @param object client
+ *   The client to use when making the request.
+ * @param function requestType
+ *   The client request function to run.
+ * @param array args
+ *   The arguments to pass into the function.
+ */
+function getPacket(client, requestType, args) {
+  return new Promise(resolve => {
+    client[requestType](...args, packet => resolve(packet));
+  });
 }
 
 /**

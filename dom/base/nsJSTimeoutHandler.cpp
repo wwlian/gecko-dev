@@ -129,7 +129,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(nsJSScriptTimeoutHandler)
   for (uint32_t i = 0; i < tmp->mArgs.Length(); ++i) {
-    NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mArgs[i])
+    NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mArgs[i])
   }
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
@@ -286,11 +286,10 @@ already_AddRefed<nsIScriptTimeoutHandler>
 NS_CreateJSTimeoutHandler(JSContext* aCx, nsGlobalWindow *aWindow,
                           const nsAString& aExpression, ErrorResult& aError)
 {
-  ErrorResult rv;
   bool allowEval = false;
   RefPtr<nsJSScriptTimeoutHandler> handler =
-    new nsJSScriptTimeoutHandler(aCx, aWindow, aExpression, &allowEval, rv);
-  if (rv.Failed() || !allowEval) {
+    new nsJSScriptTimeoutHandler(aCx, aWindow, aExpression, &allowEval, aError);
+  if (aError.Failed() || !allowEval) {
     return nullptr;
   }
 

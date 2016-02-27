@@ -53,6 +53,7 @@
 #include "Layers.h"
 #include "ClientLayerManager.h"
 #include "mozilla/layers/LayerManagerComposite.h"
+#include "GfxTexturesReporter.h"
 #include "GLTextureImage.h"
 #include "GLContextProvider.h"
 #include "GLContextCGL.h"
@@ -318,6 +319,7 @@ public:
 protected:
 
   RefPtr<gfx::DrawTarget> mUpdateDrawTarget;
+  UniquePtr<unsigned char[]> mUpdateDrawTargetData;
   GLContext* mGLContext;
   LayoutDeviceIntRegion mUpdateRegion;
   LayoutDeviceIntSize mUsedSize;
@@ -336,7 +338,9 @@ class GLPresenter : public GLManager
 public:
   static GLPresenter* CreateForWindow(nsIWidget* aWindow)
   {
-    RefPtr<GLContext> context = gl::GLContextProvider::CreateForWindow(aWindow);
+    // Contrary to CompositorOGL, we allow unaccelerated OpenGL contexts to be
+    // used. BasicCompositor only requires very basic GL functionality.
+    RefPtr<GLContext> context = gl::GLContextProvider::CreateForWindow(aWindow, false);
     return context ? new GLPresenter(context) : nullptr;
   }
 
@@ -493,12 +497,12 @@ nsresult nsChildView::Create(nsIWidget* aParent,
     gChildViewMethodsSwizzled = true;
   }
 
-  mBounds = aRect.ToUnknownRect();
+  mBounds = aRect;
 
   // Ensure that the toolkit is created.
   nsToolkit::GetToolkit();
 
-  BaseCreate(aParent, aRect, aInitData);
+  BaseCreate(aParent, aInitData);
 
   // inherit things from the parent view and create our parallel
   // NSView in the Cocoa display system
@@ -519,8 +523,7 @@ nsresult nsChildView::Create(nsIWidget* aParent,
   // create our parallel NSView and hook it up to our parent. Recall
   // that NS_NATIVE_WIDGET is the NSView.
   CGFloat scaleFactor = nsCocoaUtils::GetBackingScaleFactor(mParentView);
-  NSRect r = nsCocoaUtils::DevPixelsToCocoaPoints(
-    LayoutDeviceIntRect::FromUnknownRect(mBounds), scaleFactor);
+  NSRect r = nsCocoaUtils::DevPixelsToCocoaPoints(mBounds, scaleFactor);
   mView = [(NSView<mozView>*)CreateCocoaView(r) retain];
   if (!mView) {
     return NS_ERROR_FAILURE;
@@ -683,6 +686,17 @@ void* nsChildView::GetNativeData(uint32_t aDataType)
 
     case NS_NATIVE_OFFSETY:
       retVal = 0;
+      break;
+
+    case NS_RAW_NATIVE_IME_CONTEXT:
+      retVal = [mView inputContext];
+      // If input context isn't available on this widget, we should set |this|
+      // instead of nullptr since if this returns nullptr, IMEStateManager
+      // cannot manage composition with TextComposition instance.  Although,
+      // this case shouldn't occur.
+      if (NS_WARN_IF(!retVal)) {
+        retVal = this;
+      }
       break;
   }
 
@@ -915,9 +929,7 @@ NS_IMETHODIMP nsChildView::SetCursor(imgIContainer* aCursor,
 // Get this component dimension
 NS_IMETHODIMP nsChildView::GetBounds(LayoutDeviceIntRect& aRect)
 {
-  aRect = !mView
-        ? LayoutDeviceIntRect::FromUnknownRect(mBounds)
-        : CocoaPointsToDevPixels([mView frame]);
+  aRect = !mView ? mBounds : CocoaPointsToDevPixels([mView frame]);
   return NS_OK;
 }
 
@@ -1009,7 +1021,7 @@ NS_IMETHODIMP nsChildView::Move(double aX, double aY)
   mBounds.y = y;
 
   ManipulateViewWithoutNeedingDisplay(mView, ^{
-    [mView setFrame:UntypedDevPixelsToCocoaPoints(mBounds)];
+    [mView setFrame:DevPixelsToCocoaPoints(mBounds)];
   });
 
   NotifyRollupGeometryChange();
@@ -1034,7 +1046,7 @@ NS_IMETHODIMP nsChildView::Resize(double aWidth, double aHeight, bool aRepaint)
   mBounds.height = height;
 
   ManipulateViewWithoutNeedingDisplay(mView, ^{
-    [mView setFrame:UntypedDevPixelsToCocoaPoints(mBounds)];
+    [mView setFrame:DevPixelsToCocoaPoints(mBounds)];
   });
 
   if (mVisible && aRepaint)
@@ -1073,7 +1085,7 @@ NS_IMETHODIMP nsChildView::Resize(double aX, double aY,
   }
 
   ManipulateViewWithoutNeedingDisplay(mView, ^{
-    [mView setFrame:UntypedDevPixelsToCocoaPoints(mBounds)];
+    [mView setFrame:DevPixelsToCocoaPoints(mBounds)];
   });
 
   if (mVisible && aRepaint)
@@ -1768,13 +1780,6 @@ nsChildView::GetInputContext()
     default:
       mInputContext.mIMEState.mOpen = IMEState::CLOSED;
       break;
-  }
-  mInputContext.mNativeIMEContext = [mView inputContext];
-  // If input context isn't available on this widget, we should set |this|
-  // instead of nullptr since nullptr means that the platform has only one
-  // context per process.
-  if (!mInputContext.mNativeIMEContext) {
-    mInputContext.mNativeIMEContext = this;
   }
   return mInputContext;
 }
@@ -2630,7 +2635,8 @@ nsChildView::SwipeFinished()
 }
 
 already_AddRefed<gfx::DrawTarget>
-nsChildView::StartRemoteDrawing()
+nsChildView::StartRemoteDrawingInRegion(LayoutDeviceIntRegion& aInvalidRegion,
+                                        BufferMode* aBufferMode)
 {
   // should have created the GLPresenter in InitCompositor.
   MOZ_ASSERT(mGLPresenter);
@@ -2642,9 +2648,8 @@ nsChildView::StartRemoteDrawing()
     }
   }
 
-  LayoutDeviceIntRegion dirtyRegion(LayoutDeviceIntRect::FromUnknownRect(mBounds));
-  LayoutDeviceIntSize renderSize =
-    LayoutDeviceIntSize::FromUnknownSize(mBounds.Size());
+  LayoutDeviceIntRegion dirtyRegion(aInvalidRegion);
+  LayoutDeviceIntSize renderSize = mBounds.Size();
 
   if (!mBasicCompositorImage) {
     mBasicCompositorImage = new RectTextureImage(mGLPresenter->gl());
@@ -2655,9 +2660,11 @@ nsChildView::StartRemoteDrawing()
 
   if (!drawTarget) {
     // Composite unchanged textures.
-    DoRemoteComposition(LayoutDeviceIntRect::FromUnknownRect(mBounds));
+    DoRemoteComposition(mBounds);
     return nullptr;
   }
+
+  aInvalidRegion = mBasicCompositorImage->GetUpdateRegion();
 
   return drawTarget.forget();
 }
@@ -2666,7 +2673,7 @@ void
 nsChildView::EndRemoteDrawing()
 {
   mBasicCompositorImage->EndUpdate(true);
-  DoRemoteComposition(LayoutDeviceIntRect::FromUnknownRect(mBounds));
+  DoRemoteComposition(mBounds);
 }
 
 void
@@ -2928,9 +2935,15 @@ RectTextureImage::BeginUpdate(const LayoutDeviceIntSize& aNewSize,
   LayoutDeviceIntSize neededBufferSize = TextureSizeForSize(mUsedSize);
   if (!mUpdateDrawTarget || mBufferSize != neededBufferSize) {
     gfx::IntSize size(neededBufferSize.width, neededBufferSize.height);
+    mUpdateDrawTarget = nullptr;
+    mUpdateDrawTargetData = nullptr;
+    gfx::SurfaceFormat format = gfx::SurfaceFormat::B8G8R8A8;
+    int32_t stride = size.width * gfx::BytesPerPixel(format);
+    mUpdateDrawTargetData = MakeUnique<unsigned char[]>(stride * size.height);
     mUpdateDrawTarget =
-      gfx::Factory::CreateDrawTarget(gfx::BackendType::COREGRAPHICS, size,
-                                     gfx::SurfaceFormat::B8G8R8A8);
+      gfx::Factory::CreateDrawTargetForData(gfx::BackendType::SKIA,
+                                            mUpdateDrawTargetData.get(), size,
+                                            stride, format);
     mBufferSize = neededBufferSize;
   }
 
@@ -2953,33 +2966,35 @@ RectTextureImage::EndUpdate(bool aKeepSurface)
 {
   MOZ_ASSERT(mInUpdate, "Ending update while not in update");
 
-  bool overwriteTexture = false;
+  bool needInit = !mTexture;
   LayoutDeviceIntRegion updateRegion = mUpdateRegion;
-  if (!mTexture || (mTextureSize != mBufferSize)) {
-    overwriteTexture = true;
+  if (mTextureSize != mBufferSize) {
     mTextureSize = mBufferSize;
   }
 
-  if (overwriteTexture || !CanUploadSubtextures()) {
+  if (needInit || !CanUploadSubtextures()) {
     updateRegion =
       LayoutDeviceIntRect(LayoutDeviceIntPoint(0, 0), mTextureSize);
   }
 
-  RefPtr<gfx::SourceSurface> snapshot = mUpdateDrawTarget->Snapshot();
-  RefPtr<gfx::DataSourceSurface> dataSnapshot = snapshot->GetDataSurface();
+  gfx::IntPoint srcPoint = updateRegion.GetBounds().TopLeft().ToUnknownPoint();
+  gfx::SurfaceFormat format = mUpdateDrawTarget->GetFormat();
+  int bpp = gfx::BytesPerPixel(format);
+  int32_t stride = mBufferSize.width * bpp;
+  unsigned char* data = mUpdateDrawTargetData.get();
+  data += srcPoint.y * stride + srcPoint.x * bpp;
 
-  UploadSurfaceToTexture(mGLContext,
-                         dataSnapshot,
-                         updateRegion.ToUnknownRegion(),
-                         mTexture,
-                         overwriteTexture,
-                         updateRegion.GetBounds().TopLeft().ToUnknownPoint(),
-                         false,
-                         LOCAL_GL_TEXTURE0,
-                         LOCAL_GL_TEXTURE_RECTANGLE_ARB);
+  UploadImageDataToTexture(mGLContext, data, stride, format,
+                           updateRegion.ToUnknownRegion(), mTexture, nullptr,
+                           needInit, /* aPixelBuffer = */ false,
+                           LOCAL_GL_TEXTURE0,
+                           LOCAL_GL_TEXTURE_RECTANGLE_ARB);
+
+
 
   if (!aKeepSurface) {
     mUpdateDrawTarget = nullptr;
+    mUpdateDrawTargetData = nullptr;
   }
 
   mInUpdate = false;
@@ -3741,13 +3756,10 @@ NSEvent* gLastDragMouseDownEvent = nil;
   RefPtr<gfxContext> targetContext = new gfxContext(dt);
 
   // Set up the clip region.
-  LayoutDeviceIntRegion::RectIterator iter(region);
   targetContext->NewPath();
-  for (;;) {
-    const LayoutDeviceIntRect* r = iter.Next();
-    if (!r)
-      break;
-    targetContext->Rectangle(gfxRect(r->x, r->y, r->width, r->height));
+  for (auto iter = region.RectIter(); !iter.Done(); iter.Next()) {
+    const LayoutDeviceIntRect& r = iter.Get();
+    targetContext->Rectangle(gfxRect(r.x, r.y, r.width, r.height));
   }
   targetContext->Clip();
 
@@ -4116,7 +4128,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
       // we don't want to rollup if the click is in a parent menu of
       // the current submenu
       uint32_t popupsToRollup = UINT32_MAX;
-      nsAutoTArray<nsIWidget*, 5> widgetChain;
+      AutoTArray<nsIWidget*, 5> widgetChain;
       uint32_t sameTypeCount = rollupListener->GetSubmenuWidgetChain(&widgetChain);
       for (uint32_t i = 0; i < widgetChain.Length(); i++) {
         nsIWidget* widget = widgetChain[i];
@@ -4620,13 +4632,8 @@ NewCGSRegionFromRegion(const LayoutDeviceIntRegion& aRegion,
                        CGRect (^aRectConverter)(const LayoutDeviceIntRect&))
 {
   nsTArray<CGRect> rects;
-  LayoutDeviceIntRegion::RectIterator iter(aRegion);
-  for (;;) {
-    const LayoutDeviceIntRect* r = iter.Next();
-    if (!r) {
-      break;
-    }
-    rects.AppendElement(aRectConverter(*r));
+  for (auto iter = aRegion.RectIter(); !iter.Done(); iter.Next()) {
+    rects.AppendElement(aRectConverter(iter.Get()));
   }
 
   CGSRegionObj region;
@@ -4963,7 +4970,8 @@ PanGestureTypeForEvent(NSEvent* aEvent)
                                 ScrollWheelInput::SCROLLDELTA_PIXEL,
                                 position,
                                 preciseDelta.x,
-                                preciseDelta.y);
+                                preciseDelta.y,
+                                false);
     wheelEvent.mLineOrPageDeltaX = lineOrPageDeltaX;
     wheelEvent.mLineOrPageDeltaY = lineOrPageDeltaY;
     wheelEvent.mIsMomentum = nsCocoaUtils::IsMomentumScrollEvent(theEvent);
@@ -4978,7 +4986,8 @@ PanGestureTypeForEvent(NSEvent* aEvent)
                                 ScrollWheelInput::SCROLLDELTA_LINE,
                                 position,
                                 lineOrPageDeltaX,
-                                lineOrPageDeltaY);
+                                lineOrPageDeltaY,
+                                false);
     wheelEvent.mLineOrPageDeltaX = lineOrPageDeltaX;
     wheelEvent.mLineOrPageDeltaY = lineOrPageDeltaY;
     mGeckoChild->DispatchAPZWheelInputEvent(wheelEvent, false);

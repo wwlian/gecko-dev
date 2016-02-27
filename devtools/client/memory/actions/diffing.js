@@ -4,7 +4,8 @@
 "use strict";
 
 const { assert, reportException } = require("devtools/shared/DevToolsUtils");
-const { actions, diffingState } = require("../constants");
+const { actions, diffingState, viewState } = require("../constants");
+const telemetry = require("../telemetry");
 const {
   breakdownEquals,
   getSnapshot,
@@ -16,7 +17,12 @@ const {
  * Toggle diffing mode on or off.
  */
 const toggleDiffing = exports.toggleDiffing = function () {
-  return { type: actions.TOGGLE_DIFFING };
+  return function(dispatch, getState) {
+    dispatch({
+      type: actions.CHANGE_VIEW,
+      view: getState().diffing ? viewState.CENSUS : viewState.DIFFING,
+    });
+  };
 };
 
 /**
@@ -44,7 +50,7 @@ const takeCensusDiff = exports.takeCensusDiff = function (heapWorker, first, sec
     assert(snapshotIsDiffable(second),
            `Second snapshot must be in a diffable state, found ${second.state}`);
 
-    let report;
+    let report, parentMap;
     let inverted = getState().inverted;
     let breakdown = getState().breakdown;
     let filter = getState().filter;
@@ -81,10 +87,10 @@ const takeCensusDiff = exports.takeCensusDiff = function (heapWorker, first, sec
       opts.filter = filter || null;
 
       try {
-        report = yield heapWorker.takeCensusDiff(first.path,
-                                                 second.path,
-                                                 { breakdown },
-                                                 opts);
+        ({ delta: report, parentMap } = yield heapWorker.takeCensusDiff(first.path,
+                                                                        second.path,
+                                                                        { breakdown },
+                                                                        opts));
       } catch (error) {
         reportException("actions/diffing/takeCensusDiff", error);
         dispatch({ type: actions.DIFFING_ERROR, error });
@@ -100,10 +106,13 @@ const takeCensusDiff = exports.takeCensusDiff = function (heapWorker, first, sec
       first,
       second,
       report,
+      parentMap,
       inverted,
       filter,
       breakdown,
     });
+
+    telemetry.countDiff({ inverted, filter, breakdown });
   };
 };
 
@@ -150,5 +159,41 @@ const selectSnapshotForDiffingAndRefresh = exports.selectSnapshotForDiffingAndRe
            "If we are selecting for diffing, we must be in diffing mode");
     dispatch(selectSnapshotForDiffing(snapshot));
     yield dispatch(refreshDiffing(heapWorker));
+  };
+};
+
+/**
+ * Expand the given node in the diffing's census's delta-report.
+ *
+ * @param {CensusTreeNode} node
+ */
+const expandDiffingCensusNode = exports.expandDiffingCensusNode = function (node) {
+  return {
+    type: actions.EXPAND_DIFFING_CENSUS_NODE,
+    node,
+  };
+};
+
+/**
+ * Collapse the given node in the diffing's census's delta-report.
+ *
+ * @param {CensusTreeNode} node
+ */
+const collapseDiffingCensusNode = exports.collapseDiffingCensusNode = function (node) {
+  return {
+    type: actions.COLLAPSE_DIFFING_CENSUS_NODE,
+    node,
+  };
+};
+
+/**
+ * Focus the given node in the snapshot's census's report.
+ *
+ * @param {DominatorTreeNode} node
+ */
+const focusDiffingCensusNode = exports.focusDiffingCensusNode = function (node) {
+  return {
+    type: actions.FOCUS_DIFFING_CENSUS_NODE,
+    node,
   };
 };

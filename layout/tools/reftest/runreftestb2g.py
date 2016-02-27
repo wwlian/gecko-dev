@@ -15,7 +15,8 @@ if here not in sys.path:
 
 from automation import Automation
 from b2gautomation import B2GRemoteAutomation
-from runreftestmulet import run_test_harness as run_mulet
+from runreftestmulet import run_test_harness as run_mulet_reftests
+from output import OutputHandler
 from remotereftest import RemoteReftestResolver, ReftestServer
 from runreftest import RefTest
 import reftestcommandline
@@ -249,9 +250,6 @@ class B2GRemoteReftest(RefTest):
         prefs["reftest.browser.iframe.enabled"] = False
         prefs["reftest.remote"] = True
 
-        # Set a future policy version to avoid the telemetry prompt.
-        prefs["toolkit.telemetry.prompted"] = 999
-        prefs["toolkit.telemetry.notifiedOptOut"] = 999
         # Make sure we disable system updates
         prefs["app.update.enabled"] = False
         prefs["app.update.url"] = ""
@@ -311,6 +309,8 @@ class B2GRemoteReftest(RefTest):
                timeout=None, debuggerInfo=None,
                symbolsPath=None, options=None,
                valgrindPath=None, valgrindArgs=None, valgrindSuppFiles=None):
+
+        outputHandler = OutputHandler(self.log, options.utilityPath, options.symbolsPath)
         status = self.automation.runApp(None, env,
                                         binary,
                                         profile.profile,
@@ -319,7 +319,8 @@ class B2GRemoteReftest(RefTest):
                                         xrePath=options.xrePath,
                                         debuggerInfo=debuggerInfo,
                                         symbolsPath=symbolsPath,
-                                        timeout=timeout)
+                                        timeout=timeout,
+                                        outputHandler=outputHandler)
         return status
 
 
@@ -380,7 +381,6 @@ def run_remote_reftests(parser, options):
     auto.setProduct("b2g")
     auto.test_script = os.path.join(here, 'b2g_start_script.js')
     auto.test_script_args = [options.remoteWebServer, options.httpPort]
-    auto.logFinish = "REFTEST TEST-START | Shutdown"
 
     reftest = B2GRemoteReftest(auto, dm, options, here)
     parser.validate(options, reftest)
@@ -418,23 +418,24 @@ def run_remote_reftests(parser, options):
     reftest.stopWebServer(options)
     return retVal
 
-def run_remote(**kwargs):
-    # Tests need to be served from a subdirectory of the server. Symlink
-    # topsrcdir here to get around this.
+
+def run(**kwargs):
+    # Mach gives us kwargs; this is a way to turn them back into an
+    # options object
     parser = reftestcommandline.B2GArgumentParser()
     parser.set_defaults(**kwargs)
     options = parser.parse_args(kwargs["tests"])
     return run_remote_reftests(parser, options)
 
-def main():
+
+def main(args=sys.argv[1:]):
     parser = reftestcommandline.B2GArgumentParser()
-    options = parser.parse_args()
+    options = parser.parse_args(args)
 
     if options.mulet:
-        return run_mulet(parser, options)
+        return run_mulet_reftests(parser, options)
     return run_remote_reftests(parser, options)
 
 
 if __name__ == "__main__":
     sys.exit(main())
-

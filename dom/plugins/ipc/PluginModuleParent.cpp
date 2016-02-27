@@ -33,6 +33,7 @@
 #include "nsCRT.h"
 #include "nsIFile.h"
 #include "nsIObserverService.h"
+#include "nsIXULRuntime.h"
 #include "nsNPAPIPlugin.h"
 #include "nsPrintfCString.h"
 #include "prsystem.h"
@@ -109,6 +110,7 @@ mozilla::plugins::SetupBridge(uint32_t aPluginId,
                               nsresult* rv,
                               uint32_t* runID)
 {
+    PROFILER_LABEL_FUNC(js::ProfileEntry::Category::OTHER);
     if (NS_WARN_IF(!rv) || NS_WARN_IF(!runID)) {
         return false;
     }
@@ -489,33 +491,15 @@ PluginModuleChromeParent::LoadModule(const char* aFilePath, uint32_t aPluginId,
 {
     PLUGIN_LOG_DEBUG_FUNCTION;
 
-    int32_t sandboxLevel = 0;
-#if defined(XP_WIN) && defined(MOZ_SANDBOX)
-    nsAutoCString sandboxPref("dom.ipc.plugins.sandbox-level.");
-    sandboxPref.Append(aPluginTag->GetNiceFileName());
-    if (NS_FAILED(Preferences::GetInt(sandboxPref.get(), &sandboxLevel))) {
-      sandboxLevel = Preferences::GetInt("dom.ipc.plugins.sandbox-level.default");
-    }
-
-#if defined(_AMD64_)
-    // As level 2 is now the default NPAPI sandbox level for 64-bit flash, we
-    // don't want to allow a lower setting unless this environment variable is
-    // set. This should be changed if the firefox.js pref file is changed.
-    if (aPluginTag->mIsFlashPlugin &&
-        !PR_GetEnv("MOZ_ALLOW_WEAKER_SANDBOX") && sandboxLevel < 2) {
-        sandboxLevel = 2;
-    }
-#endif
-#endif
-
     nsAutoPtr<PluginModuleChromeParent> parent(
-            new PluginModuleChromeParent(aFilePath, aPluginId, sandboxLevel,
+            new PluginModuleChromeParent(aFilePath, aPluginId,
+                                         aPluginTag->mSandboxLevel,
                                          aPluginTag->mSupportsAsyncInit));
     UniquePtr<LaunchCompleteTask> onLaunchedRunnable(new LaunchedTask(parent));
     parent->mSubprocess->SetCallRunnableImmediately(!parent->mIsStartingAsync);
     TimeStamp launchStart = TimeStamp::Now();
     bool launched = parent->mSubprocess->Launch(Move(onLaunchedRunnable),
-                                                sandboxLevel);
+                                                aPluginTag->mSandboxLevel);
     if (!launched) {
         // We never reached open
         parent->mShutdown = true;
@@ -671,6 +655,7 @@ PluginModuleParent::PluginModuleParent(bool aIsChrome, bool aAllowAsyncInit)
     , mNPPIface(nullptr)
     , mPlugin(nullptr)
     , mTaskFactory(this)
+    , mSandboxLevel(0)
     , mIsFlashPlugin(false)
     , mIsStartingAsync(false)
     , mNPInitialized(false)
@@ -679,7 +664,8 @@ PluginModuleParent::PluginModuleParent(bool aIsChrome, bool aAllowAsyncInit)
 {
 #if defined(XP_WIN) || defined(XP_MACOSX) || defined(MOZ_WIDGET_GTK)
     mIsStartingAsync = aAllowAsyncInit &&
-                       Preferences::GetBool(kAsyncInitPref, false);
+                       Preferences::GetBool(kAsyncInitPref, false) &&
+                       !BrowserTabsRemoteAutostart();
 #if defined(MOZ_CRASHREPORTER)
     CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("AsyncPluginInit"),
                                        mIsStartingAsync ?
@@ -733,7 +719,6 @@ PluginModuleChromeParent::PluginModuleChromeParent(const char* aFilePath,
     , mHangUIParent(nullptr)
     , mHangUIEnabled(true)
     , mIsTimerReset(true)
-    , mSandboxLevel(aSandboxLevel)
 #ifdef MOZ_CRASHREPORTER
     , mCrashReporterMutex("PluginModuleChromeParent::mCrashReporterMutex")
     , mCrashReporter(nullptr)
@@ -751,6 +736,7 @@ PluginModuleChromeParent::PluginModuleChromeParent(const char* aFilePath,
 {
     NS_ASSERTION(mSubprocess, "Out of memory!");
     sInstantiated = true;
+    mSandboxLevel = aSandboxLevel;
     mRunID = GeckoChildProcessHost::GetUniqueID();
 
 #ifdef MOZ_ENABLE_PROFILER_SPS
@@ -1291,6 +1277,8 @@ PluginModuleChromeParent::TerminateChildProcess(MessageLoop* aMsgLoop,
     }
 
     if (reportsReady) {
+        // Important to set this here, it tells the ActorDestroy handler
+        // that we have an existing crash report that needs to be finalized.
         mPluginDumpID = crashReporter->ChildDumpID();
         PLUGIN_LOG_DEBUG(
                 ("generated paired browser/plugin minidumps: %s)",
@@ -1387,6 +1375,7 @@ PluginModuleParent::GetPluginDetails()
     mPluginVersion = pluginTag->Version();
     mPluginFilename = pluginTag->FileName();
     mIsFlashPlugin = pluginTag->mIsFlashPlugin;
+    mSandboxLevel = pluginTag->mSandboxLevel;
     return true;
 }
 
@@ -1504,7 +1493,7 @@ PluginModuleChromeParent::OnHangUIContinue()
 CrashReporterParent*
 PluginModuleChromeParent::CrashReporter()
 {
-    return static_cast<CrashReporterParent*>(LoneManagedOrNull(ManagedPCrashReporterParent()));
+    return static_cast<CrashReporterParent*>(LoneManagedOrNullAsserts(ManagedPCrashReporterParent()));
 }
 
 #ifdef MOZ_CRASHREPORTER_INJECTOR
@@ -1537,7 +1526,13 @@ PluginModuleChromeParent::ProcessFirstMinidump()
     WriteExtraDataForMinidump(notes);
 
     if (!mPluginDumpID.IsEmpty()) {
+        // mPluginDumpID may be set in TerminateChildProcess, which means the
+        // process hang monitor has already collected a 3-way browser, plugin,
+        // content crash report. If so, update the existing report with our
+        // annotations and finalize it. If not, fall through for standard
+        // plugin crash report handling.
         crashReporter->GenerateChildData(&notes);
+        crashReporter->FinalizeChildData();
         return;
     }
 
@@ -1986,25 +1981,23 @@ PluginModuleParent::SetBackgroundUnknown(NPP instance)
 nsresult
 PluginModuleParent::BeginUpdateBackground(NPP instance,
                                           const nsIntRect& aRect,
-                                          gfxContext** aCtx)
+                                          DrawTarget** aDrawTarget)
 {
     PluginInstanceParent* i = PluginInstanceParent::Cast(instance);
     if (!i)
         return NS_ERROR_FAILURE;
 
-    return i->BeginUpdateBackground(aRect, aCtx);
+    return i->BeginUpdateBackground(aRect, aDrawTarget);
 }
 
 nsresult
-PluginModuleParent::EndUpdateBackground(NPP instance,
-                                        gfxContext* aCtx,
-                                        const nsIntRect& aRect)
+PluginModuleParent::EndUpdateBackground(NPP instance, const nsIntRect& aRect)
 {
     PluginInstanceParent* i = PluginInstanceParent::Cast(instance);
     if (!i)
         return NS_ERROR_FAILURE;
 
-    return i->EndUpdateBackground(aCtx, aRect);
+    return i->EndUpdateBackground(aRect);
 }
 
 void
@@ -2660,6 +2653,23 @@ PluginModuleParent::NPP_NewInternal(NPMIMEType pluginType, NPP instance,
 
     if (mIsFlashPlugin) {
         parentInstance->InitMetadata(strPluginType, srcAttribute);
+#ifdef XP_WIN
+        // Force windowless mode (bug 1201904) when sandbox level >= 2
+        if (mSandboxLevel >= 2) {
+           NS_NAMED_LITERAL_CSTRING(wmodeAttributeName, "wmode");
+           NS_NAMED_LITERAL_CSTRING(opaqueAttributeValue, "opaque");
+           auto wmodeAttributeIndex =
+               names.IndexOf(wmodeAttributeName, 0, comparator);
+           if (wmodeAttributeIndex != names.NoIndex) {
+               if (!values[wmodeAttributeIndex].EqualsLiteral("transparent")) {
+                   values[wmodeAttributeIndex].Assign(opaqueAttributeValue);
+               }
+           } else {
+               names.AppendElement(wmodeAttributeName);
+               values.AppendElement(opaqueAttributeValue);
+           }
+        }
+#endif
     }
 
     // Release the surrogate reference that was in pdata

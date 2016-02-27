@@ -19,6 +19,7 @@ loader.lazyRequireGetter(this, "ConsoleProgressListener", "devtools/shared/webco
 loader.lazyRequireGetter(this, "events", "sdk/event/core");
 loader.lazyRequireGetter(this, "ServerLoggingListener", "devtools/shared/webconsole/server-logger", true);
 loader.lazyRequireGetter(this, "JSPropertyProvider", "devtools/shared/webconsole/js-property-provider", true);
+loader.lazyRequireGetter(this, "Parser", "resource://devtools/shared/Parser.jsm", true);
 
 for (let name of ["WebConsoleUtils", "ConsoleServiceListener",
     "ConsoleAPIListener", "addWebConsoleCommands",
@@ -84,7 +85,7 @@ function WebConsoleActor(aConnection, aParentActor)
   };
 }
 
-WebConsoleActor.l10n = new WebConsoleUtils.l10n("chrome://global/locale/console.properties");
+WebConsoleActor.l10n = new WebConsoleUtils.L10n("chrome://global/locale/console.properties");
 
 WebConsoleActor.prototype =
 {
@@ -284,6 +285,11 @@ WebConsoleActor.prototype =
   networkMonitor: null,
 
   /**
+   * The NetworkMonitor instance living in the same (child) process.
+   */
+  networkMonitorChild: null,
+
+  /**
    * The ConsoleProgressListener instance.
    */
   consoleProgressListener: null,
@@ -342,6 +348,10 @@ WebConsoleActor.prototype =
     if (this.networkMonitor) {
       this.networkMonitor.destroy();
       this.networkMonitor = null;
+    }
+    if (this.networkMonitorChild) {
+      this.networkMonitorChild.destroy();
+      this.networkMonitorChild = null;
     }
     if (this.consoleProgressListener) {
       this.consoleProgressListener.destroy();
@@ -587,14 +597,21 @@ WebConsoleActor.prototype =
         case "NetworkActivity":
           if (!this.networkMonitor) {
             if (appId || messageManager) {
+              // Start a network monitor in the parent process to listen to
+              // most requests than happen in parent
               this.networkMonitor =
                 new NetworkMonitorChild(appId, messageManager,
                                         this.parentActor.actorID, this);
+              this.networkMonitor.init();
+              // Spawn also one in the child to listen to service workers
+              this.networkMonitorChild = new NetworkMonitor({ window: window },
+                                                            this);
+              this.networkMonitorChild.init();
             }
             else {
               this.networkMonitor = new NetworkMonitor({ window: window }, this);
+              this.networkMonitor.init();
             }
-            this.networkMonitor.init();
           }
           startedListeners.push(listener);
           break;
@@ -676,6 +693,10 @@ WebConsoleActor.prototype =
           if (this.networkMonitor) {
             this.networkMonitor.destroy();
             this.networkMonitor = null;
+          }
+          if (this.networkMonitorChild) {
+            this.networkMonitorChild.destroy();
+            this.networkMonitorChild = null;
           }
           stoppedListeners.push(listener);
           break;
@@ -1012,6 +1033,9 @@ WebConsoleActor.prototype =
       if (key == "NetworkMonitor.saveRequestAndResponseBodies" &&
           this.networkMonitor) {
         this.networkMonitor.saveRequestAndResponseBodies = this._prefs[key];
+        if (this.networkMonitorChild) {
+          this.networkMonitorChild.saveRequestAndResponseBodies = this._prefs[key];
+        }
       }
     }
     return { updated: Object.keys(aRequest.preferences) };
@@ -1254,6 +1278,27 @@ WebConsoleActor.prototype =
     }
     else {
       result = dbgWindow.executeInGlobalWithBindings(aString, bindings, evalOptions);
+      // Attempt to initialize any declarations found in the evaluated string
+      // since they may now be stuck in an "initializing" state due to the
+      // error. Already-initialized bindings will be ignored.
+      if ("throw" in result) {
+        let ast;
+        // Parse errors will raise an exception. We can/should ignore the error
+        // since it's already being handled elsewhere and we are only interested
+        // in initializing bindings.
+        try {
+          ast = Parser.reflectionAPI.parse(aString);
+        } catch (ex) {
+          ast = {"body": []};
+        }
+        for (let line of ast.body) {
+          if (line.type == "VariableDeclaration" &&
+            (line.kind == "let" || line.kind == "const")) {
+            for (let decl of line.declarations)
+              dbgWindow.forceLexicalInitializationByName(decl.id.name);
+          }
+        }
+      }
     }
 
     let helperResult = helpers.helperResult;
@@ -1734,6 +1779,7 @@ NetworkEventActor.prototype =
       method: this._request.method,
       isXHR: this._isXHR,
       fromCache: this._fromCache,
+      fromServiceWorker: this._fromServiceWorker,
       private: this._private,
     };
   },
@@ -1778,6 +1824,7 @@ NetworkEventActor.prototype =
     this._startedDateTime = aNetworkEvent.startedDateTime;
     this._isXHR = aNetworkEvent.isXHR;
     this._fromCache = aNetworkEvent.fromCache;
+    this._fromServiceWorker = aNetworkEvent.fromServiceWorker;
 
     for (let prop of ['method', 'url', 'httpVersion', 'headersSize']) {
       this._request[prop] = aNetworkEvent[prop];

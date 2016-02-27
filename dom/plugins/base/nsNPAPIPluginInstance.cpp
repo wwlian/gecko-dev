@@ -280,6 +280,7 @@ nsNPAPIPluginInstance::StopTime()
 
 nsresult nsNPAPIPluginInstance::Initialize(nsNPAPIPlugin *aPlugin, nsPluginInstanceOwner* aOwner, const nsACString& aMIMEType)
 {
+  PROFILER_LABEL_FUNC(js::ProfileEntry::Category::OTHER);
   PLUGIN_LOG(PLUGIN_LOG_NORMAL, ("nsNPAPIPluginInstance::Initialize this=%p\n",this));
 
   NS_ENSURE_ARG_POINTER(aPlugin);
@@ -301,7 +302,7 @@ nsresult nsNPAPIPluginInstance::Stop()
 
   // Make sure the plugin didn't leave popups enabled.
   if (mPopupStates.Length() > 0) {
-    nsCOMPtr<nsPIDOMWindow> window = GetDOMWindow();
+    nsCOMPtr<nsPIDOMWindowOuter> window = GetDOMWindow();
 
     if (window) {
       window->PopPopupControlState(openAbused);
@@ -372,7 +373,7 @@ nsresult nsNPAPIPluginInstance::Stop()
     return NS_OK;
 }
 
-already_AddRefed<nsPIDOMWindow>
+already_AddRefed<nsPIDOMWindowOuter>
 nsNPAPIPluginInstance::GetDOMWindow()
 {
   if (!mOwner)
@@ -385,7 +386,7 @@ nsNPAPIPluginInstance::GetDOMWindow()
   if (!doc)
     return nullptr;
 
-  RefPtr<nsPIDOMWindow> window = doc->GetWindow();
+  RefPtr<nsPIDOMWindowOuter> window = doc->GetWindow();
 
   return window.forget();
 }
@@ -654,6 +655,8 @@ nsresult nsNPAPIPluginInstance::HandleEvent(void* event, int16_t* result,
 {
   if (RUNNING != mRunning)
     return NS_OK;
+
+  PROFILER_LABEL_FUNC(js::ProfileEntry::Category::OTHER);
 
   if (!event)
     return NS_ERROR_FAILURE;
@@ -1250,7 +1253,7 @@ nsNPAPIPluginInstance::SetBackgroundUnknown()
 
 nsresult
 nsNPAPIPluginInstance::BeginUpdateBackground(nsIntRect* aRect,
-                                             gfxContext** aContext)
+                                             DrawTarget** aDrawTarget)
 {
   if (RUNNING != mRunning)
     return NS_OK;
@@ -1259,12 +1262,11 @@ nsNPAPIPluginInstance::BeginUpdateBackground(nsIntRect* aRect,
   if (!library)
     return NS_ERROR_FAILURE;
 
-  return library->BeginUpdateBackground(&mNPP, *aRect, aContext);
+  return library->BeginUpdateBackground(&mNPP, *aRect, aDrawTarget);
 }
 
 nsresult
-nsNPAPIPluginInstance::EndUpdateBackground(gfxContext* aContext,
-                                           nsIntRect* aRect)
+nsNPAPIPluginInstance::EndUpdateBackground(nsIntRect* aRect)
 {
   if (RUNNING != mRunning)
     return NS_OK;
@@ -1273,7 +1275,7 @@ nsNPAPIPluginInstance::EndUpdateBackground(gfxContext* aContext,
   if (!library)
     return NS_ERROR_FAILURE;
 
-  return library->EndUpdateBackground(&mNPP, aContext, *aRect);
+  return library->EndUpdateBackground(&mNPP, *aRect);
 }
 
 nsresult
@@ -1305,7 +1307,7 @@ nsNPAPIPluginInstance::GetFormValue(nsAString& aValue)
 nsresult
 nsNPAPIPluginInstance::PushPopupsEnabledState(bool aEnabled)
 {
-  nsCOMPtr<nsPIDOMWindow> window = GetDOMWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> window = GetDOMWindow();
   if (!window)
     return NS_ERROR_FAILURE;
 
@@ -1332,7 +1334,7 @@ nsNPAPIPluginInstance::PopPopupsEnabledState()
     return NS_OK;
   }
 
-  nsCOMPtr<nsPIDOMWindow> window = GetDOMWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> window = GetDOMWindow();
   if (!window)
     return NS_ERROR_FAILURE;
 
@@ -1398,7 +1400,7 @@ nsNPAPIPluginInstance::IsPrivateBrowsing(bool* aEnabled)
   mOwner->GetDocument(getter_AddRefs(doc));
   NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
 
-  nsCOMPtr<nsPIDOMWindow> domwindow = doc->GetWindow();
+  nsCOMPtr<nsPIDOMWindowOuter> domwindow = doc->GetWindow();
   NS_ENSURE_TRUE(domwindow, NS_ERROR_FAILURE);
 
   nsCOMPtr<nsIDocShell> docShell = domwindow->GetDocShell();
@@ -1832,7 +1834,7 @@ nsNPAPIPluginInstance::GetOrCreateAudioChannelAgent(nsIAudioChannelAgent** aAgen
       return NS_ERROR_FAILURE;
     }
 
-    nsCOMPtr<nsPIDOMWindow> window = GetDOMWindow();
+    nsCOMPtr<nsPIDOMWindowOuter> window = GetDOMWindow();
     if (NS_WARN_IF(!window)) {
       return NS_ERROR_FAILURE;
     }
@@ -1860,7 +1862,7 @@ nsNPAPIPluginInstance::WindowVolumeChanged(float aVolume, bool aMuted)
 }
 
 NS_IMETHODIMP
-nsNPAPIPluginInstance::WindowAudioCaptureChanged()
+nsNPAPIPluginInstance::WindowAudioCaptureChanged(bool aCapture)
 {
   return NS_OK;
 }

@@ -137,7 +137,7 @@ protected:
     // override to pull data from FTFace
     virtual nsresult
     CopyFontTable(uint32_t aTableTag,
-                  FallibleTArray<uint8_t>& aBuffer) override;
+                  nsTArray<uint8_t>& aBuffer) override;
 
     // if HB or GR faces are gone, close down the FT_Face
     void MaybeReleaseFTFace();
@@ -245,8 +245,6 @@ public:
         mGenericMappings.Clear();
     }
 
-    void GetSampleLangForGroup(nsIAtom* aLanguage, nsACString& aLangStr);
-
     static FT_Library GetFTLibrary();
 
 protected:
@@ -262,10 +260,6 @@ protected:
 
     // are all pref font settings set to use fontconfig generics?
     bool PrefFontListsUseOnlyGenerics();
-
-    // helper method for finding an appropriate fontconfig language
-    bool TryLangForGroup(const nsACString& aOSLang, nsIAtom* aLangGroup,
-                         nsACString& aFcLang);
 
     static void CheckFontUpdates(nsITimer *aTimer, void *aThis);
 

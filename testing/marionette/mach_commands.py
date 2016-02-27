@@ -48,7 +48,7 @@ def run_marionette(tests, b2g_path=None, emulator=None, testtype=None,
 
     if not tests:
         tests = [os.path.join(topsrcdir,
-                 'testing/marionette/client/marionette/tests/unit-tests.ini')]
+                 'testing/marionette/harness/marionette/tests/unit-tests.ini')]
     args.tests = tests
 
     if b2g_path:
@@ -115,5 +115,11 @@ class MachCommands(MachCommandBase):
         parser=setup_argument_parser,
     )
     def run_marionette_test(self, tests, **kwargs):
+        if 'test_objects' in kwargs:
+            tests = []
+            for obj in kwargs['test_objects']:
+                tests.append(obj['file_relpath'])
+            del kwargs['test_objects']
+
         kwargs['binary'] = self.get_binary_path('app')
         return run_marionette(tests, topsrcdir=self.topsrcdir, **kwargs)

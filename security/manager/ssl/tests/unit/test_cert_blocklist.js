@@ -60,20 +60,37 @@ var XULAppInfoFactory = {
   }
 };
 
+// we need to ensure we setup revocation data before certDB, or we'll start with
+// no revocation.txt in the profile
+var profile = do_get_profile();
+
+// Write out an empty blocklist.xml file to the profile to ensure nothing
+// is blocklisted by default
+var blockFile = profile.clone();
+blockFile.append("blocklist.xml");
+var stream = Cc["@mozilla.org/network/file-output-stream;1"]
+               .createInstance(Ci.nsIFileOutputStream);
+stream.init(blockFile,
+  FileUtils.MODE_WRONLY | FileUtils.MODE_CREATE | FileUtils.MODE_TRUNCATE,
+  FileUtils.PERMS_FILE, 0);
+
+var data = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+           "<blocklist xmlns=\"http://www.mozilla.org/2006/addons-blocklist\">\n" +
+           "</blocklist>\n";
+stream.write(data, data.length);
+stream.close();
+
 var registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
 const XULAPPINFO_CONTRACTID = "@mozilla.org/xre/app-info;1";
 const XULAPPINFO_CID = Components.ID("{c763b610-9d49-455a-bbd2-ede71682a1ac}");
 registrar.registerFactory(XULAPPINFO_CID, "XULAppInfo",
                           XULAPPINFO_CONTRACTID, XULAppInfoFactory);
 
-// we need to ensure we setup revocation data before certDB, or we'll start with
-// no revocation.txt in the profile
-var profile = do_get_profile();
 var revocations = profile.clone();
 revocations.append("revocations.txt");
 if (!revocations.exists()) {
   let existing = do_get_file("test_onecrl/sample_revocations.txt", false);
-  existing.copyTo(profile,"revocations.txt");
+  existing.copyTo(profile, "revocations.txt");
 }
 
 var certDB = Cc["@mozilla.org/security/x509certdb;1"]
@@ -111,9 +128,9 @@ var initialBlocklist = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
     // also in the blocklist
     "<certItem issuerName='YW5vdGhlciBpbWFnaW5hcnkgaXNzdWVy'>" +
     "<serialNumber>c2VyaWFsMi4=</serialNumber>" +
-    "<serialNumber>YW5vdGhlciBzZXJpYWwu</serialNumber>" +
+    "<serialNumber>YW5vdGhlciBzZXJpYWwu</serialNumber></certItem>" +
     // This item revokes same-issuer-ee.pem by subject and pubKeyHash.
-    "</certItem><certItem subject='MCIxIDAeBgNVBAMMF0Fub3RoZXIgVGVzdCBFbmQtZW50aXR5'"+
+    "<certItem subject='MCIxIDAeBgNVBAMMF0Fub3RoZXIgVGVzdCBFbmQtZW50aXR5'" +
     " pubKeyHash='VCIlmPM9NkgFQtrs4Oa5TeFcDu6MWRTKSNdePEhOgD8='>" +
     "</certItem></certItems></blocklist>";
 
@@ -122,20 +139,20 @@ var updatedBlocklist = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
     "<certItems>" +
     "<certItem issuerName='something new in both the issuer'>" +
     "<serialNumber>and the serial number</serialNumber></certItem>" +
-    "</certItems></blocklist>"
+    "</certItems></blocklist>";
 
 
 var blocklists = {
   "/initialBlocklist/" : initialBlocklist,
   "/updatedBlocklist/" : updatedBlocklist
-}
+};
 
 function serveResponse(request, response) {
   do_print("Serving for path " + request.path + "\n");
   response.write(blocklists[request.path]);
 }
 
-for (path in blocklists) {
+for (var path in blocklists) {
   testserver.registerPathHandler(path, serveResponse);
 }
 
@@ -194,7 +211,7 @@ function fetch_blocklist(blocklistPath) {
       Services.obs.removeObserver(this, "blocklist-updated");
       run_next_test();
     }
-  }
+  };
 
   Services.obs.addObserver(certblockObserver, "blocklist-updated", false);
   Services.prefs.setCharPref("extensions.blocklist.url",
@@ -211,7 +228,7 @@ function check_revocations_txt_contents(expected) {
   ok(revocations.exists(), "the revocations file should exist");
   let inputStream = Cc["@mozilla.org/network/file-input-stream;1"]
                       .createInstance(Ci.nsIFileInputStream);
-  inputStream.init(revocations,-1, -1, 0);
+  inputStream.init(revocations, -1, -1, 0);
   inputStream.QueryInterface(Ci.nsILineInputStream);
   let contents = "";
   let hasmore = false;
@@ -220,7 +237,6 @@ function check_revocations_txt_contents(expected) {
     hasmore = inputStream.readLine(line);
     contents = contents + (contents.length == 0 ? "" : "\n") + line.value;
   } while (hasmore);
-
   equal(contents, expected, "revocations.txt should be as expected");
 }
 
@@ -234,8 +250,8 @@ function run_test() {
                   .getService(Ci.nsICertBlocklist);
 
   let expected = "# Auto generated contents. Do not edit.\n" +
-                 "MCIxIDAeBgNVBAMMF0Fub3RoZXIgVGVzdCBFbmQtZW50aXR5\n"+
-                 "\tVCIlmPM9NkgFQtrs4Oa5TeFcDu6MWRTKSNdePEhOgD8=\n"+
+                 "MCIxIDAeBgNVBAMMF0Fub3RoZXIgVGVzdCBFbmQtZW50aXR5\n" +
+                 "\tVCIlmPM9NkgFQtrs4Oa5TeFcDu6MWRTKSNdePEhOgD8=\n" +
                  "MBIxEDAOBgNVBAMMB1Rlc3QgQ0E=\n" +
                  " BVio/iQ21GCi2iUven8oJ/gae74=\n" +
                  "MBgxFjAUBgNVBAMMDU90aGVyIHRlc3QgQ0E=\n" +

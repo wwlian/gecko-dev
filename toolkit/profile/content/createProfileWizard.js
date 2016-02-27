@@ -23,7 +23,7 @@ var gProfileDisplay;
 
 // Called once when the wizard is opened.
 function initWizard()
-{ 
+{
   try {
     gProfileService = C[ToolkitProfileService].getService(I.nsIToolkitProfileService);
     gProfileManagerBundle = document.getElementById("bundle_profileManager");
@@ -44,7 +44,7 @@ function initWizard()
 }
 
 // Called every time the second wizard page is displayed.
-function initSecondWizardPage() 
+function initSecondWizardPage()
 {
   var profileName = document.getElementById("profileName");
   profileName.select();
@@ -87,7 +87,7 @@ function updateProfileDisplay()
 function chooseProfileFolder()
 {
   var newProfileRoot;
-  
+
   var dirChooser = C["@mozilla.org/filepicker;1"].createInstance(I.nsIFilePicker);
   dirChooser.init(window, gProfileManagerBundle.getString("chooseFolder"),
                   I.nsIFilePicker.modeGetFolder);
@@ -120,10 +120,10 @@ function checkCurrentInput(currentInput)
   if (!errorMessage) {
     finishText.className = "";
     if (AppConstants.platform == "macosx") {
-      finishText.firstChild.data = gProfileManagerBundle.getString("profileFinishText");
+      finishText.firstChild.data = gProfileManagerBundle.getString("profileFinishTextMac");
     }
     else {
-      finishText.firstChild.data = gProfileManagerBundle.getString("profileFinishTextMac");
+      finishText.firstChild.data = gProfileManagerBundle.getString("profileFinishText");
     }
     canAdvance = true;
   }
@@ -191,7 +191,7 @@ function enableNextButton()
   document.documentElement.canAdvance = true;
 }
 
-function onFinish() 
+function onFinish()
 {
   var profileName = document.getElementById("profileName").value;
   var profile;

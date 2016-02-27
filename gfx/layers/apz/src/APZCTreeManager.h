@@ -17,7 +17,7 @@
 #include "mozilla/gfx/Matrix.h"         // for Matrix4x4
 #include "mozilla/layers/APZUtils.h"    // for HitTestResult
 #include "mozilla/layers/TouchCounter.h"// for TouchCounter
-#include "mozilla/Monitor.h"            // for Monitor
+#include "mozilla/Mutex.h"              // for Mutex
 #include "mozilla/TimeStamp.h"          // for mozilla::TimeStamp
 #include "mozilla/Vector.h"             // for mozilla::Vector
 #include "nsAutoPtr.h"                  // for nsRefPtr
@@ -41,17 +41,24 @@ enum AllowedTouchBehavior {
   UNKNOWN =            1 << 4
 };
 
+enum ZoomToRectBehavior : uint32_t {
+  DEFAULT_BEHAVIOR =   0,
+  DISABLE_ZOOM_OUT =   1 << 0,
+  PAN_INTO_VIEW_ONLY = 1 << 1,
+  ONLY_ZOOM_TO_DEFAULT_SCALE  = 1 << 2
+};
+
 class Layer;
 class AsyncDragMetrics;
 class AsyncPanZoomController;
 class CompositorParent;
 class OverscrollHandoffChain;
 struct OverscrollHandoffState;
+struct FlingHandoffState;
 class LayerMetricsWrapper;
 class InputQueue;
 class GeckoContentController;
 class HitTestingTreeNode;
-class TaskThrottler;
 
 /**
  * ****************** NOTE ON LOCK ORDERING IN APZ **************************
@@ -137,17 +144,6 @@ public:
                             uint32_t aPaintSequenceNumber);
 
   /**
-   * Do any per-layers-id setup needed. This will be called on the main thread,
-   * and may be called multiple times for the same layers id.
-   */
-  void InitializeForLayersId(uint64_t aLayersId);
-
-  /**
-   * Move any per-layers-id state from the old APZCTreeManager to this one.
-   */
-  void AdoptLayersId(uint64_t aLayersId, APZCTreeManager* aOldManager);
-
-  /**
    * Walk the tree of APZCs and flushes the repaint requests for all the APZCS
    * corresponding to the given layers id. Finally, sends a flush complete
    * notification to the GeckoContentController for the layers id.
@@ -216,9 +212,11 @@ public:
    * Kicks an animation to zoom to a rect. This may be either a zoom out or zoom
    * in. The actual animation is done on the compositor thread after being set
    * up. |aRect| must be given in CSS pixels, relative to the document.
+   * |aFlags| is a combination of the ZoomToRectBehavior enum values.
    */
   void ZoomToRect(const ScrollableLayerGuid& aGuid,
-                  const CSSRect& aRect);
+                  const CSSRect& aRect,
+                  const uint32_t aFlags = DEFAULT_BEHAVIOR);
 
   /**
    * If we have touch listeners, this should always be called when we know
@@ -265,6 +263,14 @@ public:
   void CancelAnimation(const ScrollableLayerGuid &aGuid);
 
   /**
+   * Adjusts the root APZC to compensate for a shift in the surface. See the
+   * documentation on AsyncPanZoomController::AdjustScrollForSurfaceShift for
+   * some more details. This is only currently needed due to surface shifts
+   * caused by the dynamic toolbar on Android.
+   */
+  void AdjustScrollForSurfaceShift(const ScreenPoint& aShift);
+
+  /**
    * Calls Destroy() on all APZC instances attached to the tree, and resets the
    * tree back to empty. This function may be called multiple times during the
    * lifetime of this APZCTreeManager, but it must always be called at least once
@@ -285,8 +291,7 @@ public:
    */
   static const ScreenMargin CalculatePendingDisplayPort(
     const FrameMetrics& aFrameMetrics,
-    const ParentLayerPoint& aVelocity,
-    double aEstimatedPaintDuration);
+    const ParentLayerPoint& aVelocity);
 
   /**
    * Set the dpi value used by all AsyncPanZoomControllers.
@@ -376,25 +381,26 @@ public:
    * first APZC to fling may not be the one that is receiving the touch events.
    *
    * @param aApzc the APZC that wants to start or hand off the fling
-   * @param aVelocity the current velocity of the fling, in |aApzc|'s screen
-   *                  pixels per millisecond
-   * @param aOverscrollHandoffChain the chain of APZCs along which the fling
-   *                                should be handed off
-   * @param aHandoff is true if |aApzc| is handing off an existing fling (in
-   *                 this case the fling is given to the next APZC in the
-   *                 handoff chain after |aApzc|), and false is |aApzc| wants
-   *                 start a fling (in this case the fling is given to the
-   *                 first APZC in the chain)
+   * @param aHandoffState a collection of state about the operation,
+   *                      which contains the following:
    *
-   * aVelocity will be modified depending on how much of that velocity has
-   * been consumed by APZCs in the overscroll hand-off chain. The caller can
-   * use this value to determine whether it should consume the excess velocity
-   * by going into an overscroll fling.
+   *        mVelocity the current velocity of the fling, in |aApzc|'s screen
+   *                  pixels per millisecond
+   *        mChain the chain of APZCs along which the fling
+   *                   should be handed off
+   *        mIsHandoff is true if |aApzc| is handing off an existing fling (in
+   *                   this case the fling is given to the next APZC in the
+   *                   handoff chain after |aApzc|), and false is |aApzc| wants
+   *                   start a fling (in this case the fling is given to the
+   *                   first APZC in the chain)
+   *
+   * aHandoffState.mVelocity will be modified depending on how much of that
+   * velocity has been consumed by APZCs in the overscroll hand-off chain.
+   * The caller can use this value to determine whether it should consume
+   * the excess velocity by going into an overscroll fling.
    */
   void DispatchFling(AsyncPanZoomController* aApzc,
-                     ParentLayerPoint& aVelocity,
-                     RefPtr<const OverscrollHandoffChain> aOverscrollHandoffChain,
-                     bool aHandoff);
+                     FlingHandoffState& aHandoffState);
 
   void StartScrollbarDrag(const ScrollableLayerGuid& aGuid,
                           const AsyncDragMetrics& aDragMetrics);
@@ -418,8 +424,7 @@ protected:
 
   // Protected hooks for gtests subclass
   virtual AsyncPanZoomController* NewAPZCInstance(uint64_t aLayersId,
-                                                  GeckoContentController* aController,
-                                                  TaskThrottler* aPaintThrottler);
+                                                  GeckoContentController* aController);
 public:
   // Public hooks for gtests subclass
   virtual TimeStamp GetFrameTime();
@@ -454,6 +459,7 @@ private:
                                          HitTestResult* aOutHitResult);
   AsyncPanZoomController* FindRootApzcForLayersId(uint64_t aLayersId) const;
   AsyncPanZoomController* FindRootContentApzcForLayersId(uint64_t aLayersId) const;
+  AsyncPanZoomController* FindRootContentOrRootApzc() const;
   already_AddRefed<AsyncPanZoomController> GetMultitouchTarget(AsyncPanZoomController* aApzc1, AsyncPanZoomController* aApzc2) const;
   already_AddRefed<AsyncPanZoomController> CommonAncestor(AsyncPanZoomController* aApzc1, AsyncPanZoomController* aApzc2) const;
   already_AddRefed<AsyncPanZoomController> GetTouchInputBlockAPZC(const MultiTouchInput& aEvent,
@@ -529,15 +535,11 @@ private:
    * is considered part of the APZC tree management state.
    * Finally, the lock needs to be held when accessing mZoomConstraints.
    * IMPORTANT: See the note about lock ordering at the top of this file. */
-  mutable mozilla::Monitor mTreeLock;
+  mutable mozilla::Mutex mTreeLock;
   RefPtr<HitTestingTreeNode> mRootNode;
   /* Holds the zoom constraints for scrollable layers, as determined by the
    * the main-thread gecko code. */
   std::map<ScrollableLayerGuid, ZoomConstraints> mZoomConstraints;
-  /* Stores a paint throttler for each layers id. There is one for each layers
-   * id to ensure that one child process painting slowly doesn't hold up
-   * another. */
-  std::map<uint64_t, RefPtr<TaskThrottler>> mPaintThrottlerMap;
   /* This tracks the APZC that should receive all inputs for the current input event block.
    * This allows touch points to move outside the thing they started on, but still have the
    * touch events delivered to the same initial APZC. This will only ever be touched on the

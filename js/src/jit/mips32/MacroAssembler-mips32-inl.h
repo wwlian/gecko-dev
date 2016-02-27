@@ -15,6 +15,21 @@ namespace js {
 namespace jit {
 
 //{{{ check_macroassembler_style
+
+void
+MacroAssembler::move64(Register64 src, Register64 dest)
+{
+    move32(src.low, dest.low);
+    move32(src.high, dest.high);
+}
+
+void
+MacroAssembler::move64(Imm64 imm, Register64 dest)
+{
+    move32(Imm32(imm.value & 0xFFFFFFFFL), dest.low);
+    move32(Imm32((imm.value >> 32) & 0xFFFFFFFFL), dest.high);
+}
+
 // ===============================================================
 // Logical instructions
 
@@ -35,6 +50,20 @@ MacroAssembler::and64(Imm64 imm, Register64 dest)
 {
     and32(Imm32(imm.value & LOW_32_MASK), dest.low);
     and32(Imm32((imm.value >> 32) & LOW_32_MASK), dest.high);
+}
+
+void
+MacroAssembler::or64(Imm64 imm, Register64 dest)
+{
+    or32(Imm32(imm.value & LOW_32_MASK), dest.low);
+    or32(Imm32((imm.value >> 32) & LOW_32_MASK), dest.high);
+}
+
+void
+MacroAssembler::xor64(Imm64 imm, Register64 dest)
+{
+    xor32(Imm32(imm.value & LOW_32_MASK), dest.low);
+    xor32(Imm32((imm.value >> 32) & LOW_32_MASK), dest.high);
 }
 
 void
@@ -79,12 +108,120 @@ MacroAssembler::xorPtr(Imm32 imm, Register dest)
 // Arithmetic functions
 
 void
+MacroAssembler::addPtr(Register src, Register dest)
+{
+    ma_addu(dest, src);
+}
+
+void
+MacroAssembler::addPtr(Imm32 imm, Register dest)
+{
+    ma_addu(dest, imm);
+}
+
+void
+MacroAssembler::addPtr(ImmWord imm, Register dest)
+{
+    addPtr(Imm32(imm.value), dest);
+}
+
+void
 MacroAssembler::add64(Register64 src, Register64 dest)
 {
     as_addu(dest.low, dest.low, src.low);
     as_sltu(ScratchRegister, dest.low, src.low);
     as_addu(dest.high, dest.high, src.high);
     as_addu(dest.high, dest.high, ScratchRegister);
+}
+
+void
+MacroAssembler::add64(Imm32 imm, Register64 dest)
+{
+    as_addiu(dest.low, dest.low, imm.value);
+    as_sltiu(ScratchRegister, dest.low, imm.value);
+    as_addu(dest.high, dest.high, ScratchRegister);
+}
+
+void
+MacroAssembler::subPtr(Register src, Register dest)
+{
+    as_subu(dest, dest, src);
+}
+
+void
+MacroAssembler::subPtr(Imm32 imm, Register dest)
+{
+    ma_subu(dest, dest, imm);
+}
+
+void
+MacroAssembler::mul64(Imm64 imm, const Register64& dest)
+{
+    // LOW32  = LOW(LOW(dest) * LOW(imm));
+    // HIGH32 = LOW(HIGH(dest) * LOW(imm)) [multiply imm into upper bits]
+    //        + LOW(LOW(dest) * HIGH(imm)) [multiply dest into upper bits]
+    //        + HIGH(LOW(dest) * LOW(imm)) [carry]
+
+    // HIGH(dest) = LOW(HIGH(dest) * LOW(imm));
+    ma_li(ScratchRegister, Imm32(imm.value & LOW_32_MASK));
+    as_multu(dest.high, ScratchRegister);
+    as_mflo(dest.high);
+
+    // mfhi:mflo = LOW(dest) * LOW(imm);
+    as_multu(dest.low, ScratchRegister);
+
+    // HIGH(dest) += mfhi;
+    as_mfhi(ScratchRegister);
+    as_addu(dest.high, dest.high, ScratchRegister);
+
+    if (((imm.value >> 32) & LOW_32_MASK) == 5) {
+        // Optimized case for Math.random().
+
+        // HIGH(dest) += LOW(LOW(dest) * HIGH(imm));
+        as_sll(ScratchRegister, dest.low, 2);
+        as_addu(ScratchRegister, ScratchRegister, dest.low);
+        as_addu(dest.high, dest.high, ScratchRegister);
+
+        // LOW(dest) = mflo;
+        as_mflo(dest.low);
+    } else {
+        // tmp = mflo
+        as_mflo(SecondScratchReg);
+
+        // HIGH(dest) += LOW(LOW(dest) * HIGH(imm));
+        ma_li(ScratchRegister, Imm32((imm.value >> 32) & LOW_32_MASK));
+        as_multu(dest.low, ScratchRegister);
+        as_mflo(ScratchRegister);
+        as_addu(dest.high, dest.high, ScratchRegister);
+
+        // LOW(dest) = tmp;
+        ma_move(dest.low, SecondScratchReg);
+    }
+}
+
+void
+MacroAssembler::mulBy3(Register src, Register dest)
+{
+    as_addu(dest, src, src);
+    as_addu(dest, dest, src);
+}
+
+void
+MacroAssembler::inc64(AbsoluteAddress dest)
+{
+    ma_li(ScratchRegister, Imm32((int32_t)dest.addr));
+    as_lw(SecondScratchReg, ScratchRegister, 0);
+
+    as_addiu(SecondScratchReg, SecondScratchReg, 1);
+    as_sw(SecondScratchReg, ScratchRegister, 0);
+
+    as_sltiu(SecondScratchReg, SecondScratchReg, 1);
+    as_lw(ScratchRegister, ScratchRegister, 4);
+
+    as_addu(SecondScratchReg, ScratchRegister, SecondScratchReg);
+
+    ma_li(ScratchRegister, Imm32((int32_t)dest.addr));
+    as_sw(SecondScratchReg, ScratchRegister, 4);
 }
 
 // ===============================================================
@@ -128,8 +265,69 @@ MacroAssembler::rshift64(Imm32 imm, Register64 dest)
     as_srl(dest.high, dest.high, imm.value);
 }
 
+// ===============================================================
+// Branch functions
+
+void
+MacroAssembler::branchPrivatePtr(Condition cond, const Address& lhs, Register rhs, Label* label)
+{
+    branchPtr(cond, lhs, rhs, label);
+}
+
+void
+MacroAssembler::branchTest64(Condition cond, Register64 lhs, Register64 rhs, Register temp,
+                             Label* label)
+{
+    if (cond == Assembler::Zero) {
+        MOZ_ASSERT(lhs.low == rhs.low);
+        MOZ_ASSERT(lhs.high == rhs.high);
+        as_or(ScratchRegister, lhs.low, lhs.high);
+        branchTestPtr(cond, ScratchRegister, ScratchRegister, label);
+    } else {
+        MOZ_CRASH("Unsupported condition");
+    }
+}
+
+void
+MacroAssembler::branchTestInt32(Condition cond, const ValueOperand& value, Label* label)
+{
+    MOZ_ASSERT(cond == Equal || cond == NotEqual);
+    ma_b(value.typeReg(), ImmType(JSVAL_TYPE_INT32), label, cond);
+}
+
+
+void
+MacroAssembler::branchTestInt32Truthy(bool b, const ValueOperand& value, Label* label)
+{
+    as_and(ScratchRegister, value.payloadReg(), value.payloadReg());
+    ma_b(ScratchRegister, ScratchRegister, label, b ? NonZero : Zero);
+}
+
 //}}} check_macroassembler_style
 // ===============================================================
+
+void
+MacroAssemblerMIPSCompat::incrementInt32Value(const Address& addr)
+{
+    asMasm().add32(Imm32(1), ToPayload(addr));
+}
+
+void
+MacroAssemblerMIPSCompat::computeEffectiveAddress(const BaseIndex& address, Register dest)
+{
+    computeScaledAddress(address, dest);
+    if (address.offset)
+        asMasm().addPtr(Imm32(address.offset), dest);
+}
+
+void
+MacroAssemblerMIPSCompat::retn(Imm32 n) {
+    // pc <- [sp]; sp += n
+    loadPtr(Address(StackPointer, 0), ra);
+    asMasm().addPtr(n, StackPointer);
+    as_jr(ra);
+    as_nop();
+}
 
 } // namespace jit
 } // namespace js

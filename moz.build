@@ -8,6 +8,8 @@ with Files('**/Makefile.in'):
     BUG_COMPONENT = ('Core', 'Build Config')
     FINAL = True
 
+FILES_PER_UNIFIED_FILE = 1
+
 CONFIGURE_SUBST_FILES += [
     'config/autoconf.mk',
     'config/emptyvars.mk',
@@ -19,13 +21,29 @@ if CONFIG['ENABLE_CLANG_PLUGIN']:
 DIRS += [
     'config',
     'python',
+    'testing',
 ]
 
 if not CONFIG['JS_STANDALONE']:
     CONFIGURE_SUBST_FILES += [
-        'mozilla-config.h',
         'tools/update-packaging/Makefile',
     ]
+    CONFIGURE_DEFINE_FILES += [
+        'mozilla-config.h',
+    ]
+    EXPORTS += [
+        '!buildid.h',
+        '!mozilla-config.h',
+        '!source-repo.h',
+    ]
+
+    GENERATED_FILES += [
+        'buildid.h',
+        'source-repo.h',
+    ]
+
+    GENERATED_FILES['buildid.h'].script = 'build/variables.py:buildid_header'
+    GENERATED_FILES['source-repo.h'].script = 'build/variables.py:source_repo_header'
 
     DIRS += [
         'build',

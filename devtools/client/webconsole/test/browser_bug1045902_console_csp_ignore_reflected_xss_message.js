@@ -1,14 +1,10 @@
-/*
- * Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/
- */
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* Description of the test:
- * We are loading a file with the following CSP:
- *     'reflected-xss filter'
- * This directive is not supported, hence we confirm that
- * the according message is displayed in the web console.
- */
+// Tests that a file with an unsupported CSP directive ('reflected-xss filter')
+// displays the appropriate message to the console.
 
 "use strict";
 
@@ -23,7 +19,7 @@ var hud = undefined;
 var TEST_URI = "data:text/html;charset=utf8,Web Console CSP ignoring " +
                "reflected XSS (bug 1045902)";
 
-var test = asyncTest(function* () {
+add_task(function* () {
   let { browser } = yield loadTab(TEST_URI);
 
   hud = yield openConsole();
@@ -35,16 +31,9 @@ var test = asyncTest(function* () {
 });
 
 function loadDocument(browser) {
-  let deferred = promise.defer();
-
   hud.jsterm.clearOutput();
-  browser.addEventListener("load", function onLoad() {
-    browser.removeEventListener("load", onLoad, true);
-    deferred.resolve();
-  }, true);
-  content.location = TEST_FILE;
-
-  return deferred.promise;
+  browser.loadURI(TEST_FILE);
+  return BrowserTestUtils.browserLoaded(browser);
 }
 
 function testViolationMessage() {

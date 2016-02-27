@@ -22,8 +22,7 @@ const {PushRecord} = Cu.import("resource://gre/modules/PushRecord.jsm");
 const {
   PushCrypto,
   base64UrlDecode,
-  getEncryptionKeyParams,
-  getEncryptionParams,
+  getCryptoParams,
 } = Cu.import("resource://gre/modules/PushCrypto.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(this, "gDNSService",
@@ -58,27 +57,6 @@ XPCOMUtils.defineLazyGetter(this, "console", () => {
     prefix: "PushServiceWebSocket",
   });
 });
-
-function getCryptoParams(headers) {
-  if (!headers) {
-    return null;
-  }
-  var keymap = getEncryptionKeyParams(headers.encryption_key);
-  if (!keymap) {
-    return null;
-  }
-  var enc = getEncryptionParams(headers.encryption);
-  if (!enc || !enc.keyid) {
-    return null;
-  }
-  var dh = keymap[enc.keyid];
-  var salt = enc.salt;
-  var rs = (enc.rs)? parseInt(enc.rs, 10) : 4096;
-  if (!dh || !salt || isNaN(rs) || (rs <= 1)) {
-    return null;
-  }
-  return {dh, salt, rs};
-}
 
 /**
  * A proxy between the PushService and the WebSocket. The listener is used so
@@ -321,6 +299,8 @@ this.PushServiceWebSocket = {
     this._requestTimeout = prefs.get("requestTimeout");
     this._adaptiveEnabled = prefs.get('adaptive.enabled');
     this._upperLimit = prefs.get('adaptive.upperLimit');
+
+    return Promise.resolve();
   },
 
   _reconnect: function () {
@@ -802,7 +782,7 @@ this.PushServiceWebSocket = {
       if (this._dataEnabled) {
         this._mainPushService.getAllUnexpired().then(records =>
           Promise.all(records.map(record =>
-            this._mainPushService.ensureP256dhKey(record).catch(error => {
+            this._mainPushService.ensureCrypto(record).catch(error => {
               console.error("finishHandshake: Error updating record",
                 record.keyID, error);
             })
@@ -864,7 +844,7 @@ this.PushServiceWebSocket = {
         scope: tmp.record.scope,
         originAttributes: tmp.record.originAttributes,
         version: null,
-        quota: tmp.record.maxQuota,
+        systemRecord: tmp.record.systemRecord,
         ctime: Date.now(),
       });
       Services.telemetry.getHistogramById("PUSH_API_SUBSCRIBE_WS_TIME").add(Date.now() - tmp.ctime);
@@ -1014,6 +994,7 @@ this.PushServiceWebSocket = {
           .then(([publicKey, privateKey]) => {
             record.p256dhPublicKey = publicKey;
             record.p256dhPrivateKey = privateKey;
+            record.authenticationSecret = PushCrypto.generateAuthenticationSecret();
             return record;
           });
       });

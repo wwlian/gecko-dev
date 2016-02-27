@@ -15,6 +15,8 @@ const { LoopAPI } = Cu.import("chrome://loop/content/modules/MozLoopAPI.jsm", {}
 const { LoopRooms } = Cu.import("chrome://loop/content/modules/LoopRooms.jsm", {});
 const { MozLoopServiceInternal } = Cu.import("chrome://loop/content/modules/MozLoopService.jsm", {});
 
+const FTU_VERSION = 1;
+
 function test() {
   UITourTest();
 }
@@ -31,7 +33,8 @@ function runOffline(fun) {
 
 var tests = [
   taskify(function* test_gettingStartedClicked_linkOpenedWithExpectedParams() {
-    Services.prefs.setBoolPref("loop.gettingStarted.seen", false);
+    // Set latestFTUVersion to lower number to show FTU panel.
+    Services.prefs.setIntPref("loop.gettingStarted.latestFTUVersion", 0);
     Services.prefs.setCharPref("loop.gettingStarted.url", "http://example.com");
     is(loopButton.open, false, "Menu should initially be closed");
     loopButton.click();
@@ -65,7 +68,8 @@ var tests = [
     checkLoopPanelIsHidden();
   }),
   taskify(function* test_gettingStartedClicked_linkOpenedWithExpectedParams2() {
-    Services.prefs.setBoolPref("loop.gettingStarted.seen", false);
+    // Set latestFTUVersion to lower number to show FTU panel.
+    Services.prefs.setIntPref("loop.gettingStarted.latestFTUVersion", 0);
     // Force a refresh of the loop panel since going from seen -> unseen doesn't trigger
     // automatic re-rendering.
     let loopWin = document.getElementById("loop-notification-panel").children[0].contentWindow;
@@ -108,28 +112,6 @@ var tests = [
 
     checkLoopPanelIsHidden();
   }),
-  taskify(function* test_menu_show_hide() {
-    // The targets to highlight only appear after getting started is launched.
-    Services.prefs.setBoolPref("loop.gettingStarted.seen", true);
-    is(loopButton.open, false, "Menu should initially be closed");
-    gContentAPI.showMenu("loop");
-
-    yield waitForConditionPromise(() => {
-      return loopButton.open;
-    }, "Menu should be visible after showMenu()");
-
-    ok(loopPanel.hasAttribute("noautohide"), "@noautohide should be on the loop panel");
-    ok(loopPanel.hasAttribute("panelopen"), "The panel should have @panelopen");
-    is(loopPanel.state, "open", "The panel should be open");
-    ok(loopButton.hasAttribute("open"), "Loop button should know that the menu is open");
-
-    gContentAPI.hideMenu("loop");
-    yield waitForConditionPromise(() => {
-        return !loopButton.open;
-    }, "Menu should be hidden after hideMenu()");
-
-    checkLoopPanelIsHidden();
-  }),
   // Test the menu was cleaned up in teardown.
   taskify(function* setup_menu_cleanup() {
     gContentAPI.showMenu("loop");
@@ -154,7 +136,7 @@ var tests = [
     });
   },
   function test_getConfigurationLoop(done) {
-    let gettingStartedSeen = Services.prefs.getBoolPref("loop.gettingStarted.seen");
+    let gettingStartedSeen = Services.prefs.getIntPref("loop.gettingStarted.latestFTUVersion") >= FTU_VERSION;
     gContentAPI.getConfiguration("loop", (data) => {
       is(data.gettingStartedSeen, gettingStartedSeen,
          "The configuration property should equal that of the pref");
@@ -407,7 +389,7 @@ if (Services.prefs.getBoolPref("loop.enabled")) {
 
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("loop.gettingStarted.resumeOnFirstJoin");
-    Services.prefs.clearUserPref("loop.gettingStarted.seen");
+    Services.prefs.clearUserPref("loop.gettingStarted.latestFTUVersion");
     Services.prefs.clearUserPref("loop.gettingStarted.url");
     Services.io.offline = false;
 

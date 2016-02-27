@@ -1,5 +1,7 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
  * Make sure that changing the tab location URL to a page with no sources works.
@@ -21,7 +23,7 @@ function test() {
       yield waitForSourceAndCaretAndScopes(gPanel, ".html", 14);
 
       navigateActiveTabTo(gPanel, "about:blank");
-      yield waitForDispatch(gPanel, constants.LOAD_SOURCES);
+      yield waitForNavigation(gPanel);
 
       isnot(gDebugger.gThreadClient.state, "paused",
             "Should not be paused after a tab navigation.");

@@ -189,7 +189,7 @@ struct TextRange
 /******************************************************************************
  * mozilla::TextRangeArray
  ******************************************************************************/
-class TextRangeArray final : public nsAutoTArray<TextRange, 10>
+class TextRangeArray final : public AutoTArray<TextRange, 10>
 {
   friend class WidgetCompositionEvent;
 
@@ -255,6 +255,26 @@ public:
     for (size_t i = 0, len = Length(); i < len; i++) {
       ElementAt(i).RemoveCharacter(aOffset);
     }
+  }
+
+  bool HasCaret() const
+  {
+    for (const TextRange& range : *this) {
+      if (range.mRangeType == NS_TEXTRANGE_CARETPOSITION) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  uint32_t GetCaretPosition() const
+  {
+    for (const TextRange& range : *this) {
+      if (range.mRangeType == NS_TEXTRANGE_CARETPOSITION) {
+        return range.mStartOffset;
+      }
+    }
+    return UINT32_MAX;
   }
 };
 

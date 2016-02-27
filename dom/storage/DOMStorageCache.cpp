@@ -76,8 +76,8 @@ NS_IMETHODIMP_(void) DOMStorageCacheBridge::Release(void)
 
 // DOMStorageCache
 
-DOMStorageCache::DOMStorageCache(const nsACString* aScope)
-: mScope(*aScope)
+DOMStorageCache::DOMStorageCache(const nsACString* aOriginNoSuffix)
+: mOriginNoSuffix(*aOriginNoSuffix)
 , mMonitor("DOMStorageCache")
 , mLoaded(false)
 , mLoadResult(NS_OK)
@@ -124,7 +124,7 @@ void
 DOMStorageCache::Init(DOMStorageManager* aManager,
                       bool aPersistent,
                       nsIPrincipal* aPrincipal,
-                      const nsACString& aQuotaScope)
+                      const nsACString& aQuotaOriginScope)
 {
   if (mInitialized) {
     return;
@@ -132,15 +132,26 @@ DOMStorageCache::Init(DOMStorageManager* aManager,
 
   mInitialized = true;
   mPrincipal = aPrincipal;
+  BasePrincipal::Cast(aPrincipal)->OriginAttributesRef().CreateSuffix(mOriginSuffix);
   mPersistent = aPersistent;
-  mQuotaScope = aQuotaScope.IsEmpty() ? mScope : aQuotaScope;
+  if (aQuotaOriginScope.IsEmpty()) {
+    mQuotaOriginScope = Origin();
+  } else {
+    mQuotaOriginScope = aQuotaOriginScope;
+  }
 
   if (mPersistent) {
     mManager = aManager;
     Preload();
   }
 
-  mUsage = aManager->GetScopeUsage(mQuotaScope);
+  // Check the quota string has (or has not) the identical origin suffix as
+  // this storage cache is bound to.
+  MOZ_ASSERT(StringBeginsWith(mQuotaOriginScope, mOriginSuffix));
+  MOZ_ASSERT(mOriginSuffix.IsEmpty() != StringBeginsWith(mQuotaOriginScope, 
+                                                         NS_LITERAL_CSTRING("^")));
+
+  mUsage = aManager->GetOriginUsage(mQuotaOriginScope);
 }
 
 inline bool
@@ -149,6 +160,12 @@ DOMStorageCache::Persist(const DOMStorage* aStorage) const
   return mPersistent &&
          !aStorage->IsSessionOnly() &&
          !aStorage->IsPrivate();
+}
+
+const nsCString
+DOMStorageCache::Origin() const
+{
+  return DOMStorageManager::CreateOrigin(mOriginSuffix, mOriginNoSuffix);
 }
 
 DOMStorageCache::Data&
@@ -547,9 +564,16 @@ DOMStorageCache::Clear(const DOMStorage* aStorage)
 void
 DOMStorageCache::CloneFrom(const DOMStorageCache* aThat)
 {
-  mLoaded = aThat->mLoaded;
+  // This will never be called on anything else than SessionStorage.
+  // This means mData will never be touched on any other thread than
+  // the main thread and it never went through the loading process.
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!mPersistent);
+  MOZ_ASSERT(!(bool)aThat->mLoaded);
+
+  mLoaded = false;
   mInitialized = aThat->mInitialized;
-  mPersistent = aThat->mPersistent;
+  mPersistent = false;
   mSessionOnlyDataSetActive = aThat->mSessionOnlyDataSetActive;
 
   for (uint32_t i = 0; i < kDataSetCount; ++i) {
@@ -658,8 +682,8 @@ DOMStorageCache::LoadWait()
 
 // DOMStorageUsage
 
-DOMStorageUsage::DOMStorageUsage(const nsACString& aScope)
-  : mScope(aScope)
+DOMStorageUsage::DOMStorageUsage(const nsACString& aOriginScope)
+  : mOriginScope(aOriginScope)
 {
   mUsage[kDefaultSet] = mUsage[kPrivateSet] = mUsage[kSessionSet] = 0LL;
 }

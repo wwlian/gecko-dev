@@ -117,21 +117,30 @@ ImageBridgeParent::RecvImageBridgeThreadId(const PlatformThreadId& aThreadId)
 class MOZ_STACK_CLASS AutoImageBridgeParentAsyncMessageSender
 {
 public:
-  explicit AutoImageBridgeParentAsyncMessageSender(ImageBridgeParent* aImageBridge)
-    : mImageBridge(aImageBridge) {}
+  explicit AutoImageBridgeParentAsyncMessageSender(ImageBridgeParent* aImageBridge,
+                                                   InfallibleTArray<OpDestroy>* aToDestroy = nullptr)
+    : mImageBridge(aImageBridge)
+    , mToDestroy(aToDestroy) {}
 
   ~AutoImageBridgeParentAsyncMessageSender()
   {
     mImageBridge->SendPendingAsyncMessages();
+    if (mToDestroy) {
+      for (const auto& op : *mToDestroy) {
+        mImageBridge->DestroyActor(op);
+      }
+    }
   }
 private:
   ImageBridgeParent* mImageBridge;
+  InfallibleTArray<OpDestroy>* mToDestroy;
 };
 
 bool
-ImageBridgeParent::RecvUpdate(EditArray&& aEdits, EditReplyArray* aReply)
+ImageBridgeParent::RecvUpdate(EditArray&& aEdits, OpDestroyArray&& aToDestroy,
+                              EditReplyArray* aReply)
 {
-  AutoImageBridgeParentAsyncMessageSender autoAsyncMessageSender(this);
+  AutoImageBridgeParentAsyncMessageSender autoAsyncMessageSender(this, &aToDestroy);
 
   EditReplyVector replyv;
   for (EditArray::index_type i = 0; i < aEdits.Length(); ++i) {
@@ -156,10 +165,10 @@ ImageBridgeParent::RecvUpdate(EditArray&& aEdits, EditReplyArray* aReply)
 }
 
 bool
-ImageBridgeParent::RecvUpdateNoSwap(EditArray&& aEdits)
+ImageBridgeParent::RecvUpdateNoSwap(EditArray&& aEdits, OpDestroyArray&& aToDestroy)
 {
   InfallibleTArray<EditReply> noReplies;
-  bool success = RecvUpdate(Move(aEdits), &noReplies);
+  bool success = RecvUpdate(Move(aEdits), Move(aToDestroy), &noReplies);
   MOZ_ASSERT(noReplies.Length() == 0, "RecvUpdateNoSwap requires a sync Update to carry Edits");
   return success;
 }
@@ -323,7 +332,7 @@ ImageBridgeParent::NotifyImageComposites(nsTArray<ImageCompositeNotification>& a
   uint32_t i = 0;
   bool ok = true;
   while (i < aNotifications.Length()) {
-    nsAutoTArray<ImageCompositeNotification,1> notifications;
+    AutoTArray<ImageCompositeNotification,1> notifications;
     notifications.AppendElement(aNotifications[i]);
     uint32_t end = i + 1;
     MOZ_ASSERT(aNotifications[i].imageContainerParent());

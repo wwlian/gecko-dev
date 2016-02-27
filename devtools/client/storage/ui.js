@@ -69,8 +69,12 @@ var StorageUI = this.StorageUI = function StorageUI(front, target, panelWin) {
     emptyText: L10N.getStr("table.emptyText"),
     highlightUpdated: true,
   });
+
   this.displayObjectSidebar = this.displayObjectSidebar.bind(this);
   this.table.on(TableWidget.EVENTS.ROW_SELECTED, this.displayObjectSidebar);
+
+  this.handleScrollEnd = this.handleScrollEnd.bind(this);
+  this.table.on(TableWidget.EVENTS.SCROLL_END, this.handleScrollEnd);
 
   this.sidebar = this._panelDoc.getElementById("storage-sidebar");
   this.sidebar.setAttribute("width", "300");
@@ -99,6 +103,11 @@ StorageUI.prototype = {
 
   storageTypes: null,
   shouldResetColumns: true,
+  shouldLoadMoreItems: true,
+
+  set animationsEnabled(value) {
+    this._panelDoc.documentElement.classList.toggle("no-animate", !value);
+  },
 
   destroy: function() {
     this.front.off("stores-update", this.onUpdate);
@@ -142,7 +151,7 @@ StorageUI.prototype = {
    *        An object containing which storage types were cleared
    */
   onCleared: function(response) {
-    let [type, host, db, objectStore] = this.tree.selectedItem;
+    let [type, host] = this.tree.selectedItem;
     if (response.hasOwnProperty(type) && response[type].indexOf(host) > -1) {
       this.table.clear();
       this.hideSidebar();
@@ -211,7 +220,7 @@ StorageUI.prototype = {
               this.tree.selectedItem = [type, host, name[0], name[1]];
               this.fetchStorageObjects(type, host, [JSON.stringify(name)], 1);
             }
-          } catch(ex) {
+          } catch (ex) {
             // Do nothing
           }
         }
@@ -302,11 +311,16 @@ StorageUI.prototype = {
    * @param {array} names
    *        Names of particular store objects. Empty if all are requested
    * @param {number} reason
-   *        2 for update, 1 for new row in an existing table and 0 when
-   *        populating a table for the first time for the given host/type
+   *        3 for loading next 50 items, 2 for update, 1 for new row in an
+   *        existing table and 0 when populating a table for the first time
+   *        for the given host/type
    */
   fetchStorageObjects: function(type, host, names, reason) {
-    this.storageTypes[type].getStoreObjects(host, names).then(({data}) => {
+    let fetchOpts = reason === 3 ? {offset: this.itemOffset}
+                                 : {};
+    let storageType = this.storageTypes[type];
+
+    storageType.getStoreObjects(host, names, fetchOpts).then(({data}) => {
       if (!data.length) {
         this.emit("store-objects-updated");
         return;
@@ -330,11 +344,17 @@ StorageUI.prototype = {
   populateStorageTree: function(storageTypes) {
     this.storageTypes = {};
     for (let type in storageTypes) {
+      // Ignore `from` field, which is just a protocol.js implementation
+      // artifact.
       if (type === "from") {
         continue;
       }
-
-      let typeLabel = L10N.getStr("tree.labels." + type);
+      let typeLabel = type;
+      try {
+        typeLabel = L10N.getStr("tree.labels." + type);
+      } catch (e) {
+        console.error("Unable to localize tree label type:" + type);
+      }
       this.tree.add([{id: type, label: typeLabel, type: "store"}]);
       if (!storageTypes[type].hosts) {
         continue;
@@ -350,7 +370,7 @@ StorageUI.prototype = {
               this.tree.selectedItem = [type, host, names[0], names[1]];
               this.fetchStorageObjects(type, host, [name], 0);
             }
-          } catch(ex) {
+          } catch (ex) {
             // Do Nothing
           }
         }
@@ -537,6 +557,7 @@ StorageUI.prototype = {
     }
     this.shouldResetColumns = true;
     this.fetchStorageObjects(type, host, names, 0);
+    this.itemOffset = 0;
   },
 
   /**
@@ -556,7 +577,13 @@ StorageUI.prototype = {
       if (!uniqueKey) {
         this.table.uniqueId = uniqueKey = key;
       }
-      columns[key] = L10N.getStr("table.headers." + type + "." + key);
+      columns[key] = key;
+      try {
+        columns[key] = L10N.getStr("table.headers." + type + "." + key);
+      } catch (e) {
+        console.error("Unable to localize table header type:" + type +
+                      " key:" + key);
+      }
     }
     this.table.setColumns(columns, null, HIDDEN_COLUMNS);
     this.shouldResetColumns = false;
@@ -569,9 +596,9 @@ StorageUI.prototype = {
    * @param {array[object]} data
    *        Array of objects to be populated in the storage table
    * @param {number} reason
-   *        The reason of this populateTable call. 2 for update, 1 for new row
-   *        in an existing table and 0 when populating a table for the first
-   *        time for the given host/type
+   *        The reason of this populateTable call. 3 for loading next 50 items,
+   *        2 for update, 1 for new row in an existing table and 0 when
+   *        populating a table for the first time for the given host/type
    */
   populateTable: function(data, reason) {
     for (let item of data) {
@@ -590,7 +617,7 @@ StorageUI.prototype = {
       if (item.lastAccessed != null) {
         item.lastAccessed = new Date(item.lastAccessed).toLocaleString();
       }
-      if (reason < 2) {
+      if (reason < 2 || reason == 3) {
         this.table.push(item, reason == 0);
       } else {
         this.table.update(item);
@@ -598,6 +625,7 @@ StorageUI.prototype = {
           this.displayObjectSidebar();
         }
       }
+      this.shouldLoadMoreItems = true;
     }
   },
 
@@ -614,5 +642,24 @@ StorageUI.prototype = {
       event.stopPropagation();
       event.preventDefault();
     }
+  },
+
+  /**
+   * Handles endless scrolling for the table
+   */
+  handleScrollEnd: function() {
+    if (!this.shouldLoadMoreItems) {
+      return;
+    }
+    this.shouldLoadMoreItems = false;
+    this.itemOffset += 50;
+
+    let item = this.tree.selectedItem;
+    let [type, host] = item;
+    let names = null;
+    if (item.length > 2) {
+      names = [JSON.stringify(item.slice(2))];
+    }
+    this.fetchStorageObjects(type, host, names, 3);
   }
 };

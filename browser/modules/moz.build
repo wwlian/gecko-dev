@@ -22,17 +22,18 @@ EXTRA_JS_MODULES += [
     'ContentObservers.jsm',
     'ContentSearch.jsm',
     'ContentWebRTC.jsm',
-    'CustomizationTabPreloader.jsm',
     'DirectoryLinksProvider.jsm',
     'E10SUtils.jsm',
     'Feeds.jsm',
     'FormSubmitObserver.jsm',
     'FormValidationHandler.jsm',
     'HiddenFrame.jsm',
+    'LaterRun.jsm',
     'NetworkPrioritizer.jsm',
     'offlineAppCache.jsm',
     'PanelFrame.jsm',
     'PluginContent.jsm',
+    'ProcessHangMonitor.jsm',
     'ReaderParent.jsm',
     'RecentWindow.jsm',
     'RemotePrompt.jsm',
@@ -42,12 +43,9 @@ EXTRA_JS_MODULES += [
     'Social.jsm',
     'TabGroupsMigrator.jsm',
     'TransientPrefs.jsm',
+    'UserContextUI.jsm',
     'WebappManager.jsm',
     'webrtcUI.jsm',
-]
-
-EXTRA_PP_JS_MODULES += [
-    'ProcessHangMonitor.jsm'
 ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
@@ -56,12 +54,3 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
         'WindowsJumpLists.jsm',
         'WindowsPreviewPerTab.jsm',
     ]
-
-if CONFIG['NIGHTLY_BUILD']:
-    EXTRA_JS_MODULES += [
-        'SignInToWebsite.jsm',
-    ]
-
-EXTRA_PP_COMPONENTS += [
-    'browsermodules.manifest',
-]

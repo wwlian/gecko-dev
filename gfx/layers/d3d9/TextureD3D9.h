@@ -112,6 +112,8 @@ public:
 
   virtual ~DataTextureSourceD3D9();
 
+  virtual const char* Name() const override { return "DataTextureSourceD3D9"; }
+
   // DataTextureSource
 
   virtual bool Update(gfx::DataSourceSurface* aSurface,
@@ -182,7 +184,7 @@ public:
 
   virtual bool SupportsMoz2D() const override { return true; }
 
-  virtual bool HasInternalBuffer() const override { return true; }
+  virtual bool HasIntermediateBuffer() const override { return true; }
 
   virtual bool Serialize(SurfaceDescriptor& aOutDescrptor) override;
 
@@ -206,7 +208,7 @@ public:
   static D3D9TextureData*
   Create(gfx::IntSize aSize, gfx::SurfaceFormat aFormat, TextureAllocationFlags aFlags);
 
-  virtual void Deallocate(ISurfaceAllocator* aAllocator) {}
+  virtual void Deallocate(ISurfaceAllocator* aAllocator) override {}
 
 protected:
   D3D9TextureData(gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
@@ -234,7 +236,7 @@ public:
 
   ~DXGID3D9TextureData();
 
-  virtual gfx::IntSize GetSize() const { return gfx::IntSize(mDesc.Width, mDesc.Height); }
+  virtual gfx::IntSize GetSize() const override { return gfx::IntSize(mDesc.Width, mDesc.Height); }
 
   virtual gfx::SurfaceFormat GetFormat() const override { return mFormat; }
 
@@ -244,9 +246,9 @@ public:
 
   virtual bool Serialize(SurfaceDescriptor& aOutDescriptor) override;
 
-  virtual bool HasInternalBuffer() const override { return false; }
+  virtual bool HasIntermediateBuffer() const override { return false; }
 
-  virtual void Deallocate(ISurfaceAllocator* aAllocator) {}
+  virtual void Deallocate(ISurfaceAllocator* aAllocator) override {}
 
   IDirect3DDevice9* GetD3D9Device() { return mDevice; }
   IDirect3DTexture9* GetD3D9Texture() { return mTexture; }
@@ -295,7 +297,7 @@ public:
     return nullptr;
   }
 
-  virtual bool HasInternalBuffer() const override { return true; }
+  virtual bool HasIntermediateBuffer() const override { return true; }
 
 protected:
   TextureHostD3D9(TextureFlags aFlags);
@@ -398,6 +400,8 @@ public:
                               const gfx::IntRect& aRect);
   virtual ~CompositingRenderTargetD3D9();
 
+  virtual const char* Name() const override { return "CompositingRenderTargetD3D9"; }
+
   virtual TextureSourceD3D9* AsSourceD3D9() override
   {
     MOZ_ASSERT(mTexture,
@@ -416,7 +420,6 @@ private:
 
   RefPtr<IDirect3DSurface9> mSurface;
   SurfaceInitMode mInitMode;
-  bool mInitialized;
 };
 
 }

@@ -182,7 +182,9 @@ MoofParser::Metadata()
   MediaByteRange ftyp;
   MediaByteRange moov;
   ScanForMetadata(ftyp, moov);
-  if (!ftyp.Length() || !moov.Length()) {
+  if (!ftyp.Length() || !moov.Length() ||
+      ftyp.Length() > Box::kMAX_BOX_READ || moov.Length() > Box::kMAX_BOX_READ) {
+    // No ftyp or moov, or trying to read bigger-that-readable box (32MB).
     return nullptr;
   }
   RefPtr<MediaByteBuffer> metadata = new MediaByteBuffer();
@@ -691,9 +693,10 @@ Tfhd::Tfhd(Box& aBox, Trex& aTrex)
   mFlags = reader->ReadU32();
   size_t need = sizeof(uint32_t) /* trackid */;
   uint8_t flag[] = { 1, 2, 8, 0x10, 0x20, 0 };
+  uint8_t flagSize[] = { sizeof(uint64_t), sizeof(uint32_t), sizeof(uint32_t), sizeof(uint32_t), sizeof(uint32_t) };
   for (size_t i = 0; flag[i]; i++) {
     if (mFlags & flag[i]) {
-      need += sizeof(uint32_t);
+      need += flagSize[i];
     }
   }
   if (reader->Remaining() < need) {
@@ -701,9 +704,9 @@ Tfhd::Tfhd(Box& aBox, Trex& aTrex)
         (uint64_t)reader->Remaining(), (uint64_t)need);
     return;
   }
-  mBaseDataOffset =
-    mFlags & 1 ? reader->ReadU32() : aBox.Parent()->Parent()->Offset();
   mTrackId = reader->ReadU32();
+  mBaseDataOffset =
+    mFlags & 1 ? reader->ReadU64() : aBox.Parent()->Parent()->Offset();
   if (mFlags & 2) {
     mDefaultSampleDescriptionIndex = reader->ReadU32();
   }

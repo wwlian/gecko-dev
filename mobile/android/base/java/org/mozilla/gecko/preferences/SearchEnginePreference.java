@@ -7,20 +7,22 @@ package org.mozilla.gecko.preferences;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.mozilla.gecko.R;
+import org.mozilla.gecko.SnackbarHelper;
 import org.mozilla.gecko.favicons.Favicons;
 import org.mozilla.gecko.favicons.OnFaviconLoadedListener;
 import org.mozilla.gecko.favicons.decoders.FaviconDecoder;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.gecko.widget.FaviconView;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
+import android.support.design.widget.Snackbar;
 import android.text.SpannableString;
 import android.util.Log;
 import android.view.View;
-import android.widget.Toast;
 
 /**
  * Represents an element in the list of search engines on the preferences menu.
@@ -88,12 +90,12 @@ public class SearchEnginePreference extends CustomListPreference {
         // If this is the last engine, then we are the default, and none of the options
         // on this menu can do anything.
         if (mParentCategory.getPreferenceCount() == 1) {
-            ThreadUtils.postToUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    Toast.makeText(getContext(), R.string.pref_search_last_toast, Toast.LENGTH_SHORT).show();
-                }
-            });
+            Activity activity = (Activity) getContext();
+
+            SnackbarHelper.showSnackbar(activity,
+                    activity.getString(R.string.pref_search_last_toast),
+                    Snackbar.LENGTH_LONG);
+
             return;
         }
 

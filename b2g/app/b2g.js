@@ -354,13 +354,17 @@ pref("browser.safebrowsing.malware.enabled", true);
 pref("browser.safebrowsing.downloads.enabled", true);
 pref("browser.safebrowsing.downloads.remote.enabled", true);
 pref("browser.safebrowsing.downloads.remote.timeout_ms", 10000);
+pref("browser.safebrowsing.downloads.remote.url", "https://sb-ssl.google.com/safebrowsing/clientreport/download?key=%GOOGLE_API_KEY%");
+pref("browser.safebrowsing.downloads.remote.block_dangerous",            true);
+pref("browser.safebrowsing.downloads.remote.block_dangerous_host",       true);
+pref("browser.safebrowsing.downloads.remote.block_potentially_unwanted", false);
+pref("browser.safebrowsing.downloads.remote.block_uncommon",             false);
 pref("browser.safebrowsing.debug", false);
 
 pref("browser.safebrowsing.provider.google.lists", "goog-badbinurl-shavar,goog-downloadwhite-digest256,goog-phish-shavar,goog-malware-shavar,goog-unwanted-shavar");
 pref("browser.safebrowsing.provider.google.updateURL", "https://safebrowsing.google.com/safebrowsing/downloads?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2&key=%GOOGLE_API_KEY%");
 pref("browser.safebrowsing.provider.google.gethashURL", "https://safebrowsing.google.com/safebrowsing/gethash?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
 pref("browser.safebrowsing.provider.google.reportURL", "https://safebrowsing.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
-pref("browser.safebrowsing.provider.google.appRepURL", "https://sb-ssl.google.com/safebrowsing/clientreport/download?key=%GOOGLE_API_KEY%");
 
 pref("browser.safebrowsing.reportPhishMistakeURL", "https://%LOCALE%.phish-error.mozilla.com/?hl=%LOCALE%&url=");
 pref("browser.safebrowsing.reportPhishURL", "https://%LOCALE%.phish-report.mozilla.com/?hl=%LOCALE%&url=");
@@ -692,7 +696,6 @@ pref("layout.css.scroll-snap.enabled", true);
 pref("dom.ipc.processPriorityManager.enabled", true);
 pref("dom.ipc.processPriorityManager.backgroundGracePeriodMS", 1000);
 pref("dom.ipc.processPriorityManager.backgroundPerceivableGracePeriodMS", 5000);
-pref("dom.ipc.processPriorityManager.memoryPressureGracePeriodMS", 3000);
 pref("dom.ipc.processPriorityManager.temporaryPriorityLockMS", 5000);
 
 // Number of different background/foreground levels for background/foreground
@@ -780,7 +783,12 @@ pref("hal.gonk.COMPOSITOR.nice", -4);
 // this too high, then we'll send out a memory pressure event every Z seconds
 // (see below), even while we have processes that we would happily kill in
 // order to free up memory.
-pref("hal.processPriorityManager.gonk.notifyLowMemUnderKB", 14336);
+pref("gonk.notifyHardLowMemUnderKB", 14336);
+
+// Fire a memory pressure event when the system has less than Xmb of memory
+// remaining and then switch to the hard trigger, see above.  This should be
+// placed above the BACKGROUND priority class.
+pref("gonk.notifySoftLowMemUnderKB", 43008);
 
 // We wait this long before polling the memory-pressure fd after seeing one
 // memory pressure event.  (When we're not under memory pressure, we sit
@@ -1007,16 +1015,8 @@ pref("security.exthelperapp.disable_background_handling", true);
 // Inactivity time in milliseconds after which we shut down the OS.File worker.
 pref("osfile.reset_worker_delay", 5000);
 
-// APZC preferences.
-#ifdef MOZ_WIDGET_GONK
-pref("apz.allow_zooming", true);
-#endif
-
-// Gaia relies heavily on scroll events for now, so lets fire them
-// more often than the default value (100).
-pref("apz.pan_repaint_interval", 16);
-
 // APZ physics settings, tuned by UX designers
+pref("apz.axis_lock.mode", 2); // Use "sticky" axis locking
 pref("apz.fling_curve_function_x1", "0.41");
 pref("apz.fling_curve_function_y1", "0.0");
 pref("apz.fling_curve_function_x2", "0.80");
@@ -1024,29 +1024,7 @@ pref("apz.fling_curve_function_y2", "1.0");
 pref("apz.fling_curve_threshold_inches_per_ms", "0.01");
 pref("apz.fling_friction", "0.0019");
 pref("apz.max_velocity_inches_per_ms", "0.07");
-pref("apz.touch_start_tolerance", "0.1");
-
-#ifdef MOZ_WIDGET_GONK
-pref("apz.touch_move_tolerance", "0.03");
-#endif
-
-// Tweak default displayport values to reduce the risk of running out of
-// memory when zooming in
-pref("apz.x_skate_size_multiplier", "1.25");
-pref("apz.y_skate_size_multiplier", "1.5");
-pref("apz.x_stationary_size_multiplier", "1.5");
-pref("apz.y_stationary_size_multiplier", "1.8");
-pref("apz.enlarge_displayport_when_clipped", true);
-// Use "sticky" axis locking
-pref("apz.axis_lock.mode", 2);
-
-// Overscroll-related settings
 pref("apz.overscroll.enabled", true);
-pref("apz.overscroll.stretch_factor", "0.35");
-pref("apz.overscroll.spring_stiffness", "0.0018");
-pref("apz.overscroll.spring_friction", "0.015");
-pref("apz.overscroll.stop_distance_threshold", "5.0");
-pref("apz.overscroll.stop_velocity_threshold", "0.01");
 
 // For event-regions based hit-testing
 pref("layout.event-regions.enabled", true);
@@ -1089,6 +1067,9 @@ pref("services.mobileid.server.uri", "https://msisdn.services.mozilla.com");
 
 pref("identity.fxaccounts.remote.oauth.uri", "https://oauth.accounts.firefox.com/v1");
 pref("identity.fxaccounts.remote.profile.uri", "https://profile.accounts.firefox.com/v1");
+
+// Disable Firefox Accounts device registration until bug 1238895 is fixed.
+pref("identity.fxaccounts.skipDeviceRegistration", true);
 
 // Enable mapped array buffer.
 #ifndef XP_WIN
@@ -1146,6 +1127,9 @@ pref("dom.audiochannel.mutedByDefault", true);
 // The app origin of bluetooth app, which is responsible for listening pairing
 // requests.
 pref("dom.bluetooth.app-origin", "app://bluetooth.gaiamobile.org");
+
+// Enable W3C WebBluetooth API and disable B2G only GATT client API.
+pref("dom.bluetooth.webbluetooth.enabled", false);
 
 // Default device name for Presentation API
 pref("dom.presentation.device.name", "Firefox OS");

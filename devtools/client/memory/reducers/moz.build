@@ -7,8 +7,11 @@ DevToolsModules(
     'allocations.js',
     'breakdown.js',
     'diffing.js',
+    'dominatorTreeBreakdown.js',
     'errors.js',
     'filter.js',
     'inverted.js',
+    'sizes.js',
     'snapshots.js',
+    'view.js',
 )

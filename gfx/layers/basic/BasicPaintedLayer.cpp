@@ -63,7 +63,7 @@ BasicPaintedLayer::PaintThebes(gfxContext* aContext,
     mValidRegion.SetEmpty();
     mContentClient->Clear();
 
-    nsIntRegion toDraw = IntersectWithClip(GetEffectiveVisibleRegion().ToUnknownRegion(), aContext);
+    nsIntRegion toDraw = IntersectWithClip(GetLocalVisibleRegion().ToUnknownRegion(), aContext);
 
     RenderTraceInvalidateStart(this, "FFFF00", toDraw.GetBounds());
 
@@ -169,7 +169,7 @@ BasicPaintedLayer::Validate(LayerManager::DrawPaintedLayerCallback aCallback,
     // from RGB to RGBA, because we might need to repaint with
     // subpixel AA)
     state.mRegionToInvalidate.And(state.mRegionToInvalidate,
-                                  GetEffectiveVisibleRegion().ToUnknownRegion());
+                                  GetLocalVisibleRegion().ToUnknownRegion());
     SetAntialiasingFlags(this, target);
 
     RenderTraceInvalidateStart(this, "FFFF00", state.mRegionToDraw.GetBounds());
@@ -203,16 +203,16 @@ BasicPaintedLayer::Validate(LayerManager::DrawPaintedLayerCallback aCallback,
   for (uint32_t i = 0; i < readbackUpdates.Length(); ++i) {
     ReadbackProcessor::Update& update = readbackUpdates[i];
     nsIntPoint offset = update.mLayer->GetBackgroundLayerOffset();
-    RefPtr<gfxContext> ctx =
+    RefPtr<DrawTarget> dt =
       update.mLayer->GetSink()->BeginUpdate(update.mUpdateRect + offset,
                                             update.mSequenceCounter);
-    if (ctx) {
+    if (dt) {
       NS_ASSERTION(GetEffectiveOpacity() == 1.0, "Should only read back opaque layers");
       NS_ASSERTION(!GetMaskLayer(), "Should only read back layers without masks");
-      ctx->SetMatrix(ctx->CurrentMatrix().Translate(offset.x, offset.y));
-      mContentClient->DrawTo(this, ctx->GetDrawTarget(), 1.0,
-                             ctx->CurrentOp(), nullptr, nullptr);
-      update.mLayer->GetSink()->EndUpdate(ctx, update.mUpdateRect + offset);
+      dt->SetTransform(dt->GetTransform().PreTranslate(offset.x, offset.y));
+      mContentClient->DrawTo(this, dt, 1.0, CompositionOp::OP_OVER,
+                             nullptr, nullptr);
+      update.mLayer->GetSink()->EndUpdate(update.mUpdateRect + offset);
     }
   }
 }

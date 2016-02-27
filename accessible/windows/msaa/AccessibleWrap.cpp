@@ -91,8 +91,13 @@ void
 AccessibleWrap::Shutdown()
 {
 #ifdef _WIN64
-  if (mID != kNoID)
-    static_cast<DocAccessibleWrap*>(mDoc)->RemoveID(mID);
+  if (mID != kNoID) {
+    auto doc = static_cast<DocAccessibleWrap*>(mDoc);
+    MOZ_ASSERT(doc);
+    if (doc) {
+      doc->RemoveID(mID);
+    }
+  }
 #endif
 
   Accessible::Shutdown();
@@ -447,7 +452,7 @@ AccessibleWrap::get_accRole(
 #include "RoleMap.h"
     default:
       MOZ_CRASH("Unknown role.");
-  };
+  }
 
 #undef ROLE
 
@@ -829,7 +834,7 @@ AccessibleWrap::get_accSelection(VARIANT __RPC_FAR *pvarChildren)
     return E_NOTIMPL;
 
   if (IsSelect()) {
-    nsAutoTArray<Accessible*, 10> selectedItems;
+    AutoTArray<Accessible*, 10> selectedItems;
     if (IsProxy()) {
       nsTArray<ProxyAccessible*> proxies;
       Proxy()->SelectedItems(&proxies);

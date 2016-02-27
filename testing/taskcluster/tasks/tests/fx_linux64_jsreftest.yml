@@ -4,12 +4,14 @@ $inherits:
 task:
   metadata:
     name: '[TC] Linux64 jsreftest'
-    description: Jsreftest run
+    description: Jsreftest run {{chunk}}
   extra:
+    chunks:
+      total: 2
     suite:
       name: reftest
       flavor: jsreftest
     treeherder:
       groupName: Desktop jsreftest
       groupSymbol: tc-R
-      symbol: J
+      symbol: J{{chunk}}

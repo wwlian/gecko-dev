@@ -37,7 +37,7 @@ const int32_t kFirstShippedSchemaVersion = 15;
 namespace {
 
 // Update this whenever the DB schema is changed.
-const int32_t kLatestSchemaVersion = 17;
+const int32_t kLatestSchemaVersion = 19;
 
 // ---------
 // The following constants define the SQL schema.  These are defined in the
@@ -192,7 +192,8 @@ static_assert(int(HeadersGuardEnum::None) == 0 &&
 static_assert(int(RequestMode::Same_origin) == 0 &&
               int(RequestMode::No_cors) == 1 &&
               int(RequestMode::Cors) == 2 &&
-              int(RequestMode::EndGuard_) == 3,
+              int(RequestMode::Navigate) == 3 &&
+              int(RequestMode::EndGuard_) == 4,
               "RequestMode values are as expected");
 static_assert(int(RequestCredentials::Omit) == 0 &&
               int(RequestCredentials::Same_origin) == 1 &&
@@ -204,8 +205,7 @@ static_assert(int(RequestCache::Default) == 0 &&
               int(RequestCache::Reload) == 2 &&
               int(RequestCache::No_cache) == 3 &&
               int(RequestCache::Force_cache) == 4 &&
-              int(RequestCache::Only_if_cached) == 5 &&
-              int(RequestCache::EndGuard_) == 6,
+              int(RequestCache::EndGuard_) == 5,
               "RequestCache values are as expected");
 static_assert(int(RequestRedirect::Follow) == 0 &&
               int(RequestRedirect::Error) == 1 &&
@@ -588,11 +588,11 @@ DeleteCacheId(mozIStorageConnection* aConn, CacheId aCacheId,
   // Delete the bodies explicitly as we need to read out the body IDs
   // anyway.  These body IDs must be deleted one-by-one as content may
   // still be referencing them invidivually.
-  nsAutoTArray<EntryId, 256> matches;
+  AutoTArray<EntryId, 256> matches;
   nsresult rv = QueryAll(aConn, aCacheId, matches);
   if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
 
-  nsAutoTArray<IdCount, 16> deletedSecurityIdList;
+  AutoTArray<IdCount, 16> deletedSecurityIdList;
   rv = DeleteEntries(aConn, matches, aDeletedBodyIdListOut,
                      deletedSecurityIdList);
   if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
@@ -720,7 +720,7 @@ CacheMatch(mozIStorageConnection* aConn, CacheId aCacheId,
 
   *aFoundResponseOut = false;
 
-  nsAutoTArray<EntryId, 1> matches;
+  AutoTArray<EntryId, 1> matches;
   nsresult rv = QueryCache(aConn, aCacheId, aRequest, aParams, matches, 1);
   if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
 
@@ -747,7 +747,7 @@ CacheMatchAll(mozIStorageConnection* aConn, CacheId aCacheId,
   MOZ_ASSERT(aConn);
   nsresult rv;
 
-  nsAutoTArray<EntryId, 256> matches;
+  AutoTArray<EntryId, 256> matches;
   if (aRequestOrVoid.type() == CacheRequestOrVoid::Tvoid_t) {
     rv = QueryAll(aConn, aCacheId, matches);
     if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
@@ -781,11 +781,11 @@ CachePut(mozIStorageConnection* aConn, CacheId aCacheId,
 
   CacheQueryParams params(false, false, false, false,
                            NS_LITERAL_STRING(""));
-  nsAutoTArray<EntryId, 256> matches;
+  AutoTArray<EntryId, 256> matches;
   nsresult rv = QueryCache(aConn, aCacheId, aRequest, params, matches);
   if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
 
-  nsAutoTArray<IdCount, 16> deletedSecurityIdList;
+  AutoTArray<IdCount, 16> deletedSecurityIdList;
   rv = DeleteEntries(aConn, matches, aDeletedBodyIdListOut,
                      deletedSecurityIdList);
   if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
@@ -814,7 +814,7 @@ CacheDelete(mozIStorageConnection* aConn, CacheId aCacheId,
 
   *aSuccessOut = false;
 
-  nsAutoTArray<EntryId, 256> matches;
+  AutoTArray<EntryId, 256> matches;
   nsresult rv = QueryCache(aConn, aCacheId, aRequest, aParams, matches);
   if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
 
@@ -822,7 +822,7 @@ CacheDelete(mozIStorageConnection* aConn, CacheId aCacheId,
     return rv;
   }
 
-  nsAutoTArray<IdCount, 16> deletedSecurityIdList;
+  AutoTArray<IdCount, 16> deletedSecurityIdList;
   rv = DeleteEntries(aConn, matches, aDeletedBodyIdListOut,
                      deletedSecurityIdList);
   if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
@@ -845,7 +845,7 @@ CacheKeys(mozIStorageConnection* aConn, CacheId aCacheId,
   MOZ_ASSERT(aConn);
   nsresult rv;
 
-  nsAutoTArray<EntryId, 256> matches;
+  AutoTArray<EntryId, 256> matches;
   if (aRequestOrVoid.type() == CacheRequestOrVoid::Tvoid_t) {
     rv = QueryAll(aConn, aCacheId, matches);
     if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
@@ -912,7 +912,7 @@ StorageMatch(mozIStorageConnection* aConn,
   rv = state->BindInt32ByName(NS_LITERAL_CSTRING("namespace"), aNamespace);
   if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
 
-  nsAutoTArray<CacheId, 32> cacheIdList;
+  AutoTArray<CacheId, 32> cacheIdList;
 
   bool hasMoreData = false;
   while (NS_SUCCEEDED(state->ExecuteStep(&hasMoreData)) && hasMoreData) {
@@ -1218,7 +1218,7 @@ MatchByVaryHeader(mozIStorageConnection* aConn,
   rv = state->BindInt32ByName(NS_LITERAL_CSTRING("entry_id"), entryId);
   if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
 
-  nsAutoTArray<nsCString, 8> varyValues;
+  AutoTArray<nsCString, 8> varyValues;
 
   bool hasMoreData = false;
   while (NS_SUCCEEDED(state->ExecuteStep(&hasMoreData)) && hasMoreData) {
@@ -1256,7 +1256,7 @@ MatchByVaryHeader(mozIStorageConnection* aConn,
     ErrorResult errorResult;
 
     cachedHeaders->Append(name, value, errorResult);
-    if (errorResult.Failed()) { return errorResult.StealNSResult(); };
+    if (errorResult.Failed()) { return errorResult.StealNSResult(); }
   }
   if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
 
@@ -2411,11 +2411,15 @@ struct Migration
 // the version by a single increment.  Don't skip versions.
 nsresult MigrateFrom15To16(mozIStorageConnection* aConn);
 nsresult MigrateFrom16To17(mozIStorageConnection* aConn);
+nsresult MigrateFrom17To18(mozIStorageConnection* aConn);
+nsresult MigrateFrom18To19(mozIStorageConnection* aConn);
 
 // Configure migration functions to run for the given starting version.
 Migration sMigrationList[] = {
   Migration(15, MigrateFrom15To16),
   Migration(16, MigrateFrom16To17),
+  Migration(17, MigrateFrom17To18),
+  Migration(18, MigrateFrom18To19),
 };
 
 uint32_t sMigrationListLength = sizeof(sMigrationList) / sizeof(Migration);
@@ -2652,6 +2656,69 @@ MigrateFrom16To17(mozIStorageConnection* aConn)
 
   return rv;
 }
+
+nsresult
+MigrateFrom17To18(mozIStorageConnection* aConn)
+{
+  MOZ_ASSERT(!NS_IsMainThread());
+  MOZ_ASSERT(aConn);
+
+  mozStorageTransaction trans(aConn, true,
+                              mozIStorageConnection::TRANSACTION_IMMEDIATE);
+
+  // This migration is needed in order to remove "only-if-cached" RequestCache
+  // values from the database.  This enum value was removed from the spec in
+  // https://github.com/whatwg/fetch/issues/39 but we unfortunately happily
+  // accepted this value in the Request constructor.
+  //
+  // There is no good value to upgrade this to, so we just stick to "default".
+
+  static_assert(int(RequestCache::Default) == 0,
+                "This is where the 0 below comes from!");
+  nsresult rv = aConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+    "UPDATE entries SET request_cache = 0 "
+      "WHERE request_cache = 5;"
+  ));
+  if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
+
+  rv = aConn->SetSchemaVersion(18);
+  if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
+
+  return rv;
+}
+
+nsresult
+MigrateFrom18To19(mozIStorageConnection* aConn)
+{
+  MOZ_ASSERT(!NS_IsMainThread());
+  MOZ_ASSERT(aConn);
+
+  mozStorageTransaction trans(aConn, true,
+                              mozIStorageConnection::TRANSACTION_IMMEDIATE);
+
+  // This migration is needed in order to update the RequestMode values for
+  // Request objects corresponding to a navigation content policy type to
+  // "navigate".
+
+  static_assert(int(nsIContentPolicy::TYPE_DOCUMENT) == 6 &&
+                int(nsIContentPolicy::TYPE_SUBDOCUMENT) == 7 &&
+                int(nsIContentPolicy::TYPE_INTERNAL_FRAME) == 28 &&
+                int(nsIContentPolicy::TYPE_INTERNAL_IFRAME) == 29 &&
+                int(nsIContentPolicy::TYPE_REFRESH) == 8 &&
+                int(RequestMode::Navigate) == 3,
+                "This is where the numbers below come from!");
+  nsresult rv = aConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+    "UPDATE entries SET request_mode = 3 "
+      "WHERE request_contentpolicytype IN (6, 7, 28, 29, 8);"
+  ));
+  if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
+
+  rv = aConn->SetSchemaVersion(19);
+  if (NS_WARN_IF(NS_FAILED(rv))) { return rv; }
+
+  return rv;
+}
+
 
 } // anonymous namespace
 

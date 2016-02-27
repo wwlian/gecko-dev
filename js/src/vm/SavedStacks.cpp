@@ -23,10 +23,12 @@
 #include "jsscript.h"
 
 #include "gc/Marking.h"
+#include "gc/Policy.h"
 #include "gc/Rooting.h"
 #include "js/Vector.h"
 #include "vm/Debugger.h"
 #include "vm/SavedFrame.h"
+#include "vm/SPSProfiler.h"
 #include "vm/StringBuffer.h"
 #include "vm/Time.h"
 #include "vm/WrapperObject.h"
@@ -63,13 +65,13 @@ LiveSavedFrameCache::getFramePtr(FrameIter& iter)
     return Nothing();
 }
 
-/* static */ void
-LiveSavedFrameCache::trace(LiveSavedFrameCache* cache, JSTracer* trc)
+void
+LiveSavedFrameCache::trace(JSTracer* trc)
 {
-    if (!cache->initialized())
+    if (!initialized())
         return;
 
-    for (auto* entry = cache->frames->begin(); entry < cache->frames->end(); entry++) {
+    for (auto* entry = frames->begin(); entry < frames->end(); entry++) {
         TraceEdge(trc,
                   &entry->savedFrame,
                   "LiveSavedFrameCache::frames SavedFrame");
@@ -156,6 +158,10 @@ struct SavedFrame::Lookup {
         MOZ_ASSERT(source);
         MOZ_ASSERT_IF(framePtr.isSome(), pc);
         MOZ_ASSERT_IF(framePtr.isSome(), activation);
+
+#ifdef JS_MORE_DETERMINISTIC
+        column = 0;
+#endif
     }
 
     explicit Lookup(SavedFrame& savedFrame)
@@ -422,6 +428,9 @@ SavedFrame::initLine(uint32_t line)
 void
 SavedFrame::initColumn(uint32_t column)
 {
+#ifdef JS_MORE_DETERMINISTIC
+    column = 0;
+#endif
     initReservedSlot(JSSLOT_COLUMN, PrivateUint32Value(column));
 }
 
@@ -486,7 +495,8 @@ SavedFrame::create(JSContext* cx)
         return nullptr;
     assertSameCompartment(cx, proto);
 
-    RootedObject frameObj(cx, NewObjectWithGivenProto(cx, &SavedFrame::class_, proto));
+    RootedObject frameObj(cx, NewObjectWithGivenProto(cx, &SavedFrame::class_, proto,
+                                                      TenuredObject));
     if (!frameObj)
         return nullptr;
 
@@ -989,14 +999,8 @@ SavedFrame::toStringMethod(JSContext* cx, unsigned argc, Value* vp)
 bool
 SavedStacks::init()
 {
-    mozilla::Array<uint64_t, 2> seed;
-    GenerateXorShift128PlusSeed(seed);
-    bernoulli.setRandomState(seed[0], seed[1]);
-
-    if (!pcLocationMap.init())
-        return false;
-
-    return frames.init();
+    return frames.init() &&
+           pcLocationMap.init();
 }
 
 bool
@@ -1013,6 +1017,7 @@ SavedStacks::saveCurrentStack(JSContext* cx, MutableHandleSavedFrame frame, unsi
         return true;
     }
 
+    AutoSPSEntry psuedoFrame(cx->runtime(), "js::SavedStacks::saveCurrentStack");
     FrameIter iter(cx, FrameIter::ALL_CONTEXTS, FrameIter::GO_THROUGH_SAVED);
     return insertFrames(cx, iter, frame, maxFrameCount);
 }
@@ -1033,22 +1038,16 @@ SavedStacks::copyAsyncStack(JSContext* cx, HandleObject asyncStack, HandleString
 }
 
 void
-SavedStacks::sweep(JSRuntime* rt)
+SavedStacks::sweep()
 {
     frames.sweep();
-    sweepPCLocationMap();
+    pcLocationMap.sweep();
 }
 
 void
 SavedStacks::trace(JSTracer* trc)
 {
-    if (pcLocationMap.initialized()) {
-        // Mark each of the source strings in our pc to location cache.
-        for (PCLocationMap::Enum e(pcLocationMap); !e.empty(); e.popFront()) {
-            LocationValue& loc = e.front().value();
-            TraceEdge(trc, &loc.source, "SavedStacks::PCLocationMap's memoized script source name");
-        }
-    }
+    pcLocationMap.trace(trc);
 }
 
 uint32_t
@@ -1067,7 +1066,8 @@ SavedStacks::clear()
 size_t
 SavedStacks::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf)
 {
-    return frames.sizeOfExcludingThis(mallocSizeOf);
+    return frames.sizeOfExcludingThis(mallocSizeOf) +
+           pcLocationMap.sizeOfExcludingThis(mallocSizeOf);
 }
 
 bool
@@ -1124,7 +1124,7 @@ SavedStacks::insertFrames(JSContext* cx, FrameIter& iter, MutableHandleSavedFram
             }
         }
 
-        AutoLocationValueRooter location(cx);
+        Rooted<LocationValue> location(cx);
         {
             AutoCompartment ac(cx, iter.compartment());
             if (!cx->compartment()->savedStacks().getLocation(cx, iter, &location))
@@ -1136,10 +1136,10 @@ SavedStacks::insertFrames(JSContext* cx, FrameIter& iter, MutableHandleSavedFram
         if (maxFrameCount == 0)
             parentIsInCache = iter.hasCachedSavedFrame();
 
-        auto displayAtom = iter.isNonEvalFunctionFrame() ? iter.functionDisplayAtom() : nullptr;
-        if (!stackChain->emplaceBack(location->source,
-                                     location->line,
-                                     location->column,
+        auto displayAtom = iter.isFunctionFrame() ? iter.functionDisplayAtom() : nullptr;
+        if (!stackChain->emplaceBack(location.source(),
+                                     location.line(),
+                                     location.column(),
                                      displayAtom,
                                      nullptr,
                                      nullptr,
@@ -1308,26 +1308,9 @@ SavedStacks::createFrameFromLookup(JSContext* cx, SavedFrame::HandleLookup looku
     return frame;
 }
 
-/*
- * Remove entries from the table whose JSScript is being collected.
- */
-void
-SavedStacks::sweepPCLocationMap()
-{
-    for (PCLocationMap::Enum e(pcLocationMap); !e.empty(); e.popFront()) {
-        PCKey key = e.front().key();
-        JSScript* script = key.script.get();
-        if (IsAboutToBeFinalizedUnbarriered(&script)) {
-            e.removeFront();
-        } else if (script != key.script.get()) {
-            key.script = script;
-            e.rekeyFront(key);
-        }
-    }
-}
-
 bool
-SavedStacks::getLocation(JSContext* cx, const FrameIter& iter, MutableHandleLocationValue locationp)
+SavedStacks::getLocation(JSContext* cx, const FrameIter& iter,
+                         MutableHandle<LocationValue> locationp)
 {
     // We should only ever be caching location values for scripts in this
     // compartment. Otherwise, we would get dead cross-compartment scripts in
@@ -1341,20 +1324,21 @@ SavedStacks::getLocation(JSContext* cx, const FrameIter& iter, MutableHandleLoca
     // that doesn't employ memoization, and update |locationp|'s slots directly.
 
     if (!iter.hasScript()) {
-        if (const char16_t* displayURL = iter.scriptDisplayURL()) {
-            locationp->source = AtomizeChars(cx, displayURL, js_strlen(displayURL));
+        if (const char16_t* displayURL = iter.displayURL()) {
+            locationp.setSource(AtomizeChars(cx, displayURL, js_strlen(displayURL)));
         } else {
-            const char* filename = iter.scriptFilename() ? iter.scriptFilename() : "";
-            locationp->source = Atomize(cx, filename, strlen(filename));
+            const char* filename = iter.filename() ? iter.filename() : "";
+            locationp.setSource(Atomize(cx, filename, strlen(filename)));
         }
-        if (!locationp->source)
+        if (!locationp.source())
             return false;
 
-        locationp->line = iter.computeLine(&locationp->column);
+        uint32_t column = 0;
+        locationp.setLine(iter.computeLine(&column));
         // XXX: Make the column 1-based as in other browsers, instead of 0-based
         // which is how SpiderMonkey stores it internally. This will be
         // unnecessary once bug 1144340 is fixed.
-        locationp->column++;
+        locationp.setColumn(column + 1);
         return true;
     }
 
@@ -1366,7 +1350,7 @@ SavedStacks::getLocation(JSContext* cx, const FrameIter& iter, MutableHandleLoca
 
     if (!p) {
         RootedAtom source(cx);
-        if (const char16_t* displayURL = iter.scriptDisplayURL()) {
+        if (const char16_t* displayURL = iter.displayURL()) {
             source = AtomizeChars(cx, displayURL, js_strlen(displayURL));
         } else {
             const char* filename = script->filename() ? script->filename() : "";
@@ -1418,11 +1402,18 @@ SavedStacks::chooseSamplingProbability(JSCompartment* compartment)
     }
     MOZ_ASSERT(foundAnyDebuggers);
 
+    if (!bernoulliSeeded) {
+        mozilla::Array<uint64_t, 2> seed;
+        GenerateXorShift128PlusSeed(seed);
+        bernoulli.setRandomState(seed[0], seed[1]);
+        bernoulliSeeded = true;
+    }
+
     bernoulli.setProbability(probability);
 }
 
 JSObject*
-SavedStacksMetadataCallback(JSContext* cx, JSObject* target)
+SavedStacksMetadataCallback(JSContext* cx, HandleObject target)
 {
     RootedObject obj(cx, target);
 

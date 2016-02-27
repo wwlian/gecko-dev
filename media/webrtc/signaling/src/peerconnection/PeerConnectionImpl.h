@@ -81,6 +81,7 @@ class RTCCertificate;
 struct RTCConfiguration;
 struct RTCIceServer;
 struct RTCOfferOptions;
+struct RTCRtpParameters;
 #ifdef USE_FAKE_MEDIA_STREAMS
 typedef Fake_MediaStreamTrack MediaStreamTrack;
 #else
@@ -339,7 +340,7 @@ public:
     return mSTSThread;
   }
 
-  nsPIDOMWindow* GetWindow() const {
+  nsPIDOMWindowInner* GetWindow() const {
     PC_AUTO_ENTER_API_CALL_NO_CHECK();
     return mWindow;
   }
@@ -441,6 +442,37 @@ public:
                                mozilla::dom::MediaStreamTrack& aWithTrack)
   {
     rv = ReplaceTrack(aThisTrack, aWithTrack);
+  }
+
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
+  NS_IMETHODIMP_TO_ERRORRESULT(SetParameters, ErrorResult &rv,
+                               dom::MediaStreamTrack& aTrack,
+                               const dom::RTCRtpParameters& aParameters)
+  {
+    rv = SetParameters(aTrack, aParameters);
+  }
+
+  NS_IMETHODIMP_TO_ERRORRESULT(GetParameters, ErrorResult &rv,
+                               dom::MediaStreamTrack& aTrack,
+                               dom::RTCRtpParameters& aOutParameters)
+  {
+    rv = GetParameters(aTrack, aOutParameters);
+  }
+#endif
+
+  nsresult
+  SetParameters(dom::MediaStreamTrack& aTrack,
+                const std::vector<JsepTrack::JsConstraints>& aConstraints);
+
+  nsresult
+  GetParameters(dom::MediaStreamTrack& aTrack,
+                std::vector<JsepTrack::JsConstraints>* aOutConstraints);
+
+  NS_IMETHODIMP_TO_ERRORRESULT(SelectSsrc, ErrorResult &rv,
+                               dom::MediaStreamTrack& aRecvTrack,
+                               unsigned short aSsrcIndex)
+  {
+    rv = SelectSsrc(aRecvTrack, aSsrcIndex);
   }
 
   nsresult GetPeerIdentity(nsAString& peerIdentity)
@@ -587,10 +619,6 @@ public:
   // is called to start the list over.
   void ClearSdpParseErrorMessages();
 
-  void OnAddIceCandidateError() {
-    ++mAddCandidateErrorCount;
-  }
-
   // Called to retreive the list of parsing errors.
   const std::vector<std::string> &GetSdpParseErrors();
 
@@ -727,7 +755,7 @@ private:
   // TODO: Remove if we ever properly wire PeerConnection for cycle-collection.
   nsWeakPtr mPCObserver;
 
-  nsCOMPtr<nsPIDOMWindow> mWindow;
+  nsCOMPtr<nsPIDOMWindowInner> mWindow;
 
   // The SDP sent in from JS - here for debugging.
   std::string mLocalRequestedSDP;
@@ -800,6 +828,8 @@ private:
   bool mTrickle;
 
   bool mNegotiationNeeded;
+
+  bool mPrivateWindow;
 
   // storage for Telemetry data
   uint16_t mMaxReceiving[SdpMediaSection::kMediaTypes];

@@ -47,6 +47,7 @@ namespace layers {
 
 class AsyncTransactionWaiter;
 class CompositableForwarder;
+class GrallocTextureData;
 class ISurfaceAllocator;
 class CompositableClient;
 struct PlanarYCbCrData;
@@ -57,7 +58,7 @@ class TextureData;
 struct RawTextureBuffer;
 class RawYCbCrTextureBuffer;
 class TextureClient;
-class TextureClientRecycleAllocator;
+class ITextureClientRecycleAllocator;
 #ifdef GFX_DEBUG_TRACK_CLIENTS_IN_POOL
 class TextureClientPool;
 #endif
@@ -69,15 +70,16 @@ class KeepAlive;
  */
 
 enum TextureAllocationFlags {
-  ALLOC_DEFAULT = 0x0,
-  ALLOC_CLEAR_BUFFER = 0x1,
-  ALLOC_CLEAR_BUFFER_WHITE = 0x2,
-  ALLOC_DISALLOW_BUFFERTEXTURECLIENT = 0x4,
+  ALLOC_DEFAULT = 0,
+  ALLOC_CLEAR_BUFFER = 1 << 1,  // Clear the buffer to whatever is best for the draw target
+  ALLOC_CLEAR_BUFFER_WHITE = 1 << 2,  // explicit all white
+  ALLOC_CLEAR_BUFFER_BLACK = 1 << 3,  // explicit all black
+  ALLOC_DISALLOW_BUFFERTEXTURECLIENT = 1 << 4,
 
   // Allocate the texture for out-of-band content updates. This is mostly for
   // TextureClientD3D11, which may otherwise choose D3D10 or non-KeyedMutex
   // surfaces when used on the main thread.
-  ALLOC_FOR_OUT_OF_BAND_CONTENT = 0x8
+  ALLOC_FOR_OUT_OF_BAND_CONTENT = 1 << 5,
 };
 
 #ifdef XP_WIN
@@ -191,7 +193,7 @@ public:
 
   virtual bool CanExposeMappedData() const { return false; }
 
-  virtual bool HasInternalBuffer() const = 0;
+  virtual bool HasIntermediateBuffer() const = 0;
 
   virtual bool HasSynchronization() const { return false; }
 
@@ -230,6 +232,8 @@ public:
     return nullptr;
   }
 #endif
+
+  virtual GrallocTextureData* AsGrallocTextureData() { return nullptr; }
 };
 
 /**
@@ -297,10 +301,10 @@ public:
   // pointers) with a certain buffer size. It's unfortunate that we need this.
   // providing format and sizes could let us do more optimization.
   static already_AddRefed<TextureClient>
-  CreateWithBufferSize(ISurfaceAllocator* aAllocator,
-                       gfx::SurfaceFormat aFormat,
-                       size_t aSize,
-                       TextureFlags aTextureFlags);
+  CreateForYCbCrWithBufferSize(ISurfaceAllocator* aAllocator,
+                               gfx::SurfaceFormat aFormat,
+                               size_t aSize,
+                               TextureFlags aTextureFlags);
 
   // Creates and allocates a TextureClient of the same type.
   already_AddRefed<TextureClient>
@@ -372,8 +376,14 @@ public:
    */
   already_AddRefed<gfx::DataSourceSurface> GetAsSurface() {
     Lock(OpenMode::OPEN_READ);
-    RefPtr<gfx::SourceSurface> surf = BorrowDrawTarget()->Snapshot();
-    RefPtr<gfx::DataSourceSurface> data = surf->GetDataSurface();
+    RefPtr<gfx::DataSourceSurface> data;
+    RefPtr<gfx::DrawTarget> dt = BorrowDrawTarget();
+    if (dt) {
+      RefPtr<gfx::SourceSurface> surf = dt->Snapshot();
+      if (surf) {
+        data = surf->GetDataSurface();
+      }
+    }
     Unlock();
     return data.forget();
   }
@@ -403,7 +413,7 @@ public:
    * in-memory buffer. The consequence of this is that locking the
    * TextureClient does not contend with locking the texture on the host side.
    */
-  bool HasInternalBuffer() const;
+  bool HasIntermediateBuffer() const;
 
   /**
    * Allocate and deallocate a TextureChild actor.
@@ -415,6 +425,8 @@ public:
    */
   static PTextureChild* CreateIPDLActor();
   static bool DestroyIPDLActor(PTextureChild* actor);
+  // call this if the transaction that was supposed to destroy the actor failed.
+  static bool DestroyFallback(PTextureChild* actor);
 
   /**
    * Get the TextureClient corresponding to the actor passed in parameter.
@@ -561,12 +573,15 @@ public:
 
   ISurfaceAllocator* GetAllocator() { return mAllocator; }
 
-  TextureClientRecycleAllocator* GetRecycleAllocator() { return mRecycleAllocator; }
-  void SetRecycleAllocator(TextureClientRecycleAllocator* aAllocator);
+  ITextureClientRecycleAllocator* GetRecycleAllocator() { return mRecycleAllocator; }
+  void SetRecycleAllocator(ITextureClientRecycleAllocator* aAllocator);
 
   /// If you add new code that uses this method, you are probably doing something wrong.
   TextureData* GetInternalData() { return mData; }
   const TextureData* GetInternalData() const { return mData; }
+
+  virtual void RemoveFromCompositable(CompositableClient* aCompositable,
+                                      AsyncTransactionWaiter* aWaiter = nullptr);
 
 private:
   static void TextureClientRecycleCallback(TextureClient* aClient, void* aClosure);
@@ -596,7 +611,7 @@ protected:
 
   RefPtr<ISurfaceAllocator> mAllocator;
   RefPtr<TextureChild> mActor;
-  RefPtr<TextureClientRecycleAllocator> mRecycleAllocator;
+  RefPtr<ITextureClientRecycleAllocator> mRecycleAllocator;
   RefPtr<AsyncTransactionWaiter> mRemoveFromCompositableWaiter;
 
   TextureData* mData;

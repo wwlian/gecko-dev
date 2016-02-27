@@ -30,14 +30,13 @@
                android:value="preferences_locale" />
     </PreferenceScreen>
 
+    <CheckBoxPreference android:key="browser.chrome.dynamictoolbar"
+                        android:title="@string/pref_scroll_title_bar2"
+                        android:summary="@string/pref_scroll_title_bar_summary" />
+
     <CheckBoxPreference android:key="android.not_a_preference.tab_queue"
                         android:title="@string/pref_tab_queue_title"
                         android:summary="@string/pref_tab_queue_summary"
-                        android:defaultValue="false" />
-
-    <CheckBoxPreference android:key="android.not_a_preference.openExternalURLsPrivately"
-                        android:title="@string/pref_open_external_urls_privately_title"
-                        android:summary="@string/pref_open_external_urls_privately_summary"
                         android:defaultValue="false" />
 
 </PreferenceScreen>

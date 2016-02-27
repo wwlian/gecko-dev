@@ -5,6 +5,8 @@
 import argparse
 import os
 
+from mozlog.commandline import add_logging_group
+
 
 class _StopAction(argparse.Action):
     def __init__(self, option_strings, dest=argparse.SUPPRESS,
@@ -109,8 +111,6 @@ def create_parser(mach_interface=False):
         add_arg('--develop', action='store_true', default=False,
                 help="useful for running tests on a developer machine."
                      " Doesn't upload to the graph servers.")
-    add_arg('--responsiveness', action='store_true',
-            help="turn on responsiveness collection")
     add_arg("--cycles", type=int,
             help="number of browser cycles to run")
     add_arg("--tpmanifest",
@@ -137,8 +137,8 @@ def create_parser(mach_interface=False):
             help="print available tests")
     add_arg('--print-suites', action=_ListSuite,
             help="list available suites")
-    add_arg('--debug', action='store_true',
-            help='show debug information')
+
+    add_logging_group(parser)
     return parser
 
 

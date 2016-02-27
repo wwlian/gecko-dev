@@ -21,6 +21,7 @@
 #include "nsIObserver.h"
 #include "nsITimer.h"
 #include "nsCRT.h"
+#include "nsIWidgetListener.h"
 #include "FramePropertyTable.h"
 #include "nsGkAtoms.h"
 #include "nsCycleCollectionParticipant.h"
@@ -39,6 +40,8 @@
 #include "nsIMessageManager.h"
 #include "mozilla/RestyleLogging.h"
 #include "Units.h"
+#include "mozilla/RestyleManagerHandle.h"
+#include "prenv.h"
 
 class nsAString;
 class nsIPrintSettings;
@@ -65,8 +68,8 @@ class nsDeviceContext;
 class gfxMissingFontRecorder;
 
 namespace mozilla {
+class EffectCompositor;
 class EventStateManager;
-class RestyleManager;
 class CounterStyleManager;
 namespace layers {
 class ContainerLayer;
@@ -207,7 +210,7 @@ public:
    * be found (e.g. it's detached).
    */
   nsRootPresContext* GetRootPresContext();
-  nsRootPresContext* GetDisplayRootPresContext();
+
   virtual bool IsRoot() { return false; }
 
   nsIDocument* Document() const
@@ -219,7 +222,7 @@ public:
   }
 
 #ifdef MOZILLA_INTERNAL_API
-  nsStyleSet* StyleSet() { return GetPresShell()->StyleSet(); }
+  mozilla::StyleSetHandle StyleSet() { return GetPresShell()->StyleSet(); }
 
   nsFrameManager* FrameManager()
     { return PresShell()->FrameManager(); }
@@ -227,12 +230,13 @@ public:
   nsCSSFrameConstructor* FrameConstructor()
     { return PresShell()->FrameConstructor(); }
 
+  mozilla::EffectCompositor* EffectCompositor() { return mEffectCompositor; }
   nsTransitionManager* TransitionManager() { return mTransitionManager; }
   nsAnimationManager* AnimationManager() { return mAnimationManager; }
 
   nsRefreshDriver* RefreshDriver() { return mRefreshDriver; }
 
-  mozilla::RestyleManager* RestyleManager() { return mRestyleManager; }
+  mozilla::RestyleManagerHandle RestyleManager() { return mRestyleManager; }
 
   mozilla::CounterStyleManager* CounterStyleManager() {
     return mCounterStyleManager;
@@ -276,12 +280,27 @@ public:
    */
   void MediaFeatureValuesChanged(nsRestyleHint aRestyleHint,
                                  nsChangeHint aChangeHint = nsChangeHint(0));
+  /**
+   * Calls MediaFeatureValuesChanged for this pres context and all descendant
+   * subdocuments that have a pres context. This should be used for media
+   * features that must be updated in all subdocuments e.g. display-mode.
+   */
+  void MediaFeatureValuesChangedAllDocuments(nsRestyleHint aRestyleHint,
+                                             nsChangeHint aChangeHint = nsChangeHint(0));
+
   void PostMediaFeatureValuesChangedEvent();
   void HandleMediaFeatureValuesChangedEvent();
   void FlushPendingMediaFeatureValuesChanged() {
     if (mPendingMediaFeatureValuesChanged)
       MediaFeatureValuesChanged(nsRestyleHint(0));
   }
+
+  /**
+   * Updates the size mode on all remote children and recursively notifies this
+   * document and all subdocuments (including remote children) that a media
+   * feature value has changed.
+   */
+  void SizeModeChanged(nsSizeMode aSizeMode);
 
   /**
    * Access compatibility mode for this context.  This is the same as
@@ -403,18 +422,18 @@ public:
   /**
    * Get the default colors
    */
-  const nscolor DefaultColor() const { return mDefaultColor; }
-  const nscolor DefaultBackgroundColor() const { return mBackgroundColor; }
-  const nscolor DefaultLinkColor() const { return mLinkColor; }
-  const nscolor DefaultActiveLinkColor() const { return mActiveLinkColor; }
-  const nscolor DefaultVisitedLinkColor() const { return mVisitedLinkColor; }
-  const nscolor FocusBackgroundColor() const { return mFocusBackgroundColor; }
-  const nscolor FocusTextColor() const { return mFocusTextColor; }
+  nscolor DefaultColor() const { return mDefaultColor; }
+  nscolor DefaultBackgroundColor() const { return mBackgroundColor; }
+  nscolor DefaultLinkColor() const { return mLinkColor; }
+  nscolor DefaultActiveLinkColor() const { return mActiveLinkColor; }
+  nscolor DefaultVisitedLinkColor() const { return mVisitedLinkColor; }
+  nscolor FocusBackgroundColor() const { return mFocusBackgroundColor; }
+  nscolor FocusTextColor() const { return mFocusTextColor; }
 
   /**
    * Body text color, for use in quirks mode only.
    */
-  const nscolor BodyTextColor() const { return mBodyTextColor; }
+  nscolor BodyTextColor() const { return mBodyTextColor; }
   void SetBodyTextColor(nscolor aColor) { mBodyTextColor = aColor; }
 
   bool GetUseFocusColors() const { return mUseFocusColors; }
@@ -453,7 +472,7 @@ public:
    * presenting the document. The returned value is in the standard
    * nscoord units (as scaled by the device context).
    */
-  nsRect GetVisibleArea() { return mVisibleArea; }
+  nsRect GetVisibleArea() const { return mVisibleArea; }
 
   /**
    * Set the currently visible area. The units for r are standard
@@ -704,13 +723,6 @@ public:
   {
     mDrawColorBackground = aCanDraw;
   }
-
-  /**
-   * Getter and setters for OMTA time counters
-   */
-  bool StyleUpdateForAllAnimationsIsUpToDate() const;
-  void TickLastStyleUpdateForAllAnimations();
-  void ClearLastStyleUpdateForAllAnimations();
 
   /**
    *  Check if bidi enabled (set depending on the presence of RTL
@@ -1073,6 +1085,16 @@ public:
     mHasWarnedAboutPositionedTableParts = true;
   }
 
+  static bool StyloEnabled()
+  {
+#ifdef MOZ_STYLO
+    static bool enabled = PR_GetEnv("MOZ_STYLO");
+    return enabled;
+#else
+    return false;
+#endif
+  }
+
 protected:
   friend class nsRunnableMethod<nsPresContext>;
   void ThemeChangedInternal();
@@ -1221,9 +1243,10 @@ protected:
                                             // from gfx back to layout.
   RefPtr<mozilla::EventStateManager> mEventManager;
   RefPtr<nsRefreshDriver> mRefreshDriver;
+  RefPtr<mozilla::EffectCompositor> mEffectCompositor;
   RefPtr<nsTransitionManager> mTransitionManager;
   RefPtr<nsAnimationManager> mAnimationManager;
-  RefPtr<mozilla::RestyleManager> mRestyleManager;
+  mozilla::RestyleManagerHandle::RefPtr mRestyleManager;
   RefPtr<mozilla::CounterStyleManager> mCounterStyleManager;
   nsIAtom* MOZ_UNSAFE_REF("always a static atom") mMedium; // initialized by subclass ctors
   nsCOMPtr<nsIAtom> mMediaEmulated;

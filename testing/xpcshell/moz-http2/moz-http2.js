@@ -5,13 +5,18 @@
 // This module is the stateful server side of test_http2.js and is meant
 // to have node be restarted in between each invocation
 
-var http2 = require('../node-http2');
+var node_http2_root = '../node-http2';
+if (process.env.NODE_HTTP2_ROOT) {
+  node_http2_root = process.env.NODE_HTTP2_ROOT;
+}
+var http2 = require(node_http2_root);
 var fs = require('fs');
 var url = require('url');
 var crypto = require('crypto');
 
 // Hook into the decompression code to log the decompressed name-value pairs
-var http2_compression = require('../node-http2/lib/protocol/compressor');
+var compression_module = node_http2_root + "/lib/protocol/compressor";
+var http2_compression = require(compression_module);
 var HeaderSetDecompressor = http2_compression.HeaderSetDecompressor;
 var originalRead = HeaderSetDecompressor.prototype.read;
 var lastDecompressor;
@@ -28,7 +33,8 @@ HeaderSetDecompressor.prototype.read = function() {
   return pair;
 }
 
-var http2_connection = require('../node-http2/lib/protocol/connection');
+var connection_module = node_http2_root + "/lib/protocol/connection";
+var http2_connection = require(connection_module);
 var Connection = http2_connection.Connection;
 var originalClose = Connection.prototype.close;
 Connection.prototype.close = function (error, lastId) {
@@ -256,6 +262,20 @@ function handleRequest(req, res) {
     });
     push.end('// comments');
     content = '<head> <script src="push2.js"/></head>body text';
+  }
+
+  else if (u.pathname === "/push5") {
+    push = res.push('/push5.js');
+    push.writeHead(200, {
+      'content-type': 'application/javascript',
+      'pushed' : 'yes',
+      // no content-length
+      'X-Connection-Http2': 'yes'
+    });
+    content = generateContent(1024 * 150);
+    push.write(content);
+    push.end();
+    content = '<head> <script src="push5.js"/></head>body text';
   }
 
   else if (u.pathname === "/pushapi1") {
@@ -653,10 +673,11 @@ function handleRequest(req, res) {
 
 // Set up the SSL certs for our server - this server has a cert for foo.example.com
 // signed by netwerk/tests/unit/CA.cert.der
+//var log_module = node_http2_root + "/test/util";
 var options = {
   key: fs.readFileSync(__dirname + '/http2-key.pem'),
   cert: fs.readFileSync(__dirname + '/http2-cert.pem'),
-  //, log: require('../node-http2/test/util').createLogger('server')
+  //, log: require(log_module).createLogger('server')
 };
 
 var server = http2.createServer(options, handleRequest);

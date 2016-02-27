@@ -681,7 +681,7 @@ SessionStore.prototype = {
     // Convert buffer to an encoded string and sync write to disk
     let bytes = String.fromCharCode.apply(null, new Uint16Array(aBuffer));
     let stream = Cc["@mozilla.org/network/file-output-stream;1"].createInstance(Ci.nsIFileOutputStream);
-    stream.init(aFile, 0x02 | 0x08 | 0x20, 0666, 0);
+    stream.init(aFile, 0x02 | 0x08 | 0x20, 0o666, 0);
     stream.write(bytes, bytes.length);
     stream.close();
 
@@ -752,14 +752,22 @@ SessionStore.prototype = {
       entry.referrer = aEntry.referrerURI.spec;
     }
 
+    if (aEntry.originalURI) {
+      entry.originalURI = aEntry.originalURI.spec;
+    }
+
     if (aEntry.contentType) {
       entry.contentType = aEntry.contentType;
     }
 
-    let x = {}, y = {};
-    aEntry.getScrollPosition(x, y);
-    if (x.value != 0 || y.value != 0) {
-      entry.scroll = x.value + "," + y.value;
+    if (aEntry.scrollRestorationIsManual) {
+      entry.scrollRestorationIsManual = true;
+    } else {
+      let x = {}, y = {};
+      aEntry.getScrollPosition(x, y);
+      if (x.value != 0 || y.value != 0) {
+        entry.scroll = x.value + "," + y.value;
+      }
     }
 
     if (aEntry.owner) {
@@ -832,6 +840,10 @@ SessionStore.prototype = {
       shEntry.referrerURI = Services.io.newURI(aEntry.referrer, null, null);
     }
 
+    if (aEntry.originalURI) {
+      shEntry.originalURI =  Services.io.newURI(aEntry.originalURI, null, null);
+    }
+
     if (aEntry.cacheKey) {
       let cacheKey = Cc["@mozilla.org/supports-PRUint32;1"].createInstance(Ci.nsISupportsPRUint32);
       cacheKey.data = aEntry.cacheKey;
@@ -862,7 +874,9 @@ SessionStore.prototype = {
       shEntry.stateData.initFromBase64(aEntry.structuredCloneState, aEntry.structuredCloneVersion);
     }
 
-    if (aEntry.scroll) {
+    if (aEntry.scrollRestorationIsManual) {
+      shEntry.scrollRestorationIsManual = true;
+    } else if (aEntry.scroll) {
       let scrollPos = aEntry.scroll.split(",");
       scrollPos = [parseInt(scrollPos[0]) || 0, parseInt(scrollPos[1]) || 0];
       shEntry.setScrollPosition(scrollPos[0], scrollPos[1]);
@@ -1003,7 +1017,12 @@ SessionStore.prototype = {
     // we stop the load above
     let activeIndex = (aTabData.index || aTabData.entries.length) - 1;
     aHistory.getEntryAtIndex(activeIndex, true);
-    aHistory.QueryInterface(Ci.nsISHistory).reloadCurrentEntry();
+
+    try {
+      aHistory.QueryInterface(Ci.nsISHistory).reloadCurrentEntry();
+    } catch (e) {
+      // This will throw if the current entry is an error page.
+    }
   },
 
   /**

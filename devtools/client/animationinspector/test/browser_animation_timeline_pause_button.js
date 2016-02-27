@@ -4,6 +4,8 @@
 
 "use strict";
 
+requestLongerTimeout(2);
+
 // Check that the timeline toolbar contains a pause button and that this pause
 // button can be clicked. Check that when it is, the current animations
 // displayed in the timeline get their playstates changed accordingly, and check
@@ -63,8 +65,10 @@ add_task(function*() {
   info("Select a finite animation, reload the page and wait for the " +
        "animation to complete");
   yield selectNode(".negative-delay", inspector);
+
+  let onScrubberStopped = waitForScrubberStopped(timeline);
   yield reloadTab(inspector);
-  yield waitForScrubberStopped(timeline);
+  yield onScrubberStopped;
 
   ok(btn.classList.contains("paused"),
      "The button is in paused state once finite animations are done");

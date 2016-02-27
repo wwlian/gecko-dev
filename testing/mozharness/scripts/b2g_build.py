@@ -26,7 +26,7 @@ sys.path.insert(1, os.path.dirname(sys.path[0]))
 
 # import the guts
 from mozharness.base.config import parse_config_file
-from mozharness.base.log import WARNING, ERROR, FATAL
+from mozharness.base.log import WARNING, FATAL
 from mozharness.mozilla.l10n.locales import GaiaLocalesMixin, LocalesMixin
 from mozharness.mozilla.purge import PurgeMixin
 from mozharness.mozilla.signing import SigningMixin
@@ -785,8 +785,6 @@ class B2GBuild(LocalesMixin, PurgeMixin,
                 self.info("copying %s to public upload directory" % f)
                 self.copy_to_upload_dir(base_f, upload_dir=dirs['abs_public_upload_dir'])
 
-        self.copy_logs_to_upload_dir()
-
     def _do_rsync_upload(self, upload_dir, ssh_key, ssh_user, remote_host,
                          remote_path, remote_symlink_path):
         retval = self.rsync_upload_directory(upload_dir, ssh_key, ssh_user,
@@ -1147,7 +1145,8 @@ class B2GBuild(LocalesMixin, PurgeMixin,
         self.info("Cleanup .userconfig file.")
         dirs = self.query_abs_dirs()
         userconfig_path = os.path.join(dirs["work_dir"], ".userconfig")
-        os.remove(userconfig_path)
+        if os.path.exists(userconfig_path):
+            os.remove(userconfig_path)
 
 # main {{{1
 if __name__ == '__main__':

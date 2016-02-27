@@ -69,6 +69,7 @@
 
 #include <unistd.h>
 #include <time.h>
+#include <dlfcn.h>
 
 using namespace mozilla;
 
@@ -622,7 +623,6 @@ gfxSingleFaceMacFontFamily::ReadOtherFamilyNames(gfxPlatformFontList *aPlatformF
     mOtherFamilyNamesInitialized = true;
 }
 
-
 /* gfxMacPlatformFontList */
 #pragma mark-
 
@@ -724,7 +724,7 @@ gfxMacPlatformFontList::InitFontList()
 void
 gfxMacPlatformFontList::InitSingleFaceList()
 {
-    nsAutoTArray<nsString, 10> singleFaceFonts;
+    AutoTArray<nsString, 10> singleFaceFonts;
     gfxFontUtils::GetPrefsFontList("font.single-face-list", singleFaceFonts);
 
     uint32_t numFonts = singleFaceFonts.Length();
@@ -800,8 +800,8 @@ gfxMacPlatformFontList::InitSystemFonts()
 
     // display font family, if on OSX 10.11
     if (mUseSizeSensitiveSystemFont) {
-        sys = [NSFont systemFontOfSize: 128.0];
-        NSString* displayFamilyName = GetRealFamilyName(sys);
+        NSFont* displaySys = [NSFont systemFontOfSize: 128.0];
+        NSString* displayFamilyName = GetRealFamilyName(displaySys);
         nsCocoaUtils::GetStringForNSString(displayFamilyName, familyName);
         mSystemDisplayFontFamily = FindSystemFontFamily(familyName);
         NS_ASSERTION(mSystemDisplayFontFamily, "null system display font family");
@@ -945,7 +945,7 @@ gfxMacPlatformFontList::GlobalFontFallback(const uint32_t aCh,
             ::CFStringCompare(familyNameRef, CFSTR("LastResort"),
                               kCFCompareCaseInsensitive) != kCFCompareEqualTo)
         {
-            nsAutoTArray<UniChar, 1024> buffer;
+            AutoTArray<UniChar, 1024> buffer;
             CFIndex familyNameLen = ::CFStringGetLength(familyNameRef);
             buffer.SetLength(familyNameLen+1);
             ::CFStringGetCharacters(familyNameRef, ::CFRangeMake(0, familyNameLen),
@@ -1247,7 +1247,7 @@ MacFontInfo::LoadFontFamilyData(const nsAString& aFamilyName)
             CFStringRef faceName = (CFStringRef)
                 CTFontDescriptorCopyAttribute(faceDesc, kCTFontNameAttribute);
 
-            nsAutoTArray<UniChar, 1024> buffer;
+            AutoTArray<UniChar, 1024> buffer;
             CFIndex len = CFStringGetLength(faceName);
             buffer.SetLength(len+1);
             CFStringGetCharacters(faceName, ::CFRangeMake(0, len),

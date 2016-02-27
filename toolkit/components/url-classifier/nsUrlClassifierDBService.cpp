@@ -798,11 +798,8 @@ NS_IMPL_ISUPPORTS(nsUrlClassifierLookupCallback,
 
 nsUrlClassifierLookupCallback::~nsUrlClassifierLookupCallback()
 {
-  nsCOMPtr<nsIThread> thread;
-  (void)NS_GetMainThread(getter_AddRefs(thread));
-
   if (mCallback) {
-    (void)NS_ProxyRelease(thread, mCallback, false);
+    NS_ReleaseOnMainThread(mCallback.forget());
   }
 }
 
@@ -1310,6 +1307,7 @@ nsUrlClassifierDBService::ClassifyLocalWithTables(nsIURI *aURI,
                                                   const nsACString & aTables,
                                                   nsACString & aTableResults)
 {
+  PROFILER_LABEL_FUNC(js::ProfileEntry::Category::OTHER);
   MOZ_ASSERT(NS_IsMainThread(), "ClassifyLocalWithTables must be on main thread");
 
   nsCOMPtr<nsIURI> uri = NS_GetInnermostURI(aURI);

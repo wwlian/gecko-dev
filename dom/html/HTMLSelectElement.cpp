@@ -577,7 +577,7 @@ HTMLSelectElement::Add(nsGenericHTMLElement& aElement,
 
   // Just in case we're not the parent, get the parent of the reference
   // element
-  nsINode* parent = aBefore->Element::GetParentNode();
+  nsCOMPtr<nsINode> parent = aBefore->Element::GetParentNode();
   if (!parent || !nsContentUtils::ContentIsDescendantOf(parent, this)) {
     // NOT_FOUND_ERR: Raised if before is not a descendant of the SELECT
     // element.
@@ -1148,9 +1148,11 @@ HTMLSelectElement::SetValue(const nsAString& aValue)
     option->GetValue(optionVal);
     if (optionVal.Equals(aValue)) {
       SetSelectedIndexInternal(int32_t(i), true);
-      break;
+      return NS_OK;
     }
   }
+  // No matching option was found.
+  SetSelectedIndexInternal(-1, true);
   return NS_OK;
 }
 

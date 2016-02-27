@@ -23,12 +23,11 @@
     // devtools coding style.
 
     // Rules from the mozilla plugin
-    "mozilla/balanced-listeners": 2,
-    "mozilla/components-imports": 1,
-    "mozilla/import-headjs-globals": 1,
     "mozilla/mark-test-function-used": 1,
     "mozilla/no-aArgs": 1,
     "mozilla/no-cpows-in-tests": 1,
+    // See bug 1224289.
+    "mozilla/reject-importGlobalProperties": 1,
     "mozilla/var-only-at-top-level": 1,
 
     // Disallow using variables outside the blocks they are defined (especially
@@ -36,16 +35,16 @@
     "block-scoped-var": 2,
     // Enforce one true brace style (opening brace on the same line) and avoid
     // start and end braces on the same line.
-    "brace-style": [2, "1tbs", {"allowSingleLine": false}],
+    "brace-style": [1, "1tbs", {"allowSingleLine": false}],
     // Require camel case names
-    "camelcase": 2,
+    "camelcase": 1,
     // Allow trailing commas for easy list extension.  Having them does not
     // impair readability, but also not required either.
     "comma-dangle": 0,
     // Enforce spacing before and after comma
-    "comma-spacing": [2, {"before": false, "after": true}],
+    "comma-spacing": [1, {"before": false, "after": true}],
     // Enforce one true comma style.
-    "comma-style": [2, "last"],
+    "comma-style": [1, "last"],
     // Warn about cyclomatic complexity in functions.
     "complexity": 1,
     // Require return statements to either always or never specify values.
@@ -84,7 +83,7 @@
     // Only useful in a node environment.
     "handle-callback-err": 0,
     // Tab width.
-    "indent": [2, 2, {"SwitchCase": 1}],
+    "indent": [1, 2, {"SwitchCase": 1}],
     // Enforces spacing between keys and values in object literal properties.
     "key-spacing": [1, {"beforeColon": false, "afterColon": true}],
     // Allow mixed 'LF' and 'CRLF' as linebreaks.
@@ -93,7 +92,7 @@
     // rule is a better rule to check this.
     "max-depth": 0,
     // Maximum length of a line.
-    "max-len": [1, 80],
+    "max-len": [1, 80, 2, {"ignoreUrls": true, "ignorePattern": "\\s*require\\s*\\(|^\\s*loader\\.lazy|-\\*-"}],
     // Maximum depth callbacks can be nested.
     "max-nested-callbacks": [2, 3],
     // Don't limit the number of parameters that can be used in a function.
@@ -168,7 +167,7 @@
     // Allow unnecessary parentheses, as they may make the code more readable.
     "no-extra-parens": 0,
     // Disallow unnecessary semicolons.
-    "no-extra-semi": 2,
+    "no-extra-semi": 1,
     // Deprecated, will be removed in 1.0.
     "no-extra-strict": 0,
     // Disallow fallthrough of case statements, except if there is a comment.
@@ -266,8 +265,8 @@
     // Disallow unreachable statements after a return, throw, continue, or break
     // statement.
     "no-unreachable": 2,
-    // Disallow declaration of variables that are not used in the code
-    "no-unused-vars": 2,
+    // Disallow global and local variables that aren't used, but allow unused function arguments.
+    "no-unused-vars": [2, {"vars": "all", "args": "none"}],
     // Allow using variables before they are defined.
     "no-use-before-define": 0,
     // We use var-only-at-top-level instead of no-var as we allow top level
@@ -302,8 +301,6 @@
     "space-after-function-name": 0,
     // Require a space after keywords.
     "space-after-keywords": [1, "always"],
-    // Deprecated, will be removed in 1.0.
-    "space-after-function-name": 0,
     // Require a space before the start brace of a block.
     "space-before-blocks": [1, "always"],
     // Deprecated, will be removed in 1.0.

@@ -10,6 +10,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "Promise",
                                   "resource://gre/modules/Promise.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "ShortcutUtils",
                                   "resource://gre/modules/ShortcutUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "AppConstants",
+                                  "resource://gre/modules/AppConstants.jsm");
 
 /**
  * Maintains the state and dispatches events for the main menu panel.
@@ -155,10 +157,6 @@ const PanelUI = {
 
       this.panel.addEventListener("popupshown", function onPopupShown() {
         this.removeEventListener("popupshown", onPopupShown);
-        // As an optimization for the customize mode transition, we preload
-        // about:customizing in the background once the menu panel is first
-        // shown.
-        gCustomizationTabPreloader.ensurePreloading();
         deferred.resolve();
       });
 
@@ -226,7 +224,7 @@ const PanelUI = {
     if (this._readyPromise) {
       return this._readyPromise;
     }
-    this._readyPromise = Task.spawn(function() {
+    this._readyPromise = Task.spawn(function*() {
       if (!this._initialized) {
         let delayedStartupDeferred = Promise.defer();
         let delayedStartupObserver = (aSubject, aTopic, aData) => {
@@ -327,6 +325,7 @@ const PanelUI = {
       evt.initCustomEvent("ViewShowing", true, true, viewNode);
       viewNode.dispatchEvent(evt);
       if (evt.defaultPrevented) {
+        aAnchor.open = false;
         return;
       }
 
@@ -488,12 +487,14 @@ const PanelUI = {
   },
 
   _updateQuitTooltip: function() {
-#ifndef XP_WIN
-#ifdef XP_MACOSX
-    let tooltipId = "quit-button.tooltiptext.mac";
-#else
-    let tooltipId = "quit-button.tooltiptext.linux2";
-#endif
+    if (AppConstants.platform == "win") {
+      return;
+    }
+
+    let tooltipId = AppConstants.platform == "macosx" ?
+                    "quit-button.tooltiptext.mac" :
+                    "quit-button.tooltiptext.linux2";
+
     let brands = Services.strings.createBundle("chrome://branding/locale/brand.properties");
     let stringArgs = [brands.GetStringFromName("brandShortName")];
 
@@ -502,7 +503,6 @@ const PanelUI = {
     let tooltipString = CustomizableUI.getLocalizedProperty({x: tooltipId}, "x", stringArgs);
     let quitButton = document.getElementById("PanelUI-quit");
     quitButton.setAttribute("tooltiptext", tooltipString);
-#endif
   },
 
   _overlayScrollListenerBoundFn: null,

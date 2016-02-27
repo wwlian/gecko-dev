@@ -418,7 +418,7 @@ int nr_ice_ctx_create(char *label, UINT4 flags, nr_ice_ctx **ctxp)
 
     _status=0;
   abort:
-    if(_status)
+    if(_status && ctx)
       nr_ice_ctx_destroy_cb(0,0,ctx);
 
     return(_status);
@@ -600,6 +600,8 @@ static int nr_ice_get_default_address(nr_ice_ctx *ctx, int ip_version, nr_transp
       ABORT(r);
     if ((r=nr_socket_getaddr(sock, addrp)))
       ABORT(r);
+
+    r_log(LOG_GENERIC, LOG_DEBUG, "Default address: %s", addrp->as_string);
 
     _status=0;
   abort:

@@ -9,12 +9,24 @@ XPCSHELL_NAME = "xpcshell"
 EXE_SUFFIX = ""
 DISABLE_SCREEN_SAVER = True
 ADJUST_MOUSE_AND_SCREEN = False
+
+# Note: keep these Valgrind .sup file names consistent with those
+# in testing/mochitest/mochitest_options.py.
+VALGRIND_SUPP_DIR = os.path.join(os.getcwd(), "build/tests/mochitest")
+VALGRIND_SUPP_CROSS_ARCH = os.path.join(VALGRIND_SUPP_DIR,
+                                        "cross-architecture.sup")
+VALGRIND_SUPP_ARCH = None
+
 if platform.architecture()[0] == "64bit":
     TOOLTOOL_MANIFEST_PATH = "config/tooltool-manifests/linux64/releng.manifest"
     MINIDUMP_STACKWALK_PATH = "linux64-minidump_stackwalk"
+    VALGRIND_SUPP_ARCH = os.path.join(VALGRIND_SUPP_DIR,
+                                      "x86_64-redhat-linux-gnu.sup")
 else:
     TOOLTOOL_MANIFEST_PATH = "config/tooltool-manifests/linux32/releng.manifest"
     MINIDUMP_STACKWALK_PATH = "linux32-minidump_stackwalk"
+    VALGRIND_SUPP_ARCH = os.path.join(VALGRIND_SUPP_DIR,
+                                      "i386-redhat-linux-gnu.sup")
 
 #####
 config = {
@@ -45,7 +57,15 @@ config = {
         "mozbase": "test.py",
         "mozmill": "runtestlist.py",
     },
-    "minimum_tests_zip_dirs": ["bin/*", "certs/*", "modules/*", "mozbase/*", "config/*"],
+    "minimum_tests_zip_dirs": [
+        "bin/*",
+        "certs/*",
+        "config/*",
+        "marionette/*",
+        "modules/*",
+        "mozbase/*",
+        "tools/*",
+    ],
     "specific_tests_zip_dirs": {
         "mochitest": ["mochitest/*"],
         "webapprt": ["mochitest/*"],
@@ -127,6 +147,7 @@ config = {
             "options": [
                 "--binary=%(binary_path)s",
                 "--testing-modules-dir=test/modules",
+                "--plugins-path=%(test_plugin_path)s",
                 "--symbols-path=%(symbols_path)s"
             ],
             "run_filename": "runtestlist.py",
@@ -137,7 +158,9 @@ config = {
                 "--appname=%(binary_path)s",
                 "--utility-path=tests/bin",
                 "--extra-profile-file=tests/bin/plugins",
-                "--symbols-path=%(symbols_path)s"
+                "--symbols-path=%(symbols_path)s",
+                "--log-raw=%(raw_log_file)s",
+                "--log-errorsummary=%(error_summary_file)s",
             ],
             "run_filename": "runreftest.py",
             "testsdir": "reftest"
@@ -172,6 +195,7 @@ config = {
                 "--xre-path=%(abs_res_dir)s",
                 "--cwd=%(gtest_dir)s",
                 "--symbols-path=%(symbols_path)s",
+                "--utility-path=tests/bin",
                 "%(binary_path)s",
             ],
             "run_filename": "rungtests.py",
@@ -179,7 +203,11 @@ config = {
     },
     # local mochi suites
     "all_mochitest_suites": {
-        "plain": [],
+        "valgrind-plain": ["--valgrind=/usr/bin/valgrind",
+                           "--valgrind-supp-files=" + VALGRIND_SUPP_ARCH +
+                               "," + VALGRIND_SUPP_CROSS_ARCH,
+                           "--timeout=900", "--max-timeouts=50"],
+         "plain": [],
         "plain-chunked": ["--chunk-by-dir=4"],
         "mochitest-push": ["--subsuite=push"],
         "chrome": ["--chrome"],
@@ -187,6 +215,8 @@ config = {
         "browser-chrome": ["--browser-chrome"],
         "browser-chrome-chunked": ["--browser-chrome", "--chunk-by-runtime"],
         "browser-chrome-addons": ["--browser-chrome", "--chunk-by-runtime", "--tag=addons"],
+        "browser-chrome-coverage": ["--browser-chrome", "--chunk-by-runtime", "--timeout=1200"],
+        "browser-chrome-screenshots": ["--browser-chrome", "--subsuite=screenshots"],
         "mochitest-gl": ["--subsuite=webgl"],
         "mochitest-devtools-chrome": ["--browser-chrome", "--subsuite=devtools"],
         "mochitest-devtools-chrome-chunked": ["--browser-chrome", "--subsuite=devtools", "--chunk-by-runtime"],
@@ -222,7 +252,6 @@ config = {
             "options": ["--suite=reftest",
                         "--setpref=browser.tabs.remote=true",
                         "--setpref=browser.tabs.remote.autostart=true",
-                        "--setpref=layers.offmainthreadcomposition.testing.enabled=true",
                         "--setpref=layers.async-pan-zoom.enabled=true"],
             "tests": ["tests/reftest/tests/layout/reftests/reftest-sanity/reftest.list"]
         },
@@ -238,7 +267,6 @@ config = {
             "options": ["--suite=crashtest",
                         "--setpref=browser.tabs.remote=true",
                         "--setpref=browser.tabs.remote.autostart=true",
-                        "--setpref=layers.offmainthreadcomposition.testing.enabled=true",
                         "--setpref=layers.async-pan-zoom.enabled=true"],
             "tests": ["tests/reftest/tests/testing/crashtest/crashtests.list"]
         },

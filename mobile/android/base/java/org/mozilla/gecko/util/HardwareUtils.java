@@ -5,6 +5,7 @@
 
 package org.mozilla.gecko.util;
 
+import org.mozilla.gecko.AppConstants;
 import org.mozilla.gecko.SysInfo;
 
 import android.content.Context;
@@ -36,7 +37,6 @@ public final class HardwareUtils {
     private static volatile boolean sIsLargeTablet;
     private static volatile boolean sIsSmallTablet;
     private static volatile boolean sIsTelevision;
-    private static volatile boolean sHasMenuButton;
 
     private HardwareUtils() {
     }
@@ -51,23 +51,16 @@ public final class HardwareUtils {
         // Pre-populate common flags from the context.
         final int screenLayoutSize = context.getResources().getConfiguration().screenLayout & Configuration.SCREENLAYOUT_SIZE_MASK;
         if (Build.VERSION.SDK_INT >= 11) {
-            sHasMenuButton = false;
             if (screenLayoutSize == Configuration.SCREENLAYOUT_SIZE_XLARGE) {
                 sIsLargeTablet = true;
             } else if (screenLayoutSize == Configuration.SCREENLAYOUT_SIZE_LARGE) {
                 sIsSmallTablet = true;
             }
-            if (Build.VERSION.SDK_INT >= 14) {
-                sHasMenuButton = ViewConfiguration.get(context).hasPermanentMenuKey();
-
-                if (Build.VERSION.SDK_INT >= 16) {
-                    if (context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEVISION)) {
-                        sIsTelevision = true;
-                    }
+            if (Build.VERSION.SDK_INT >= 16) {
+                if (context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEVISION)) {
+                    sIsTelevision = true;
                 }
             }
-        } else {
-            sHasMenuButton = true;
         }
 
         sInited = true;
@@ -89,10 +82,6 @@ public final class HardwareUtils {
         return sIsTelevision;
     }
 
-    public static boolean hasMenuButton() {
-        return sHasMenuButton;
-    }
-
     public static int getMemSize() {
         return SysInfo.getMemSize();
     }
@@ -108,5 +97,34 @@ public final class HardwareUtils {
         }
 
         return memSize < LOW_MEMORY_THRESHOLD_MB;
+    }
+
+    /**
+     * @return false if the current system is not supported (e.g. APK/system ABI mismatch).
+     */
+    public static boolean isSupportedSystem() {
+        if (Build.VERSION.SDK_INT < AppConstants.Versions.MIN_SDK_VERSION ||
+            Build.VERSION.SDK_INT > AppConstants.Versions.MAX_SDK_VERSION) {
+            return false;
+        }
+
+        // See http://developer.android.com/ndk/guides/abis.html
+        boolean isSystemARM = Build.CPU_ABI != null && Build.CPU_ABI.startsWith("arm");
+        boolean isSystemX86 = Build.CPU_ABI != null && Build.CPU_ABI.startsWith("x86");
+
+        boolean isAppARM = AppConstants.ANDROID_CPU_ARCH.startsWith("arm");
+        boolean isAppX86 = AppConstants.ANDROID_CPU_ARCH.startsWith("x86");
+
+        // Only reject known incompatible ABIs. Better safe than sorry.
+        if ((isSystemX86 && isAppARM) || (isSystemARM && isAppX86)) {
+            return false;
+        }
+
+        if ((isSystemX86 && isAppX86) || (isSystemARM && isAppARM)) {
+            return true;
+        }
+
+        Log.w(LOGTAG, "Unknown app/system ABI combination: " + AppConstants.MOZ_APP_ABI + " / " + Build.CPU_ABI);
+        return true;
     }
 }

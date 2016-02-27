@@ -130,11 +130,38 @@ class Requirement
 struct UsePosition : public TempObject,
                      public InlineForwardListNode<UsePosition>
 {
-    LUse* use;
+  private:
+    // Packed LUse* with a copy of the LUse::Policy value, in order to avoid
+    // making cache misses while reaching out to the policy value.
+    uintptr_t use_;
+
+    void setUse(LUse* use) {
+        // Assert that we can safely pack the LUse policy in the last 2 bits of
+        // the LUse pointer.
+        static_assert((LUse::ANY | LUse::REGISTER | LUse::FIXED | LUse::KEEPALIVE) <= 0x3,
+                      "Cannot pack the LUse::Policy value on 32 bits architectures.");
+
+        // RECOVERED_INPUT is used by snapshots and ignored when building the
+        // liveness information. Thus we can safely assume that no such value
+        // would be seen.
+        MOZ_ASSERT(use->policy() != LUse::RECOVERED_INPUT);
+        use_ = uintptr_t(use) | (use->policy() & 0x3);
+    }
+
+  public:
     CodePosition pos;
 
+    LUse* use() const {
+        return reinterpret_cast<LUse*>(use_ & ~0x3);
+    }
+
+    LUse::Policy usePolicy() const {
+        LUse::Policy policy = LUse::Policy(use_ & 0x3);
+        MOZ_ASSERT(use()->policy() == policy);
+        return policy;
+    }
+
     UsePosition(LUse* use, CodePosition pos) :
-        use(use),
         pos(pos)
     {
         // Verify that the usedAtStart() flag is consistent with the
@@ -144,6 +171,7 @@ struct UsePosition : public TempObject,
                       pos.subpos() == (use->usedAtStart()
                                        ? CodePosition::INPUT
                                        : CodePosition::OUTPUT));
+        setUse(use);
     }
 };
 
@@ -245,8 +273,11 @@ class LiveRange : public TempObject
     }
 
   public:
-    static LiveRange* New(TempAllocator& alloc, uint32_t vreg,
-                          CodePosition from, CodePosition to) {
+    static LiveRange* FallibleNew(TempAllocator& alloc, uint32_t vreg,
+                                  CodePosition from, CodePosition to)
+    {
+        if (!alloc.ensureBallast())
+            return nullptr;
         return new(alloc) LiveRange(vreg, Range(from, to));
     }
 
@@ -320,11 +351,9 @@ class LiveRange : public TempObject
         hasDefinition_ = true;
     }
 
-    // Return a string describing this range. This is not re-entrant!
-#ifdef DEBUG
-    const char* toString() const;
-#else
-    const char* toString() const { return "???"; }
+#ifdef JS_JITSPEW
+    // Return a string describing this range.
+    UniqueChars toString() const;
 #endif
 
     // Comparator for use in range splay trees.
@@ -395,7 +424,10 @@ class LiveBundle : public TempObject
     { }
 
   public:
-    static LiveBundle* New(TempAllocator& alloc, SpillSet* spill, LiveBundle* spillParent) {
+    static LiveBundle* FallibleNew(TempAllocator& alloc, SpillSet* spill, LiveBundle* spillParent)
+    {
+        if (!alloc.ensureBallast())
+            return nullptr;
         return new(alloc) LiveBundle(spill, spillParent);
     }
 
@@ -443,11 +475,9 @@ class LiveBundle : public TempObject
         return spillParent_;
     }
 
-    // Return a string describing this bundle. This is not re-entrant!
-#ifdef DEBUG
-    const char* toString() const;
-#else
-    const char* toString() const { return "???"; }
+#ifdef JS_JITSPEW
+    // Return a string describing this bundle.
+    UniqueChars toString() const;
 #endif
 };
 
@@ -676,7 +706,7 @@ class BacktrackingAllocator : protected RegisterAllocator
     bool spill(LiveBundle* bundle);
 
     bool isReusedInput(LUse* use, LNode* ins, bool considerCopy);
-    bool isRegisterUse(LUse* use, LNode* ins, bool considerCopy = false);
+    bool isRegisterUse(UsePosition* use, LNode* ins, bool considerCopy = false);
     bool isRegisterDefinition(LiveRange* range);
     bool pickStackSlot(SpillSet* spill);
     bool insertAllRanges(LiveRangeSet& set, LiveBundle* bundle);

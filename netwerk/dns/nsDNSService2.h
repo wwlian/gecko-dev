@@ -36,12 +36,19 @@ public:
 
     size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
+    bool GetOffline() const;
+
 private:
     ~nsDNSService();
 
     static nsDNSService* GetSingleton();
 
     uint16_t GetAFForLookup(const nsACString &host, uint32_t flags);
+
+    nsresult PreprocessHostname(bool              aLocalDomain,
+                                const nsACString &aInput,
+                                nsIIDNService    *aIDN,
+                                nsACString       &aACE);
 
     RefPtr<nsHostResolver>  mResolver;
     nsCOMPtr<nsIIDNService>   mIDN;
@@ -55,8 +62,8 @@ private:
     nsAdoptingCString                         mIPv4OnlyDomains;
     bool                                      mDisableIPv6;
     bool                                      mDisablePrefetch;
+    bool                                      mBlockDotOnion;
     bool                                      mFirstTime;
-    bool                                      mOffline;
     bool                                      mNotifyResolution;
     bool                                      mOfflineLocalhost;
     nsTHashtable<nsCStringHashKey>            mLocalDomains;

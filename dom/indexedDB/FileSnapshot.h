@@ -29,9 +29,10 @@ NS_DEFINE_STATIC_IID_ACCESSOR(PIBlobImplSnapshot, FILEIMPLSNAPSHOT_IID)
 
 namespace mozilla {
 namespace dom {
-namespace indexedDB {
 
 class IDBFileHandle;
+
+namespace indexedDB {
 
 class BlobImplSnapshot final
   : public BlobImpl
@@ -157,8 +158,7 @@ private:
   SetLazyData(const nsAString& aName,
               const nsAString& aContentType,
               uint64_t aLength,
-              int64_t aLastModifiedDate,
-              BlobDirState aDirState) override
+              int64_t aLastModifiedDate) override
   {
     MOZ_CRASH("This should never be called!");
   }

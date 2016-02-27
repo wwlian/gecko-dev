@@ -27,7 +27,6 @@ browser.jar:
         content/browser/abouthome/downloads.png       (content/abouthome/downloads.png)
         content/browser/abouthome/bookmarks.png       (content/abouthome/bookmarks.png)
         content/browser/abouthome/history.png         (content/abouthome/history.png)
-        content/browser/abouthome/apps.png            (content/abouthome/apps.png)
         content/browser/abouthome/addons.png          (content/abouthome/addons.png)
         content/browser/abouthome/sync.png            (content/abouthome/sync.png)
         content/browser/abouthome/settings.png        (content/abouthome/settings.png)
@@ -39,7 +38,6 @@ browser.jar:
         content/browser/abouthome/downloads@2x.png     (content/abouthome/downloads@2x.png)
         content/browser/abouthome/bookmarks@2x.png     (content/abouthome/bookmarks@2x.png)
         content/browser/abouthome/history@2x.png       (content/abouthome/history@2x.png)
-        content/browser/abouthome/apps@2x.png          (content/abouthome/apps@2x.png)
         content/browser/abouthome/addons@2x.png        (content/abouthome/addons@2x.png)
         content/browser/abouthome/sync@2x.png          (content/abouthome/sync@2x.png)
         content/browser/abouthome/settings@2x.png      (content/abouthome/settings@2x.png)
@@ -91,6 +89,7 @@ browser.jar:
         content/browser/browser-gestureSupport.js     (content/browser-gestureSupport.js)
         content/browser/browser-places.js             (content/browser-places.js)
         content/browser/browser-plugins.js            (content/browser-plugins.js)
+        content/browser/browser-refreshblocker.js     (content/browser-refreshblocker.js)
 #ifdef MOZ_SAFE_BROWSING
         content/browser/browser-safebrowsing.js       (content/browser-safebrowsing.js)
 #endif
@@ -138,9 +137,6 @@ browser.jar:
 *       content/browser/newtab/newTab.js              (content/newtab/newTab.js)
         content/browser/newtab/newTab.css             (content/newtab/newTab.css)
         content/browser/newtab/newTab.inadjacent.json         (content/newtab/newTab.inadjacent.json)
-        content/browser/remote-newtab/newTab.xhtml    (content/remote-newtab/newTab.xhtml)
-        content/browser/remote-newtab/newTab.js       (content/remote-newtab/newTab.js)
-        content/browser/remote-newtab/newTab.css      (content/remote-newtab/newTab.css)
 *       content/browser/pageinfo/pageInfo.xul         (content/pageinfo/pageInfo.xul)
         content/browser/pageinfo/pageInfo.js          (content/pageinfo/pageInfo.js)
         content/browser/pageinfo/pageInfo.css         (content/pageinfo/pageInfo.css)

@@ -49,7 +49,6 @@ private:
         , mAttachmentPoint(0)
     { }
 
-
 public:
     WebGLFBAttachPoint(WebGLFramebuffer* fb, GLenum attachmentPoint);
     ~WebGLFBAttachPoint();
@@ -60,6 +59,7 @@ public:
     bool IsDeleteRequested() const;
 
     const webgl::FormatUsageInfo* Format() const;
+    uint32_t Samples() const;
 
     bool HasAlpha() const;
     bool IsReadableFloat() const;
@@ -92,15 +92,15 @@ public:
     GLint MipLevel() const {
         return mTexImageLevel;
     }
+    void AttachmentName(nsCString* out) const;
 
     bool HasUninitializedImageData() const;
     void SetImageDataStatus(WebGLImageDataStatus x);
 
     void Size(uint32_t* const out_width, uint32_t* const out_height) const;
-    //const WebGLRectangleObject& RectangleObject() const;
 
     bool HasImage() const;
-    bool IsComplete(WebGLContext* webgl) const;
+    bool IsComplete(WebGLContext* webgl, nsCString* const out_info) const;
 
     void FinalizeAttachment(gl::GLContext* gl, GLenum attachmentLoc) const;
 
@@ -226,10 +226,11 @@ public:
                                  GLint layer);
 
     bool HasDefinedAttachments() const;
-    bool HasIncompleteAttachments() const;
+    bool HasIncompleteAttachments(nsCString* const out_info) const;
     bool AllImageRectsMatch() const;
-    FBStatus PrecheckFramebufferStatus() const;
-    FBStatus CheckFramebufferStatus() const;
+    bool AllImageSamplesMatch() const;
+    FBStatus PrecheckFramebufferStatus(nsCString* const out_info) const;
+    FBStatus CheckFramebufferStatus(nsCString* const out_info) const;
 
     const webgl::FormatUsageInfo*
     GetFormatForAttachment(const WebGLFBAttachPoint& attachment) const;
@@ -271,10 +272,7 @@ public:
     NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLFramebuffer)
     NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WebGLFramebuffer)
 
-    // mask mirrors glClear.
-    bool HasCompletePlanes(GLbitfield mask);
-
-    bool CheckAndInitializeAttachments();
+    bool ValidateAndInitAttachments(const char* funcName);
 
     void InvalidateFramebufferStatus() const {
         mIsKnownFBComplete = false;

@@ -113,9 +113,7 @@ HTMLVideoElement::GetAttributeMappingFunction() const
 nsresult HTMLVideoElement::SetAcceptHeader(nsIHttpChannel* aChannel)
 {
   nsAutoCString value(
-#ifdef MOZ_WEBM
       "video/webm,"
-#endif
       "video/ogg,"
       "video/*;q=0.9,"
       "application/ogg;q=0.7,"
@@ -223,8 +221,7 @@ HTMLVideoElement::GetVideoPlaybackQuality()
   uint64_t corruptedFrames = 0;
 
   if (sVideoStatsEnabled) {
-    nsPIDOMWindow* window = OwnerDoc()->GetInnerWindow();
-    if (window) {
+    if (nsPIDOMWindowInner* window = OwnerDoc()->GetInnerWindow()) {
       nsPerformance* perf = window->GetPerformance();
       if (perf) {
         creationTime = perf->Now();

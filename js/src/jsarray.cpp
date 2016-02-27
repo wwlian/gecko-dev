@@ -54,7 +54,6 @@ using mozilla::CeilingLog2;
 using mozilla::CheckedInt;
 using mozilla::DebugOnly;
 using mozilla::IsNaN;
-using mozilla::UniquePtr;
 
 using JS::AutoCheckCannotGC;
 using JS::IsArrayAnswer;
@@ -617,9 +616,9 @@ js::ArraySetLength(JSContext* cx, Handle<ArrayObject*> arr, HandleId id,
         // during the iteration must not be visited, and suppressing them here
         // would be too costly.
         ObjectGroup* arrGroup = arr->getGroup(cx);
-        if (!arr->isIndexed() &&
-            !MOZ_UNLIKELY(!arrGroup || arrGroup->hasAllFlags(OBJECT_FLAG_ITERATED)))
-        {
+        if (MOZ_UNLIKELY(!arrGroup))
+            return false;
+        if (!arr->isIndexed() && !MOZ_UNLIKELY(arrGroup->hasAllFlags(OBJECT_FLAG_ITERATED))) {
             if (!arr->maybeCopyElementsForWrite(cx))
                 return false;
 
@@ -821,7 +820,7 @@ ObjectMayHaveExtraIndexedOwnProperties(JSObject* obj)
 {
     return (!obj->isNative() && !obj->is<UnboxedArrayObject>()) ||
            obj->isIndexed() ||
-           IsAnyTypedArray(obj) ||
+           obj->is<TypedArrayObject>() ||
            ClassMayResolveId(*obj->runtimeFromAnyThread()->commonNames,
                              obj->getClass(), INT_TO_JSID(0), obj);
 }
@@ -1080,72 +1079,13 @@ ArrayJoinKernel(JSContext* cx, SeparatorOp sepOp, HandleObject obj, uint32_t len
 }
 
 template <bool Locale>
-JSString*
-js::ArrayJoin(JSContext* cx, HandleObject obj, HandleLinearString sepstr, uint32_t length)
+bool
+ArrayJoin(JSContext* cx, CallArgs& args)
 {
     // This method is shared by Array.prototype.join and
     // Array.prototype.toLocaleString. The steps in ES5 are nearly the same, so
     // the annotations in this function apply to both toLocaleString and join.
 
-    // Steps 1 to 6, should be done by the caller.
-
-    // Step 6 is implicit in the loops below.
-
-    // An optimized version of a special case of steps 7-11: when length==1 and
-    // the 0th element is a string, ToString() of that element is a no-op and
-    // so it can be immediately returned as the result.
-    if (length == 1 && !Locale && GetAnyBoxedOrUnboxedInitializedLength(obj) == 1) {
-        Value elem0 = GetAnyBoxedOrUnboxedDenseElement(obj, 0);
-        if (elem0.isString())
-            return elem0.toString();
-    }
-
-    StringBuffer sb(cx);
-    if (sepstr->hasTwoByteChars() && !sb.ensureTwoByteChars())
-        return nullptr;
-
-    // The separator will be added |length - 1| times, reserve space for that
-    // so that we don't have to unnecessarily grow the buffer.
-    size_t seplen = sepstr->length();
-    CheckedInt<uint32_t> res = CheckedInt<uint32_t>(seplen) * (length - 1);
-    if (length > 0 && !res.isValid()) {
-        ReportAllocationOverflow(cx);
-        return nullptr;
-    }
-
-    if (length > 0 && !sb.reserve(res.value()))
-        return nullptr;
-
-    // Various optimized versions of steps 7-10.
-    if (seplen == 0) {
-        EmptySeparatorOp op;
-        if (!ArrayJoinKernel<Locale>(cx, op, obj, length, sb))
-            return nullptr;
-    } else if (seplen == 1) {
-        char16_t c = sepstr->latin1OrTwoByteChar(0);
-        if (c <= JSString::MAX_LATIN1_CHAR) {
-            CharSeparatorOp<Latin1Char> op(c);
-            if (!ArrayJoinKernel<Locale>(cx, op, obj, length, sb))
-                return nullptr;
-        } else {
-            CharSeparatorOp<char16_t> op(c);
-            if (!ArrayJoinKernel<Locale>(cx, op, obj, length, sb))
-                return nullptr;
-        }
-    } else {
-        StringSeparatorOp op(sepstr);
-        if (!ArrayJoinKernel<Locale>(cx, op, obj, length, sb))
-            return nullptr;
-    }
-
-    // Step 11
-    return sb.finishString();
-}
-
-template <bool Locale>
-bool
-ArrayJoin(JSContext* cx, CallArgs& args)
-{
     // Step 1
     RootedObject obj(cx, ToObject(cx, args.thisv()));
     if (!obj)
@@ -1168,7 +1108,7 @@ ArrayJoin(JSContext* cx, CallArgs& args)
     // Steps 4 and 5
     RootedLinearString sepstr(cx);
     if (!Locale && args.hasDefined(0)) {
-        JSString* s = ToString<CanGC>(cx, args[0]);
+        JSString *s = ToString<CanGC>(cx, args[0]);
         if (!s)
             return false;
         sepstr = s->ensureLinear(cx);
@@ -1178,12 +1118,63 @@ ArrayJoin(JSContext* cx, CallArgs& args)
         sepstr = cx->names().comma;
     }
 
-    // Step 6 to 11
-    JSString* res = js::ArrayJoin<Locale>(cx, obj, sepstr, length);
-    if (!res)
+    // Step 6 is implicit in the loops below.
+
+    // An optimized version of a special case of steps 7-11: when length==1 and
+    // the 0th element is a string, ToString() of that element is a no-op and
+    // so it can be immediately returned as the result.
+    if (length == 1 && !Locale && GetAnyBoxedOrUnboxedInitializedLength(obj) == 1) {
+        Value elem0 = GetAnyBoxedOrUnboxedDenseElement(obj, 0);
+        if (elem0.isString()) {
+            args.rval().set(elem0);
+            return true;
+        }
+    }
+
+    StringBuffer sb(cx);
+    if (sepstr->hasTwoByteChars() && !sb.ensureTwoByteChars())
         return false;
 
-    args.rval().setString(res);
+    // The separator will be added |length - 1| times, reserve space for that
+    // so that we don't have to unnecessarily grow the buffer.
+    size_t seplen = sepstr->length();
+    CheckedInt<uint32_t> res = CheckedInt<uint32_t>(seplen) * (length - 1);
+    if (length > 0 && !res.isValid()) {
+        ReportAllocationOverflow(cx);
+        return false;
+    }
+
+    if (length > 0 && !sb.reserve(res.value()))
+        return false;
+
+    // Various optimized versions of steps 7-10.
+    if (seplen == 0) {
+        EmptySeparatorOp op;
+        if (!ArrayJoinKernel<Locale>(cx, op, obj, length, sb))
+            return false;
+    } else if (seplen == 1) {
+        char16_t c = sepstr->latin1OrTwoByteChar(0);
+        if (c <= JSString::MAX_LATIN1_CHAR) {
+            CharSeparatorOp<Latin1Char> op(c);
+            if (!ArrayJoinKernel<Locale>(cx, op, obj, length, sb))
+                return false;
+        } else {
+            CharSeparatorOp<char16_t> op(c);
+            if (!ArrayJoinKernel<Locale>(cx, op, obj, length, sb))
+                return false;
+        }
+    } else {
+        StringSeparatorOp op(sepstr);
+        if (!ArrayJoinKernel<Locale>(cx, op, obj, length, sb))
+            return false;
+    }
+
+    // Step 11
+    JSString *str = sb.finishString();
+    if (!str)
+        return false;
+
+    args.rval().setString(str);
     return true;
 }
 
@@ -1203,6 +1194,7 @@ js::array_join(JSContext* cx, unsigned argc, Value* vp)
 {
     JS_CHECK_RECURSION(cx, return false);
 
+    AutoSPSEntry pseudoFrame(cx->runtime(), "Array.prototype.join");
     CallArgs args = CallArgsFromVp(argc, vp);
     return ArrayJoin<false>(cx, args);
 }
@@ -1319,6 +1311,7 @@ DefineBoxedOrUnboxedFunctor3(ArrayReverseDenseKernel,
 static bool
 array_reverse(JSContext* cx, unsigned argc, Value* vp)
 {
+    AutoSPSEntry pseudoFrame(cx->runtime(), "Array.prototype.reverse");
     CallArgs args = CallArgsFromVp(argc, vp);
     RootedObject obj(cx, ToObject(cx, args.thisv()));
     if (!obj)
@@ -1749,7 +1742,7 @@ SortLexicographically(JSContext* cx, AutoValueVector* vec, size_t len)
     Vector<StringifiedElement, 0, TempAllocPolicy> strElements(cx);
 
     /* MergeSort uses the upper half as scratch space. */
-    if (!strElements.reserve(2 * len))
+    if (!strElements.resize(2 * len))
         return false;
 
     /* Convert Values to strings. */
@@ -1761,13 +1754,9 @@ SortLexicographically(JSContext* cx, AutoValueVector* vec, size_t len)
         if (!ValueToStringBuffer(cx, (*vec)[i], sb))
             return false;
 
-        StringifiedElement el = { cursor, sb.length(), i };
-        strElements.infallibleAppend(el);
+        strElements[i] = { cursor, sb.length(), i };
         cursor = sb.length();
     }
-
-    /* Resize strElements so we can perform MergeSort. */
-    JS_ALWAYS_TRUE(strElements.resize(2 * len));
 
     /* Sort Values in vec alphabetically. */
     return MergeSortByKey(strElements.begin(), len, strElements.begin() + len,
@@ -1788,7 +1777,7 @@ SortNumerically(JSContext* cx, AutoValueVector* vec, size_t len, ComparatorMatch
     Vector<NumericElement, 0, TempAllocPolicy> numElements(cx);
 
     /* MergeSort uses the upper half as scratch space. */
-    if (!numElements.reserve(2 * len))
+    if (!numElements.resize(2 * len))
         return false;
 
     /* Convert Values to numerics. */
@@ -1800,12 +1789,8 @@ SortNumerically(JSContext* cx, AutoValueVector* vec, size_t len, ComparatorMatch
         if (!ToNumber(cx, (*vec)[i], &dv))
             return false;
 
-        NumericElement el = { dv, i };
-        numElements.infallibleAppend(el);
+        numElements[i] = { dv, i };
     }
-
-    /* Resize strElements so we can perform MergeSort. */
-    JS_ALWAYS_TRUE(numElements.resize(2 * len));
 
     /* Sort Values in vec numerically. */
     return MergeSortByKey(numElements.begin(), len, numElements.begin() + len,
@@ -1833,6 +1818,43 @@ js::array_sort(JSContext* cx, unsigned argc, Value* vp)
     RootedObject obj(cx, ToObject(cx, args.thisv()));
     if (!obj)
         return false;
+
+    ComparatorMatchResult comp = MatchNumericComparator(cx, fval);
+    if (comp == Match_Failure)
+        return false;
+
+    if (!fval.isNull() && comp == Match_None) {
+        /*
+         * Non-optimized user supplied comparators perform much better when
+         * called from within a self-hosted sorting function.
+         */
+        RootedAtom selfHostedSortAtom(cx, Atomize(cx, "ArraySort", 9));
+        RootedPropertyName selfHostedSortName(cx, selfHostedSortAtom->asPropertyName());
+        RootedValue selfHostedSortValue(cx);
+
+        if (!GlobalObject::getIntrinsicValue(cx, cx->global(), selfHostedSortName,
+            &selfHostedSortValue)) {
+            return false;
+        }
+
+        MOZ_ASSERT(selfHostedSortValue.isObject());
+        MOZ_ASSERT(selfHostedSortValue.toObject().is<JSFunction>());
+
+        InvokeArgs iargs(cx);
+
+        if (!iargs.init(1))
+            return false;
+
+        iargs.setCallee(selfHostedSortValue);
+        iargs.setThis(args.thisv());
+        iargs[0].set(fval);
+
+        if (!Invoke(cx, iargs))
+            return false;
+
+        args.rval().set(iargs.rval());
+        return true;
+    }
 
     uint32_t len;
     if (!GetLengthProperty(cx, obj, &len))
@@ -1934,27 +1956,13 @@ js::array_sort(JSContext* cx, unsigned argc, Value* vp)
                     return false;
             }
         } else {
-            ComparatorMatchResult comp = MatchNumericComparator(cx, fval);
-            if (comp == Match_Failure)
-                return false;
-
-            if (comp != Match_None) {
-                if (allInts) {
-                    JS_ALWAYS_TRUE(vec.resize(n * 2));
-                    if (!MergeSort(vec.begin(), n, vec.begin() + n, SortComparatorInt32s[comp]))
-                        return false;
-                } else {
-                    if (!SortNumerically(cx, &vec, n, comp))
-                        return false;
-                }
-            } else {
-                FastInvokeGuard fig(cx, fval);
+            if (allInts) {
                 JS_ALWAYS_TRUE(vec.resize(n * 2));
-                if (!MergeSort(vec.begin(), n, vec.begin() + n,
-                               SortComparatorFunction(cx, fval, fig)))
-                {
+                if (!MergeSort(vec.begin(), n, vec.begin() + n, SortComparatorInt32s[comp]))
                     return false;
-                }
+            } else {
+                if (!SortNumerically(cx, &vec, n, comp))
+                    return false;
             }
         }
 
@@ -2002,6 +2010,7 @@ js::NewbornArrayPush(JSContext* cx, HandleObject obj, const Value& v)
 bool
 js::array_push(JSContext* cx, unsigned argc, Value* vp)
 {
+    AutoSPSEntry pseudoFrame(cx->runtime(), "Array.prototype.push");
     CallArgs args = CallArgsFromVp(argc, vp);
 
     /* Step 1. */
@@ -2053,6 +2062,7 @@ js::array_push(JSContext* cx, unsigned argc, Value* vp)
 bool
 js::array_pop(JSContext* cx, unsigned argc, Value* vp)
 {
+    AutoSPSEntry pseudoFrame(cx->runtime(), "Array.prototype.pop");
     CallArgs args = CallArgsFromVp(argc, vp);
 
     /* Step 1. */
@@ -2123,18 +2133,25 @@ js::ArrayShiftMoveElements(JSObject* obj)
 
 template <JSValueType Type>
 DenseElementResult
-ArrayShiftDenseKernel(JSContext* cx, JSObject* obj, Value* rval)
+ArrayShiftDenseKernel(JSContext* cx, HandleObject obj, MutableHandleValue rval)
 {
     if (ObjectMayHaveExtraIndexedProperties(obj))
+        return DenseElementResult::Incomplete;
+
+    RootedObjectGroup group(cx, obj->getGroup(cx));
+    if (MOZ_UNLIKELY(!group))
+        return DenseElementResult::Failure;
+
+    if (MOZ_UNLIKELY(group->hasAllFlags(OBJECT_FLAG_ITERATED)))
         return DenseElementResult::Incomplete;
 
     size_t initlen = GetBoxedOrUnboxedInitializedLength<Type>(obj);
     if (initlen == 0)
         return DenseElementResult::Incomplete;
 
-    *rval = GetBoxedOrUnboxedDenseElement<Type>(obj, 0);
-    if (rval->isMagic(JS_ELEMENTS_HOLE))
-        rval->setUndefined();
+    rval.set(GetBoxedOrUnboxedDenseElement<Type>(obj, 0));
+    if (rval.isMagic(JS_ELEMENTS_HOLE))
+        rval.setUndefined();
 
     DenseElementResult result = MoveBoxedOrUnboxedDenseElements<Type>(cx, obj, 0, 1, initlen - 1);
     MOZ_ASSERT(result != DenseElementResult::Incomplete);
@@ -2146,12 +2163,13 @@ ArrayShiftDenseKernel(JSContext* cx, JSObject* obj, Value* rval)
 }
 
 DefineBoxedOrUnboxedFunctor3(ArrayShiftDenseKernel,
-                             JSContext*, JSObject*, Value*);
+                             JSContext*, HandleObject, MutableHandleValue);
 
 /* ES5 15.4.4.9 */
 bool
 js::array_shift(JSContext* cx, unsigned argc, Value* vp)
 {
+    AutoSPSEntry pseudoFrame(cx->runtime(), "Array.prototype.shift");
     CallArgs args = CallArgsFromVp(argc, vp);
 
     /* Step 1. */
@@ -2178,19 +2196,13 @@ js::array_shift(JSContext* cx, unsigned argc, Value* vp)
     uint32_t newlen = len - 1;
 
     /* Fast paths. */
-    ArrayShiftDenseKernelFunctor functor(cx, obj, args.rval().address());
+    ArrayShiftDenseKernelFunctor functor(cx, obj, args.rval());
     DenseElementResult result = CallBoxedOrUnboxedSpecialization(functor, obj);
     if (result != DenseElementResult::Incomplete) {
         if (result == DenseElementResult::Failure)
             return false;
 
-        if (!SetLengthProperty(cx, obj, newlen))
-            return false;
-
-        RootedId id(cx);
-        if (!IndexToId(cx, newlen, &id))
-            return false;
-        return SuppressDeletedProperty(cx, obj, id);
+        return SetLengthProperty(cx, obj, newlen);
     }
 
     /* Steps 5, 10. */
@@ -2225,6 +2237,7 @@ js::array_shift(JSContext* cx, unsigned argc, Value* vp)
 bool
 js::array_unshift(JSContext* cx, unsigned argc, Value* vp)
 {
+    AutoSPSEntry pseudoFrame(cx->runtime(), "Array.prototype.unshift");
     CallArgs args = CallArgsFromVp(argc, vp);
     RootedObject obj(cx, ToObject(cx, args.thisv()));
     if (!obj)
@@ -2326,7 +2339,11 @@ CanOptimizeForDenseStorage(HandleObject arr, uint32_t startingIndex, uint32_t co
      * visited.  See bug 690622.
      */
     ObjectGroup* arrGroup = arr->getGroup(cx);
-    if (MOZ_UNLIKELY(!arrGroup || arrGroup->hasAllFlags(OBJECT_FLAG_ITERATED)))
+    if (!arrGroup) {
+        cx->recoverFromOutOfMemory();
+        return false;
+    }
+    if (MOZ_UNLIKELY(arrGroup->hasAllFlags(OBJECT_FLAG_ITERATED)))
         return false;
 
     /*
@@ -2355,6 +2372,7 @@ array_splice(JSContext* cx, unsigned argc, Value* vp)
 bool
 js::array_splice_impl(JSContext* cx, unsigned argc, Value* vp, bool returnValueIsUsed)
 {
+    AutoSPSEntry pseudoFrame(cx->runtime(), "Array.prototype.splice");
     CallArgs args = CallArgsFromVp(argc, vp);
 
     /* Step 1. */
@@ -2615,6 +2633,7 @@ js::array_concat_dense(JSContext* cx, HandleObject obj1, HandleObject obj2,
 bool
 js::array_concat(JSContext* cx, unsigned argc, Value* vp)
 {
+    AutoSPSEntry pseudoFrame(cx->runtime(), "Array.prototype.concat");
     CallArgs args = CallArgsFromVp(argc, vp);
 
     /* Treat our |this| object as the first argument; see ECMA 15.4.4.4. */
@@ -2787,8 +2806,8 @@ GetIndexedPropertiesInRange(JSContext* cx, HandleObject obj, uint32_t begin, uin
         }
 
         // Append typed array elements.
-        if (IsAnyTypedArray(pobj)) {
-            uint32_t len = AnyTypedArrayLength(pobj);
+        if (pobj->is<TypedArrayObject>()) {
+            uint32_t len = pobj->as<TypedArrayObject>().length();
             for (uint32_t i = begin; i < len && i < end; i++) {
                 if (!indexes.append(i))
                     return false;
@@ -2908,6 +2927,7 @@ NormalizeSliceTerm(T value, uint32_t length)
 bool
 js::array_slice(JSContext* cx, unsigned argc, Value* vp)
 {
+    AutoSPSEntry pseudoFrame(cx->runtime(), "Array.prototype.slice");
     CallArgs args = CallArgsFromVp(argc, vp);
 
     RootedObject obj(cx, ToObject(cx, args.thisv()));
@@ -3089,11 +3109,8 @@ array_of(JSContext* cx, unsigned argc, Value* vp)
             return false;
         cargs[0].setNumber(args.length());
 
-        RootedValue v(cx);
-        if (!Construct(cx, args.thisv(), cargs, args.thisv(), &v))
+        if (!Construct(cx, args.thisv(), cargs, args.thisv(), &obj))
             return false;
-
-        obj = &v.toObject();
     }
 
     // Step 8.
@@ -3121,7 +3138,7 @@ static const JSFunctionSpec array_methods[] = {
     JS_FN(js_toLocaleString_str,       array_toLocaleString, 0,0),
 
     /* Perl-ish methods. */
-    JS_FN("join",               array_join,         1,JSFUN_GENERIC_NATIVE),
+    JS_INLINABLE_FN("join",     array_join,         1,JSFUN_GENERIC_NATIVE, ArrayJoin),
     JS_FN("reverse",            array_reverse,      0,JSFUN_GENERIC_NATIVE),
     JS_FN("sort",               array_sort,         1,JSFUN_GENERIC_NATIVE),
     JS_INLINABLE_FN("push",     array_push,         1,JSFUN_GENERIC_NATIVE, ArrayPush),
@@ -3672,8 +3689,7 @@ js::ArrayInfo(JSContext* cx, unsigned argc, Value* vp)
     for (unsigned i = 0; i < args.length(); i++) {
         RootedValue arg(cx, args[i]);
 
-        UniquePtr<char[], JS::FreePolicy> bytes =
-            DecompileValueGenerator(cx, JSDVG_SEARCH_STACK, arg, nullptr);
+        UniqueChars bytes = DecompileValueGenerator(cx, JSDVG_SEARCH_STACK, arg, nullptr);
         if (!bytes)
             return false;
         if (arg.isPrimitive() ||

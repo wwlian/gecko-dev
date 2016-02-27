@@ -211,6 +211,8 @@ nsBaseDragService::InvokeDragSession(nsIDOMNode *aDOMNode,
                                      nsIScriptableRegion* aDragRgn,
                                      uint32_t aActionType)
 {
+  PROFILER_LABEL_FUNC(js::ProfileEntry::Category::OTHER);
+
   NS_ENSURE_TRUE(aDOMNode, NS_ERROR_INVALID_ARG);
   NS_ENSURE_TRUE(mSuppressLevel == 0, NS_ERROR_FAILURE);
 
@@ -555,7 +557,7 @@ nsBaseDragService::DrawDrag(nsIDOMNode* aDOMNode,
     if (aRegion) {
       // the region's coordinates are relative to the root frame
       nsIFrame* rootFrame = presShell->GetRootFrame();
-      if (rootFrame && *aPresContext) {
+      if (rootFrame) {
         nsIntRect dragRect;
         aRegion->GetBoundingBox(&dragRect.x, &dragRect.y, &dragRect.width, &dragRect.height);
         dragRect = ToAppUnits(dragRect, nsPresContext::AppUnitsPerCSSPixel()).

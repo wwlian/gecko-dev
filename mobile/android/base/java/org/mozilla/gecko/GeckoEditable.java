@@ -49,14 +49,14 @@ final class GeckoEditable extends JNIObject
         implements InvocationHandler, Editable,
                    GeckoEditableClient, GeckoEditableListener, GeckoEventListener {
 
-    private static final boolean DEBUG = false;
+    // Turned on temporarily for debugging bug 1248459.
+    private static final boolean DEBUG = !AppConstants.RELEASE_BUILD;
     private static final String LOGTAG = "GeckoEditable";
 
     // Filters to implement Editable's filtering functionality
     private InputFilter[] mFilters;
 
     private final SpannableStringBuilder mText;
-    private final SpannableStringBuilder mChangedText;
     private final Editable mProxy;
     private final ActionQueue mActionQueue;
 
@@ -66,7 +66,8 @@ final class GeckoEditable extends JNIObject
     private Handler mIcRunHandler;
     private Handler mIcPostHandler;
 
-    private GeckoEditableListener mListener;
+    /* package */ GeckoEditableListener mListener;
+    /* package */ GeckoView mView;
     /* package */ boolean mInBatchMode; // Used by IC thread
     /* package */ boolean mNeedCompositionUpdate; // Used by IC thread
     private boolean mFocused; // Used by IC thread
@@ -150,18 +151,20 @@ final class GeckoEditable extends JNIObject
        replied, the action is removed from the queue
     */
     private static final class Action {
-        // For input events (keypress, etc.); use with IME_SYNCHRONIZE
+        // For input events (keypress, etc.); use with onImeSynchronize
         static final int TYPE_EVENT = 0;
-        // For Editable.replace() call; use with IME_REPLACE_TEXT
+        // For Editable.replace() call; use with onImeReplaceText
         static final int TYPE_REPLACE_TEXT = 1;
-        // For Editable.setSpan() call; use with IME_SYNCHRONIZE
+        // For Editable.setSpan() call; use with onImeSynchronize
         static final int TYPE_SET_SPAN = 2;
-        // For Editable.removeSpan() call; use with IME_SYNCHRONIZE
+        // For Editable.removeSpan() call; use with onImeSynchronize
         static final int TYPE_REMOVE_SPAN = 3;
-        // For focus events (in notifyIME); use with IME_ACKNOWLEDGE_FOCUS
+        // For focus events (in notifyIME); use with onImeAcknowledgeFocus
         static final int TYPE_ACKNOWLEDGE_FOCUS = 4;
-        // For switching handler; use with IME_SYNCHRONIZE
+        // For switching handler; use with onImeSynchronize
         static final int TYPE_SET_HANDLER = 5;
+        // For updating composition; use with onImeUpdateComposition
+        static final int TYPE_UPDATE_COMPOSITION = 6;
 
         final int mType;
         boolean mUpdateComposition;
@@ -215,6 +218,13 @@ final class GeckoEditable extends JNIObject
             action.mHandler = handler;
             return action;
         }
+
+        static Action newUpdateComposition(int start, int end) {
+            final Action action = new Action(TYPE_UPDATE_COMPOSITION);
+            action.mStart = start;
+            action.mEnd = end;
+            return action;
+        }
     }
 
     /* Queue of editing actions sent to Gecko thread that
@@ -234,6 +244,11 @@ final class GeckoEditable extends JNIObject
                 assertOnIcThread();
                 Log.d(LOGTAG, "offer: Action(" +
                               getConstantName(Action.class, "TYPE_", action.mType) + ")");
+            }
+
+            if (mListener == null) {
+                // We haven't initialized or we've been destroyed.
+                return;
             }
 
             if (mActions.isEmpty()) {
@@ -256,8 +271,10 @@ final class GeckoEditable extends JNIObject
             case Action.TYPE_REPLACE_TEXT:
                 // Because we get composition styling here essentially for free,
                 // we don't need to check if we're in batch mode.
-                if (!icMaybeSendComposition(
+                if (icMaybeSendComposition(
                         action.mSequence, /* useEntireText */ true, /* notifyGecko */ false)) {
+                    mNeedCompositionUpdate = false;
+                } else {
                     // Since we don't have a composition, we can try sending key events.
                     sendCharKeyEvents(action);
                 }
@@ -266,6 +283,10 @@ final class GeckoEditable extends JNIObject
 
             case Action.TYPE_ACKNOWLEDGE_FOCUS:
                 onImeAcknowledgeFocus();
+                break;
+
+            case Action.TYPE_UPDATE_COMPOSITION:
+                onImeUpdateComposition(action.mStart, action.mEnd);
                 break;
 
             default:
@@ -373,7 +394,7 @@ final class GeckoEditable extends JNIObject
     }
 
     @WrapForJNI
-    GeckoEditable() {
+    GeckoEditable(final GeckoView v) {
         if (DEBUG) {
             // Called by nsWindow.
             ThreadUtils.assertOnGeckoThread();
@@ -381,7 +402,6 @@ final class GeckoEditable extends JNIObject
         mActionQueue = new ActionQueue();
 
         mText = new SpannableStringBuilder();
-        mChangedText = new SpannableStringBuilder();
 
         final Class<?>[] PROXY_INTERFACES = { Editable.class };
         mProxy = (Editable)Proxy.newProxyInstance(
@@ -389,28 +409,12 @@ final class GeckoEditable extends JNIObject
                 PROXY_INTERFACES, this);
 
         mIcRunHandler = mIcPostHandler = ThreadUtils.getUiHandler();
+
+        onViewChange(v);
     }
 
     @WrapForJNI @Override
     protected native void disposeNative();
-
-    @WrapForJNI
-    private void onDestroy() {
-        if (DEBUG) {
-            // Called by nsWindow.
-            ThreadUtils.assertOnGeckoThread();
-            Log.d(LOGTAG, "onDestroy()");
-        }
-
-        // Make sure we clear all pending Runnables on the IC thread first,
-        // by calling disposeNative from the IC thread.
-        geckoPostToIc(new Runnable() {
-            @Override
-            public void run() {
-                GeckoEditable.this.disposeNative();
-            }
-        });
-    }
 
     @WrapForJNI
     /* package */ void onViewChange(final GeckoView v) {
@@ -420,26 +424,51 @@ final class GeckoEditable extends JNIObject
             Log.d(LOGTAG, "onViewChange(" + v + ")");
         }
 
-        final GeckoEditableListener newListener = GeckoInputConnection.create(v, this);
-        geckoPostToIc(new Runnable() {
+        final GeckoEditableListener newListener =
+            v != null ? GeckoInputConnection.create(v, this) : null;
+
+        final Runnable setListenerRunnable = new Runnable() {
             @Override
             public void run() {
                 if (DEBUG) {
                     Log.d(LOGTAG, "onViewChange (set listener)");
                 }
-                // Make sure there are no other things going on
-                mActionQueue.syncWithGecko();
-                mListener = newListener;
-            }
-        });
 
+                if (newListener != null) {
+                    // Make sure there are no other things going on.
+                    mActionQueue.syncWithGecko();
+                    mListener = newListener;
+                } else {
+                    // We're being destroyed. By this point, we should have cleared all
+                    // pending Runnables on the IC thread, so it's safe to call
+                    // disposeNative here.
+                    mListener = null;
+                    GeckoEditable.this.disposeNative();
+                }
+            }
+        };
+
+        // Post to UI thread first to make sure any code that is using the old input
+        // connection has finished running, before we switch to a new input connection or
+        // before we clear the input connection on destruction.
         ThreadUtils.postToUiThread(new Runnable() {
             @Override
             public void run() {
                 if (DEBUG) {
                     Log.d(LOGTAG, "onViewChange (set IC)");
                 }
-                v.setInputConnectionListener((InputConnectionListener) newListener);
+
+                if (mView != null) {
+                    // Detach the previous view.
+                    mView.setInputConnectionListener(null);
+                }
+                if (v != null) {
+                    // And attach the new view.
+                    v.setInputConnectionListener((InputConnectionListener) newListener);
+                }
+
+                mView = v;
+                mIcPostHandler.post(setListenerRunnable);
             }
         });
     }
@@ -506,7 +535,8 @@ final class GeckoEditable extends JNIObject
             if (found) {
                 icSendComposition(text, selStart, selEnd, composingStart, composingEnd);
                 if (notifyGecko) {
-                    onImeUpdateComposition(composingStart, composingEnd);
+                    mActionQueue.offer(Action.newUpdateComposition(
+                            composingStart, composingEnd));
                 }
                 return true;
             }
@@ -514,7 +544,7 @@ final class GeckoEditable extends JNIObject
 
         if (notifyGecko) {
             // Set the selection by using a composition without ranges
-            onImeUpdateComposition(selStart, selEnd);
+            mActionQueue.offer(Action.newUpdateComposition(selStart, selEnd));
         }
 
         if (DEBUG) {
@@ -660,6 +690,10 @@ final class GeckoEditable extends JNIObject
             }
             return null;
         }
+        if (mListener == null) {
+            // We haven't initialized or we've been destroyed.
+            return null;
+        }
         return mProxy;
     }
 
@@ -711,8 +745,7 @@ final class GeckoEditable extends JNIObject
     @Override
     public void setSuppressKeyUp(boolean suppress) {
         if (DEBUG) {
-            // only used by key event handler
-            ThreadUtils.assertOnUiThread();
+            assertOnIcThread();
         }
         // Suppress key up event generated as a result of
         // translating characters to key events
@@ -720,19 +753,9 @@ final class GeckoEditable extends JNIObject
     }
 
     @Override
-    public Handler getInputConnectionHandler() {
-        // Can be called from either UI thread or IC thread;
-        // care must be taken to avoid race conditions
-        return mIcRunHandler;
-    }
-
-    @Override
-    public boolean setInputConnectionHandler(Handler handler) {
-        if (handler == mIcPostHandler) {
-            return true;
-        }
-        if (!mFocused) {
-            return false;
+    public Handler setInputConnectionHandler(Handler handler) {
+        if (handler == mIcPostHandler || !mFocused) {
+            return mIcPostHandler;
         }
         if (DEBUG) {
             assertOnIcThread();
@@ -751,7 +774,12 @@ final class GeckoEditable extends JNIObject
         // InputConnection calls until after the switch.
         mActionQueue.offer(Action.newSetHandler(handler));
         mActionQueue.syncWithGecko();
-        return true;
+        return handler;
+    }
+
+    @Override // GeckoEditableClient
+    public void postToInputConnection(final Runnable runnable) {
+        mIcPostHandler.post(runnable);
     }
 
     private void geckoSetIcHandler(final Handler newHandler) {
@@ -890,7 +918,9 @@ final class GeckoEditable extends JNIObject
                 // Action.TYPE_ACKNOWLEDGE_FOCUS, this line also makes us
                 // wait for Gecko to update us on the newly focused content
                 mActionQueue.syncWithGecko();
-                mListener.notifyIME(type);
+                if (mListener != null) {
+                    mListener.notifyIME(type);
+                }
 
                 // Unset mFocused after we call syncWithGecko because
                 // syncWithGecko becomes a no-op when mFocused is false.
@@ -930,6 +960,9 @@ final class GeckoEditable extends JNIObject
         geckoPostToIc(new Runnable() {
             @Override
             public void run() {
+                if (mListener == null) {
+                    return;
+                }
                 mListener.notifyIMEContext(state, typeHint, modeHint, actionHint);
             }
         });
@@ -962,19 +995,26 @@ final class GeckoEditable extends JNIObject
         geckoPostToIc(new Runnable() {
             @Override
             public void run() {
+                if (mListener == null) {
+                    return;
+                }
                 mListener.onSelectionChange(newStart, newEnd);
             }
         });
     }
 
     private void geckoReplaceText(int start, int oldEnd, CharSequence newText) {
-        // Don't use replace() because Gingerbread has a bug where if the replaced text
-        // has the same spans as the original text, the spans will end up being deleted
-        mText.delete(start, oldEnd);
-        mText.insert(start, newText);
+        if (AppConstants.Versions.preHC) {
+            // Don't use replace() because Gingerbread has a bug where if the replaced text
+            // has the same spans as the original text, the spans will end up being deleted
+            mText.delete(start, oldEnd);
+            mText.insert(start, newText);
+        } else {
+            mText.replace(start, oldEnd, newText);
+        }
     }
 
-    private boolean isSameText(int start, int oldEnd, CharSequence newText) {
+    private boolean geckoIsSameText(int start, int oldEnd, CharSequence newText) {
         return oldEnd - start == newText.length() &&
                TextUtils.regionMatches(mText, start, newText, 0, oldEnd - start);
     }
@@ -1001,7 +1041,8 @@ final class GeckoEditable extends JNIObject
            number to denote "end of the text". Fix that here */
         final int oldEnd = unboundedOldEnd > mText.length() ? mText.length() : unboundedOldEnd;
         // new end should always match text
-        if (start != 0 && unboundedNewEnd != (start + text.length())) {
+        if (unboundedOldEnd <= mText.length() &&
+                unboundedNewEnd != (start + text.length())) {
             Log.e(LOGTAG, "newEnd does not match text: " + unboundedNewEnd + " vs " +
                   (start + text.length()));
             throw new IllegalArgumentException("newEnd does not match text");
@@ -1013,67 +1054,72 @@ final class GeckoEditable extends JNIObject
             // Simply replace the text for newly-focused editors.
             mText.replace(0, mText.length(), text);
 
-        } else {
-            mChangedText.clearSpans();
-            mChangedText.replace(0, mChangedText.length(), text);
-            // Preserve as many spans as possible
-            TextUtils.copySpansFrom(mText, start, Math.min(oldEnd, newEnd),
-                                    Object.class, mChangedText, 0);
+        } else if (action != null &&
+                action.mType == Action.TYPE_REPLACE_TEXT &&
+                start <= action.mStart &&
+                oldEnd >= action.mEnd &&
+                newEnd >= action.mStart + action.mSequence.length()) {
 
-            if (action != null &&
-                    action.mType == Action.TYPE_REPLACE_TEXT &&
-                    start <= action.mStart &&
-                    action.mStart + action.mSequence.length() <= newEnd) {
+            // Try to preserve both old spans and new spans in action.mSequence.
+            // indexInText is where we can find waction.mSequence within the passed in text.
+            final int startWithinText = action.mStart - start;
+            int indexInText = TextUtils.indexOf(text, action.mSequence, startWithinText);
+            if (indexInText < 0 && startWithinText >= action.mSequence.length()) {
+                indexInText = text.toString().lastIndexOf(action.mSequence.toString(),
+                                                          startWithinText);
+            }
 
-                // actionNewEnd is the new end of the original replacement action
-                final int actionNewEnd = action.mStart + action.mSequence.length();
-                int selStart = Selection.getSelectionStart(mText);
-                int selEnd = Selection.getSelectionEnd(mText);
+            if (indexInText < 0) {
+                // Text was changed from under us. We are forced to discard any new spans.
+                geckoReplaceText(start, oldEnd, text);
 
-                // Replace old spans with new spans
-                mChangedText.replace(action.mStart - start, actionNewEnd - start,
-                                     action.mSequence);
-                geckoReplaceText(start, oldEnd, mChangedText);
+                // Don't ignore the next selection change because we are forced to re-sync
+                // with Gecko here.
+                mIgnoreSelectionChange = false;
 
-                // delete/insert above might have moved our selection to somewhere else
-                // this happens when the Gecko text change covers a larger range than
-                // the original replacement action. Fix selection here
-                if (selStart >= start && selStart <= oldEnd) {
-                    selStart = selStart < action.mStart ? selStart :
-                               selStart < action.mEnd   ? actionNewEnd :
-                                                          selStart + actionNewEnd - action.mEnd;
-                    mText.setSpan(Selection.SELECTION_START, selStart, selStart,
-                                  Spanned.SPAN_POINT_POINT);
-                }
-                if (selEnd >= start && selEnd <= oldEnd) {
-                    selEnd = selEnd < action.mStart ? selEnd :
-                             selEnd < action.mEnd   ? actionNewEnd :
-                                                      selEnd + actionNewEnd - action.mEnd;
-                    mText.setSpan(Selection.SELECTION_END, selEnd, selEnd,
-                                  Spanned.SPAN_POINT_POINT);
-                }
+            } else if (indexInText == 0 && text.length() == action.mSequence.length()) {
+                // The new text exactly matches our sequence, so do a direct replace.
+                geckoReplaceText(start, oldEnd, action.mSequence);
 
                 // Ignore the next selection change because the selection change is a
                 // side-effect of the replace-text event we sent.
                 mIgnoreSelectionChange = true;
 
             } else {
-                // Gecko side initiated the text change.
-                if (isSameText(start, oldEnd, mChangedText)) {
-                    // Nothing to do because the text is the same. This could happen when
-                    // the composition is updated for example. Ignore the next selection
-                    // change because the selection change is a side-effect of the
-                    // update-composition event we sent.
-                    mIgnoreSelectionChange = true;
-                    return;
-                }
-                geckoReplaceText(start, oldEnd, mChangedText);
+                // The sequence is embedded within the changed text, so we have to perform
+                // replacement in parts. First replace part of text before the sequence.
+                geckoReplaceText(start, action.mStart, text.subSequence(0, indexInText));
+
+                // Then Replace the sequence itself to preserve new spans.
+                final int actionStart = indexInText + start;
+                geckoReplaceText(actionStart, actionStart + action.mEnd - action.mStart,
+                                 action.mSequence);
+
+                // Finally replace part of text after the sequence.
+                final int actionEnd = actionStart + action.mSequence.length();
+                geckoReplaceText(actionEnd, actionEnd + oldEnd - action.mEnd,
+                                 text.subSequence(actionEnd - start, text.length()));
             }
+
+        } else if (geckoIsSameText(start, oldEnd, text)) {
+            // Nothing to do because the text is the same. This could happen when
+            // the composition is updated for example, in which case we want to keep the
+            // Java selection.
+            mIgnoreSelectionChange = mIgnoreSelectionChange ||
+                    (action != null && action.mType == Action.TYPE_UPDATE_COMPOSITION);
+            return;
+
+        } else {
+            // Gecko side initiated the text change.
+            geckoReplaceText(start, oldEnd, text);
         }
 
         geckoPostToIc(new Runnable() {
             @Override
             public void run() {
+                if (mListener == null) {
+                    return;
+                }
                 mListener.onTextChange(text, start, oldEnd, newEnd);
             }
         });

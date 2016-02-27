@@ -153,7 +153,7 @@ case "$target" in
 
     CPPFLAGS="-idirafter $android_platform/usr/include $CPPFLAGS"
     CFLAGS="-mandroid -fno-short-enums -fno-exceptions $CFLAGS"
-    CXXFLAGS="-mandroid -fno-short-enums -fno-exceptions -Wno-psabi $CXXFLAGS"
+    CXXFLAGS="-mandroid -fno-short-enums -fno-exceptions $CXXFLAGS"
     ASFLAGS="-idirafter $android_platform/usr/include -DANDROID $ASFLAGS"
 
     dnl Add -llog by default, since we use it all over the place.
@@ -352,6 +352,19 @@ if test -n "$MOZ_ANDROID_GCM" ; then
     MOZ_ANDROID_AAR(play-services-base, 8.1.0, google, com/google/android/gms)
     MOZ_ANDROID_AAR(play-services-basement, 8.1.0, google, com/google/android/gms)
     MOZ_ANDROID_AAR(play-services-gcm, 8.1.0, google, com/google/android/gms)
+fi
+
+])
+
+AC_DEFUN([MOZ_ANDROID_INSTALL_TRACKING],
+[
+
+if test -n "$MOZ_INSTALL_TRACKING"; then
+    AC_SUBST(MOZ_INSTALL_TRACKING)
+    MOZ_ANDROID_AAR(play-services-ads, 8.1.0, google, com/google/android/gms)
+    MOZ_ANDROID_AAR(play-services-analytics, 8.1.0, google, com/google/android/gms)
+    MOZ_ANDROID_AAR(play-services-appindexing, 8.1.0, google, com/google/android/gms)
+    MOZ_ANDROID_AAR(play-services-basement, 8.1.0, google, com/google/android/gms)
 fi
 
 ])

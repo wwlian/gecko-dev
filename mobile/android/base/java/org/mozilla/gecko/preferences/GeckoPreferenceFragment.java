@@ -16,10 +16,15 @@ import org.mozilla.gecko.R;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
 import org.mozilla.gecko.TelemetryContract.Method;
+import org.mozilla.gecko.fxa.AccountLoaderNative;
+import org.mozilla.gecko.fxa.authenticator.AndroidFxAccount;
 
+import android.accounts.Account;
 import android.app.ActionBar;
 import android.app.Activity;
+import android.app.LoaderManager;
 import android.content.Context;
+import android.content.Loader;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.os.Bundle;
@@ -36,6 +41,10 @@ import android.view.MenuInflater;
 */
 public class GeckoPreferenceFragment extends PreferenceFragment {
 
+    public static final int ACCOUNT_LOADER_ID = 1;
+    private AccountLoaderCallbacks accountLoaderCallbacks;
+    private SyncPreference syncPreference;
+
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
@@ -51,7 +60,7 @@ public class GeckoPreferenceFragment extends PreferenceFragment {
     }
 
     private static final String LOGTAG = "GeckoPreferenceFragment";
-    private int mPrefsRequestId;
+    private PrefsHelper.PrefHandler mPrefsRequest;
     private Locale lastLocale = Locale.getDefault();
 
     @Override
@@ -78,7 +87,8 @@ public class GeckoPreferenceFragment extends PreferenceFragment {
 
         PreferenceScreen screen = getPreferenceScreen();
         setPreferenceScreen(screen);
-        mPrefsRequestId = ((GeckoPreferences)getActivity()).setupPreferences(screen);
+        mPrefsRequest = ((GeckoPreferences)getActivity()).setupPreferences(screen);
+        syncPreference = (SyncPreference) findPreference(GeckoPreferences.PREFS_SYNC);
     }
 
     /**
@@ -163,11 +173,21 @@ public class GeckoPreferenceFragment extends PreferenceFragment {
     }
 
     @Override
+    public void onActivityCreated(Bundle savedInstanceState) {
+        super.onActivityCreated(savedInstanceState);
+        accountLoaderCallbacks = new AccountLoaderCallbacks();
+        getLoaderManager().initLoader(ACCOUNT_LOADER_ID, null, accountLoaderCallbacks);
+    }
+
+    @Override
     public void onResume() {
         // This is a little delicate. Ensure that you do nothing prior to
         // super.onResume that you wouldn't do in onCreate.
         applyLocale(Locale.getDefault());
         super.onResume();
+
+        // Force reload as the account may have been deleted while the app was in background.
+        getLoaderManager().restartLoader(ACCOUNT_LOADER_ID, null, accountLoaderCallbacks);
     }
 
     private void applyLocale(final Locale currentLocale) {
@@ -228,13 +248,42 @@ public class GeckoPreferenceFragment extends PreferenceFragment {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        if (mPrefsRequestId > 0) {
-            PrefsHelper.removeObserver(mPrefsRequestId);
+        if (mPrefsRequest != null) {
+            PrefsHelper.removeObserver(mPrefsRequest);
+            mPrefsRequest = null;
         }
 
         final int res = getResource();
         if (res == R.xml.preferences) {
             Telemetry.stopUISession(TelemetryContract.Session.SETTINGS);
+        }
+    }
+
+    private class AccountLoaderCallbacks implements LoaderManager.LoaderCallbacks<Account> {
+        @Override
+        public Loader<Account> onCreateLoader(int id, Bundle args) {
+            return new AccountLoaderNative(getActivity());
+        }
+
+        @Override
+        public void onLoadFinished(Loader<Account> loader, Account account) {
+            if (syncPreference == null) {
+                return;
+            }
+
+            if (account == null) {
+                syncPreference.update(null);
+                return;
+            }
+
+            syncPreference.update(new AndroidFxAccount(getActivity(), account));
+        }
+
+        @Override
+        public void onLoaderReset(Loader<Account> loader) {
+            if (syncPreference != null) {
+                syncPreference.update(null);
+            }
         }
     }
 }

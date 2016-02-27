@@ -1,4 +1,5 @@
-/* vim: set ts=2 et sw=2 tw=80: */
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft= javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,11 +12,11 @@ const { Services } = require("resource://gre/modules/Services.jsm");
 
 loader.lazyImporter(this, "VariablesView", "resource://devtools/client/shared/widgets/VariablesView.jsm");
 loader.lazyImporter(this, "escapeHTML", "resource://devtools/client/shared/widgets/VariablesView.jsm");
-loader.lazyImporter(this, "gDevTools", "resource://devtools/client/framework/gDevTools.jsm");
 loader.lazyImporter(this, "Task", "resource://gre/modules/Task.jsm");
 loader.lazyImporter(this, "PluralForm", "resource://gre/modules/PluralForm.jsm");
 
 loader.lazyRequireGetter(this, "promise");
+loader.lazyRequireGetter(this, "gDevTools", "devtools/client/framework/devtools", true);
 loader.lazyRequireGetter(this, "TableWidget", "devtools/client/shared/widgets/TableWidget", true);
 loader.lazyRequireGetter(this, "ObjectClient", "devtools/shared/client/main", true);
 
@@ -26,7 +27,7 @@ const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 const STRINGS_URI = "chrome://devtools/locale/webconsole.properties";
 
 const WebConsoleUtils = require("devtools/shared/webconsole/utils").Utils;
-const l10n = new WebConsoleUtils.l10n(STRINGS_URI);
+const l10n = new WebConsoleUtils.L10n(STRINGS_URI);
 
 const MAX_STRING_GRIP_LENGTH = 36;
 const ELLIPSIS = Services.prefs.getComplexValue("intl.ellipsis", Ci.nsIPrefLocalizedString).data;
@@ -779,7 +780,6 @@ Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
    */
   _message: null,
 
-  _afterMessage: null,
   _objectActors: null,
   _groupDepthCompat: 0,
 
@@ -943,11 +943,6 @@ Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
       this.element.setAttribute("private", true);
     }
 
-    if (this._afterMessage) {
-      this.element._outputAfterNode = this._afterMessage.element;
-      this._afterMessage = null;
-    }
-
     // TODO: handle object releasing in a more elegant way once all console
     // messages use the new API - bug 778766.
     this.element._objectActors = this._objectActors;
@@ -1094,7 +1089,7 @@ Messages.Extended = function(messagePieces, options = {})
   }
 
   this._repeatID.quoteStrings = this._quoteStrings;
-  this._repeatID.messagePieces = messagePieces + "";
+  this._repeatID.messagePieces = JSON.stringify(messagePieces);
   this._repeatID.actors = new Set(); // using a set to avoid duplicates
 };
 
@@ -1191,6 +1186,8 @@ Messages.Extended.prototype = Heritage.extend(Messages.Simple.prototype,
    *        grip. This is typically set to true when the object needs to be
    *        displayed in an array preview, or as a property value in object
    *        previews, etc.
+   *        - shorten - boolean that tells the renderer to display a truncated
+   *        grip.
    * @return DOMElement
    *         The DOM element that displays the given grip.
    */
@@ -1215,10 +1212,15 @@ Messages.Extended.prototype = Heritage.extend(Messages.Simple.prototype,
       }
     }
 
+    let unshortenedGrip = grip;
+    if (options.shorten) {
+      grip = this.shortenValueGrip(grip)
+    }
+
     let result = this.document.createElementNS(XHTML_NS, "span");
     if (isPrimitive) {
       if (Widgets.URLString.prototype.containsURL.call(Widgets.URLString.prototype, grip)) {
-        let widget = new Widgets.URLString(this, grip, options).render();
+        let widget = new Widgets.URLString(this, grip, unshortenedGrip).render();
         return widget.element;
       }
 
@@ -1347,7 +1349,7 @@ Messages.JavaScriptEvalOutput = function(evalResponse, errorMessage)
   // be useful to extensions customizing the console output.
   this.response = evalResponse;
 
-  if (errorMessage) {
+  if (typeof(errorMessage) !== "undefined") {
     severity = "error";
     msg = errorMessage;
     quoteStrings = false;
@@ -2205,11 +2207,14 @@ Widgets.MessageTimestamp.prototype = Heritage.extend(Widgets.BaseWidget.prototyp
  *        The owning message.
  * @param string str
  *        The string, which contains at least one valid URL.
+ * @param string unshortenedStr
+ *        The unshortened form of the string, if it was shortened.
  */
-Widgets.URLString = function(message, str)
+Widgets.URLString = function(message, str, unshortenedStr)
 {
   Widgets.BaseWidget.call(this, message);
   this.str = str;
+  this.unshortenedStr = unshortenedStr;
 };
 
 Widgets.URLString.prototype = Heritage.extend(Widgets.BaseWidget.prototype,
@@ -2234,16 +2239,23 @@ Widgets.URLString.prototype = Heritage.extend(Widgets.BaseWidget.prototype,
     this.element.appendChild(this._renderText("\""));
 
     // As we walk through the tokens of the source string, we make sure to preserve
-    // the original whitespace that seperated the tokens.
+    // the original whitespace that separated the tokens.
     let tokens = this.str.split(/\s+/);
     let textStart = 0;
     let tokenStart;
-    for (let token of tokens) {
+    for (let i = 0; i < tokens.length; i++) {
+      let token = tokens[i];
+      let unshortenedToken;
       tokenStart = this.str.indexOf(token, textStart);
       if (this._isURL(token)) {
+        // The last URL in the string might be shortened.  If so, get the
+        // real URL so the rendered link can point to it.
+        if (i === tokens.length - 1 && this.unshortenedStr) {
+          unshortenedToken = this.unshortenedStr.slice(tokenStart).split(/\s+/, 1)[0];
+        }
         this.element.appendChild(this._renderText(this.str.slice(textStart, tokenStart)));
         textStart = tokenStart + token.length;
-        this.element.appendChild(this._renderURL(token));
+        this.element.appendChild(this._renderURL(token, unshortenedToken));
       }
     }
 
@@ -2295,15 +2307,18 @@ Widgets.URLString.prototype = Heritage.extend(Widgets.BaseWidget.prototype,
    *
    * @param string url
    *        The string to be rendered as a url.
+   * @param string fullUrl
+   *        The unshortened form of the URL, if it was shortened.
    * @return DOMElement
    *         An element containing the rendered string.
    */
-  _renderURL: function(url)
+  _renderURL: function(url, fullUrl)
   {
+    let unshortened = fullUrl || url;
     let result = this.el("a", {
       class: "url",
-      title: url,
-      href: url,
+      title: unshortened,
+      href: unshortened,
       draggable: false
     }, url);
     this.message._addLinkCallback(result);
@@ -2420,8 +2435,7 @@ Widgets.JSObject.prototype = Heritage.extend(Widgets.BaseWidget.prototype,
     if (valueIsText) {
       this._text(value);
     } else {
-      let shortVal = this.message.shortenValueGrip(value);
-      let valueElem = this.message._renderValueGrip(shortVal, { concise: true });
+      let valueElem = this.message._renderValueGrip(value, { concise: true, shorten: true });
       container.appendChild(valueElem);
     }
   },
@@ -2814,8 +2828,7 @@ Widgets.ObjectRenderers.add({
           emptySlots = 0;
         }
 
-        let shortVal = this.message.shortenValueGrip(item);
-        let elem = this.message._renderValueGrip(shortVal, { concise: true });
+        let elem = this.message._renderValueGrip(item, { concise: true, shorten: true });
         this.element.appendChild(elem);
       }
     }

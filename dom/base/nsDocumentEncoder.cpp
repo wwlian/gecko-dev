@@ -162,11 +162,11 @@ protected:
   uint32_t          mEndDepth;
   int32_t           mStartRootIndex;
   int32_t           mEndRootIndex;
-  nsAutoTArray<nsINode*, 8>    mCommonAncestors;
-  nsAutoTArray<nsIContent*, 8> mStartNodes;
-  nsAutoTArray<int32_t, 8>     mStartOffsets;
-  nsAutoTArray<nsIContent*, 8> mEndNodes;
-  nsAutoTArray<int32_t, 8>     mEndOffsets;
+  AutoTArray<nsINode*, 8>    mCommonAncestors;
+  AutoTArray<nsIContent*, 8> mStartNodes;
+  AutoTArray<int32_t, 8>     mStartOffsets;
+  AutoTArray<nsIContent*, 8> mEndNodes;
+  AutoTArray<int32_t, 8>     mEndOffsets;
   bool              mHaltRangeHint;  
   // Used when context has already been serialized for
   // table cell selections (where parent is <tr>)
@@ -331,12 +331,10 @@ LineHasNonEmptyContentWorker(nsIFrame* aFrame)
   // Look for non-empty frames, but ignore inline and br frames.
   // For inline frames, descend into the children, if any.
   if (aFrame->GetType() == nsGkAtoms::inlineFrame) {
-    nsIFrame* child = aFrame->GetFirstPrincipalChild();
-    while (child) {
+    for (nsIFrame* child : aFrame->PrincipalChildList()) {
       if (LineHasNonEmptyContentWorker(child)) {
         return true;
       }
-      child = child->GetNextSibling();
     }
   } else {
     if (aFrame->GetType() != nsGkAtoms::brFrame &&
@@ -1100,6 +1098,9 @@ nsDocumentEncoder::EncodeToStringWithMaxLength(uint32_t aMaxLength,
   static const size_t bufferSize = 2048;
   if (!mCachedBuffer) {
     mCachedBuffer = nsStringBuffer::Alloc(bufferSize).take();
+    if (NS_WARN_IF(!mCachedBuffer)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
   }
   NS_ASSERTION(!mCachedBuffer->IsReadonly(),
                "DocumentEncoder shouldn't keep reference to non-readonly buffer!");
@@ -1437,7 +1438,7 @@ nsHTMLCopyEncoder::SetSelection(nsISelection* aSelection)
       mIsTextWidget = true;
       break;
     }
-#ifdef MOZ_THUNDERBIRD
+#if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
     else if (selContent->IsHTMLElement(nsGkAtoms::body)) {
       // Currently, setting mIsTextWidget to 'true' will result in the selection
       // being encoded/copied as pre-formatted plain text.

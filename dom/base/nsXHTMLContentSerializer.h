@@ -48,19 +48,13 @@ class nsXHTMLContentSerializer : public nsXMLContentSerializer {
                           nsresult& aResult) override;
 
   MOZ_WARN_UNUSED_RESULT
-  virtual bool AppendEndOfElementStart(nsIContent *aOriginalElement,
-                               nsIAtom * aName,
-                               int32_t aNamespaceID,
-                               nsAString& aStr) override;
-
-  MOZ_WARN_UNUSED_RESULT
   virtual bool AfterElementStart(nsIContent* aContent,
                                  nsIContent* aOriginalElement,
                                  nsAString& aStr) override;
 
-  virtual bool CheckElementEnd(nsIContent * aContent,
-                          bool & aForceFormat,
-                          nsAString& aStr) override;
+  virtual bool CheckElementEnd(mozilla::dom::Element* aContent,
+                               bool& aForceFormat,
+                               nsAString& aStr) override;
 
   virtual void AfterElementEnd(nsIContent * aContent,
                                nsAString& aStr) override;
@@ -158,7 +152,7 @@ protected:
   };
 
   // Stack to store one olState struct per <OL>.
-  nsAutoTArray<olState, 8> mOLStateStack;
+  AutoTArray<olState, 8> mOLStateStack;
 
   bool HasNoChildren(nsIContent* aContent);
 };

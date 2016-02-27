@@ -50,8 +50,8 @@ var NetworkManager = (function NetworkManagerClosure() {
       };
 
     this.currXhrId = 0;
-    this.pendingRequests = {};
-    this.loadedRequests = {};
+    this.pendingRequests = Object.create(null);
+    this.loadedRequests = Object.create(null);
   }
 
   function getArrayBuffer(xhr) {
@@ -263,4 +263,5 @@ var NetworkManager = (function NetworkManagerClosure() {
 
   return NetworkManager;
 })();
+
 

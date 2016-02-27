@@ -125,6 +125,7 @@ PluginInstanceParent::PluginInstanceParent(PluginModuleParent* parent,
     , mIsWhitelistedForShumway(false)
     , mWindowType(NPWindowTypeWindow)
     , mDrawingModel(kDefaultDrawingModel)
+    , mLastRecordedDrawingModel(-1)
     , mFrameID(0)
 #if defined(OS_WIN)
     , mPluginHWND(nullptr)
@@ -806,9 +807,11 @@ PluginInstanceParent::SetCurrentImage(Image* aImage)
     ImageContainer::NonOwningImage holder(aImage);
     holder.mFrameID = ++mFrameID;
 
-    nsAutoTArray<ImageContainer::NonOwningImage,1> imageList;
+    AutoTArray<ImageContainer::NonOwningImage,1> imageList;
     imageList.AppendElement(holder);
     mImageContainer->SetCurrentImages(imageList);
+
+    RecordDrawingModel();
 }
 
 bool
@@ -954,9 +957,9 @@ PluginInstanceParent::RecvShow(const NPRect& updatedRect,
 
         RefPtr<gfx::SourceSurface> sourceSurface =
             gfxPlatform::GetPlatform()->GetSourceSurfaceForSurface(nullptr, surface);
-        RefPtr<CairoImage> image = new CairoImage(surface->GetSize(), sourceSurface);
+        RefPtr<SourceSurfaceImage> image = new SourceSurfaceImage(surface->GetSize(), sourceSurface);
 
-        nsAutoTArray<ImageContainer::NonOwningImage,1> imageList;
+        AutoTArray<ImageContainer::NonOwningImage,1> imageList;
         imageList.AppendElement(
             ImageContainer::NonOwningImage(image));
 
@@ -973,6 +976,7 @@ PluginInstanceParent::RecvShow(const NPRect& updatedRect,
     PLUGIN_LOG_DEBUG(("   (RecvShow invalidated for surface %p)",
                       mFrontSurface.get()));
 
+    RecordDrawingModel();
     return true;
 }
 
@@ -1126,7 +1130,7 @@ PluginInstanceParent::SetBackgroundUnknown()
 
 nsresult
 PluginInstanceParent::BeginUpdateBackground(const nsIntRect& aRect,
-                                            gfxContext** aCtx)
+                                            DrawTarget** aDrawTarget)
 {
     PLUGIN_LOG_DEBUG(
         ("[InstanceParent][%p] BeginUpdateBackground for <x=%d,y=%d, w=%d,h=%d>",
@@ -1140,7 +1144,7 @@ PluginInstanceParent::BeginUpdateBackground(const nsIntRect& aRect,
         MOZ_ASSERT(aRect.TopLeft() == nsIntPoint(0, 0),
                    "Expecting rect for whole frame");
         if (!CreateBackground(aRect.Size())) {
-            *aCtx = nullptr;
+            *aDrawTarget = nullptr;
             return NS_OK;
         }
     }
@@ -1153,15 +1157,13 @@ PluginInstanceParent::BeginUpdateBackground(const nsIntRect& aRect,
 
     RefPtr<gfx::DrawTarget> dt = gfxPlatform::GetPlatform()->
       CreateDrawTargetForSurface(mBackground, gfx::IntSize(sz.width, sz.height));
-    RefPtr<gfxContext> ctx = new gfxContext(dt);
-    ctx.forget(aCtx);
+    dt.forget(aDrawTarget);
 
     return NS_OK;
 }
 
 nsresult
-PluginInstanceParent::EndUpdateBackground(gfxContext* aCtx,
-                                          const nsIntRect& aRect)
+PluginInstanceParent::EndUpdateBackground(const nsIntRect& aRect)
 {
     PLUGIN_LOG_DEBUG(
         ("[InstanceParent][%p] EndUpdateBackground for <x=%d,y=%d, w=%d,h=%d>",
@@ -1212,7 +1214,7 @@ PluginInstanceParent::CreateBackground(const nsIntSize& aSize)
         gfxSharedImageSurface::CreateUnsafe(
             this,
             mozilla::gfx::IntSize(aSize.width, aSize.height),
-            gfxImageFormat::RGB24);
+            mozilla::gfx::SurfaceFormat::X8R8G8B8_UINT32);
     return !!mBackground;
 #else
     return false;
@@ -1380,6 +1382,7 @@ PluginInstanceParent::NPP_SetWindow(const NPWindow* aWindow)
         return NPERR_GENERIC_ERROR;
     }
 
+    RecordDrawingModel();
     return NPERR_NO_ERROR;
 }
 
@@ -1563,6 +1566,16 @@ PluginInstanceParent::NPP_HandleEvent(void* event)
                 // We send this in nsPluginFrame just before painting
                 return SendWindowPosChanged(npremoteevent);
             }
+
+            case WM_IME_STARTCOMPOSITION:
+            case WM_IME_COMPOSITION:
+            case WM_IME_ENDCOMPOSITION:
+                if (!(mParent->GetQuirks() & QUIRK_WINLESS_HOOK_IME)) {
+                  // IME message will be posted on allowed plugins only such as
+                  // Flash.  Because if we cannot know that plugin can handle
+                  // IME correctly.
+                  return 0;
+                }
             break;
         }
     }
@@ -2363,3 +2376,72 @@ PluginInstanceParent::Cast(NPP aInstance, PluginAsyncSurrogate** aSurrogate)
     return instancePtr;
 }
 
+bool
+PluginInstanceParent::RecvGetCompositionString(const uint32_t& aIndex,
+                                               nsTArray<uint8_t>* aDist,
+                                               int32_t* aLength)
+{
+#if defined(OS_WIN)
+    nsPluginInstanceOwner* owner = GetOwner();
+    if (!owner) {
+        *aLength = IMM_ERROR_GENERAL;
+        return true;
+    }
+
+    if (!owner->GetCompositionString(aIndex, aDist, aLength)) {
+        *aLength = IMM_ERROR_NODATA;
+    }
+#endif
+    return true;
+}
+
+bool
+PluginInstanceParent::RecvSetCandidateWindow(
+    const mozilla::widget::CandidateWindowPosition& aPosition)
+{
+#if defined(OS_WIN)
+    nsPluginInstanceOwner* owner = GetOwner();
+    if (owner) {
+        owner->SetCandidateWindow(aPosition);
+    }
+#endif
+    return true;
+}
+
+bool
+PluginInstanceParent::RecvRequestCommitOrCancel(const bool& aCommitted)
+{
+#if defined(OS_WIN)
+    nsPluginInstanceOwner* owner = GetOwner();
+    if (owner) {
+        owner->RequestCommitOrCancel(aCommitted);
+    }
+#endif
+    return true;
+}
+
+void
+PluginInstanceParent::RecordDrawingModel()
+{
+    int mode = -1;
+    switch (mWindowType) {
+    case NPWindowTypeWindow:
+        // We use 0=windowed since there is no specific NPDrawingModel value.
+        mode = 0;
+        break;
+    case NPWindowTypeDrawable:
+        mode = mDrawingModel + 1;
+        break;
+    default:
+        MOZ_ASSERT_UNREACHABLE("bad window type");
+        return;
+    }
+
+    if (mode == mLastRecordedDrawingModel) {
+        return;
+    }
+    MOZ_ASSERT(mode >= 0);
+
+    Telemetry::Accumulate(Telemetry::PLUGIN_DRAWING_MODEL, mode);
+    mLastRecordedDrawingModel = mode;
+}

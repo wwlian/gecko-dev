@@ -396,6 +396,11 @@ public:
   virtual bool InsertChildAt(uint32_t aIndex, Accessible* aChild);
   virtual bool RemoveChild(Accessible* aChild);
 
+  /**
+   * Reallocates the child withing its parent.
+   */
+  void MoveChild(uint32_t aNewIndex, Accessible* aChild);
+
   //////////////////////////////////////////////////////////////////////////////
   // Accessible tree traverse methods
 
@@ -490,14 +495,10 @@ public:
   virtual nsresult HandleAccEvent(AccEvent* aAccEvent);
 
   /**
-   * Return true if this accessible allows accessible children from anonymous subtree.
-   */
-  virtual bool CanHaveAnonChildren();
-
-  /**
    * Return true if the accessible is an acceptable child.
    */
-  virtual bool IsAcceptableChild(Accessible* aPossibleChild) const { return true; }
+  virtual bool IsAcceptableChild(nsIContent* aEl) const
+    { return true; }
 
   /**
    * Returns text of accessible if accessible has text role otherwise empty
@@ -758,6 +759,12 @@ public:
    */
   virtual already_AddRefed<nsIURI> AnchorURIAt(uint32_t aAnchorIndex);
 
+  /**
+   * Returns a text point for the accessible element.
+   */
+  void ToTextPoint(HyperTextAccessible** aContainer, int32_t* aOffset,
+                   bool aIsBefore = true) const;
+
   //////////////////////////////////////////////////////////////////////////////
   // SelectAccessible
 
@@ -858,7 +865,7 @@ public:
   bool IsDefunct() const { return mStateFlags & eIsDefunct; }
 
   /**
-   * Return true if the accessible is no longer in the document.
+   * Return false if the accessible is no longer in the document.
    */
   bool IsInDocument() const { return !(mStateFlags & eIsNotInDocument); }
 
@@ -918,6 +925,12 @@ public:
     else
       mStateFlags &= ~eRelocated;
   }
+
+  /**
+   * Return true if the accessible doesn't allow accessible children from XBL
+   * anonymous subtree.
+   */
+  bool NoXBLKids() { return mStateFlags & eNoXBLKids; }
 
   /**
    * Return true if this accessible has a parent whose name depends on this
@@ -1010,8 +1023,9 @@ protected:
     eIgnoreDOMUIEvent = 1 << 7, // don't process DOM UI events for a11y events
     eSurvivingInUpdate = 1 << 8, // parent drops children to recollect them
     eRelocated = 1 << 9, // accessible was moved in tree
+    eNoXBLKids = 1 << 10, // accessible don't allows XBL children
 
-    eLastStateFlag = eRelocated
+    eLastStateFlag = eNoXBLKids
   };
 
   /**
@@ -1126,7 +1140,7 @@ protected:
   int32_t mIndexInParent;
 
   static const uint8_t kChildrenFlagsBits = 2;
-  static const uint8_t kStateFlagsBits = 10;
+  static const uint8_t kStateFlagsBits = 11;
   static const uint8_t kContextFlagsBits = 2;
   static const uint8_t kTypeBits = 6;
   static const uint8_t kGenericTypesBits = 14;

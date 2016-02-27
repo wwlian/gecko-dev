@@ -309,7 +309,7 @@ public:
                                       int32_t aXPos, int32_t aYPos);
 
   // indicate that the popup should be opened
-  void ShowPopup(bool aIsContextMenu, bool aSelectFirstItem);
+  void ShowPopup(bool aIsContextMenu);
   // indicate that the popup should be hidden. The new state should either be
   // ePopupClosed or ePopupInvisible.
   void HidePopup(bool aDeselectMenu, nsPopupState aNewState);
@@ -362,8 +362,11 @@ public:
   // For non-toplevel popups (which will always be panels), we will also
   // constrain them to the available screen rect, ie they will not fall
   // underneath the taskbar, dock or other fixed OS elements.
-  nsRect GetConstraintRect(const nsRect& aAnchorRect, const nsRect& aRootScreenRect,
-                           nsPopupLevel aPopupLevel);
+  // This operates in device pixels.
+  mozilla::LayoutDeviceIntRect
+  GetConstraintRect(const mozilla::LayoutDeviceIntRect& aAnchorRect,
+                    const mozilla::LayoutDeviceIntRect& aRootScreenRect,
+                    nsPopupLevel aPopupLevel);
 
   // Determines whether the given edges of the popup may be moved, where
   // aHorizontalSide and aVerticalSide are one of the NS_SIDE_* constants, or

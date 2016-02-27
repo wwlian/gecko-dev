@@ -77,6 +77,7 @@
 #include "mozilla/PeerIdentity.h"
 #include "mozilla/dom/RTCCertificate.h"
 #include "mozilla/dom/RTCConfigurationBinding.h"
+#include "mozilla/dom/RTCRtpSenderBinding.h"
 #include "mozilla/dom/RTCStatsReportBinding.h"
 #include "mozilla/dom/RTCPeerConnectionBinding.h"
 #include "mozilla/dom/PeerConnectionImplBinding.h"
@@ -186,6 +187,7 @@ public:
   virtual void NotifyTracksAvailable(DOMMediaStream* aStream) override
   {
     MOZ_ASSERT(NS_IsMainThread());
+    MOZ_ASSERT(aStream);
 
     PeerConnectionWrapper wrapper(mPcHandle);
 
@@ -198,6 +200,13 @@ public:
 
     std::string streamId = PeerConnectionImpl::GetStreamId(*aStream);
     bool notifyStream = true;
+
+    Sequence<OwningNonNull<DOMMediaStream>> streams;
+    if (!streams.AppendElement(OwningNonNull<DOMMediaStream>(*aStream),
+                               fallible)) {
+      MOZ_ASSERT(false);
+      return;
+    }
 
     for (size_t i = 0; i < tracks.Length(); i++) {
       std::string trackId;
@@ -230,7 +239,7 @@ public:
 
       JSErrorResult jrv;
       CSFLogInfo(logTag, "Calling OnAddTrack(%s)", trackId.c_str());
-      mObserver->OnAddTrack(*tracks[i], jrv);
+      mObserver->OnAddTrack(*tracks[i], streams, jrv);
       if (jrv.Failed()) {
         CSFLogError(logTag, ": OnAddTrack(%u) failed! Error: %u",
                     static_cast<unsigned>(i),
@@ -366,6 +375,24 @@ bool PCUuidGenerator::Generate(std::string* idp) {
   return true;
 }
 
+bool IsPrivateBrowsing(nsPIDOMWindowInner* aWindow)
+{
+#if defined(MOZILLA_EXTERNAL_LINKAGE)
+  return false;
+#else
+  if (!aWindow) {
+    return false;
+  }
+
+  nsIDocument *doc = aWindow->GetExtantDoc();
+  if (!doc) {
+    return false;
+  }
+
+  nsILoadContext *loadContext = doc->GetLoadContext();
+  return loadContext && loadContext->UsePrivateBrowsing();
+#endif
+}
 
 PeerConnectionImpl::PeerConnectionImpl(const GlobalObject* aGlobal)
 : mTimeCard(MOZ_LOG_TEST(signalingLogInfo(),LogLevel::Error) ?
@@ -394,11 +421,17 @@ PeerConnectionImpl::PeerConnectionImpl(const GlobalObject* aGlobal)
   , mAddCandidateErrorCount(0)
   , mTrickle(true) // TODO(ekr@rtfm.com): Use pref
   , mNegotiationNeeded(false)
+  , mPrivateWindow(false)
 {
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
   MOZ_ASSERT(NS_IsMainThread());
+  auto log = RLogRingBuffer::CreateInstance();
   if (aGlobal) {
     mWindow = do_QueryInterface(aGlobal->GetAsSupports());
+    if (IsPrivateBrowsing(mWindow)) {
+      mPrivateWindow = true;
+      log->EnterPrivateMode();
+    }
   }
 #endif
   CSFLogInfo(logTag, "%s: PeerConnectionImpl constructor for %s",
@@ -424,6 +457,15 @@ PeerConnectionImpl::~PeerConnectionImpl()
   }
   // This aborts if not on main thread (in Debug builds)
   PC_AUTO_ENTER_API_CALL_NO_CHECK();
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
+  if (mPrivateWindow) {
+    auto * log = RLogRingBuffer::GetInstance();
+    if (log) {
+      log->ExitPrivateMode();
+    }
+    mPrivateWindow = false;
+  }
+#endif
   if (PeerConnectionCtx::isActive()) {
     PeerConnectionCtx::GetInstance()->mPeerConnections.erase(mHandle);
   } else {
@@ -621,8 +663,8 @@ PeerConnectionConfiguration::AddIceServer(const RTCIceServer &aServer)
       port = (isStuns || isTurns)? 5349 : 3478;
 
     if (isTurn || isTurns) {
-      NS_ConvertUTF16toUTF8 credential(aServer.mCredential);
-      NS_ConvertUTF16toUTF8 username(aServer.mUsername);
+      NS_ConvertUTF16toUTF8 credential(aServer.mCredential.Value());
+      NS_ConvertUTF16toUTF8 username(aServer.mUsername.Value());
 
       if (!addTurnServer(host.get(), port,
                          username.get(),
@@ -652,10 +694,10 @@ PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
 
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aThread);
-#ifndef MOZILLA_EXTERNAL_LINKAGE
-  mThread = do_QueryInterface(aThread);
-#endif
-  MOZ_ASSERT(mThread);
+  if (!mThread) {
+    mThread = do_QueryInterface(aThread);
+    MOZ_ASSERT(mThread);
+  }
   CheckThread();
 
   mPCObserver = do_GetWeakReference(&aObserver);
@@ -679,7 +721,7 @@ PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
   // Currently no standalone unit tests for DataChannel,
   // which is the user of mWindow
   MOZ_ASSERT(aWindow);
-  mWindow = aWindow;
+  mWindow = aWindow->AsInner();
   NS_ENSURE_STATE(mWindow);
 #endif // MOZILLA_INTERNAL_API
 
@@ -931,13 +973,158 @@ class CompareCodecPriority {
     std::string mPreferredCodec;
 };
 
+#if !defined(MOZILLA_XPCOMRT_API)
+class ConfigureCodec {
+  public:
+    explicit ConfigureCodec(nsCOMPtr<nsIPrefBranch>& branch) :
+      mHardwareH264Enabled(false),
+      mHardwareH264Supported(false),
+      mSoftwareH264Enabled(false),
+      mH264Enabled(false),
+      mVP9Enabled(false),
+      mH264Level(13), // minimum suggested for WebRTC spec
+      mH264MaxBr(0), // Unlimited
+      mH264MaxMbps(0), // Unlimited
+      mVP8MaxFs(0),
+      mVP8MaxFr(0),
+      mUseTmmbr(false)
+    {
+#ifdef MOZ_WEBRTC_OMX
+      // Check to see if what HW codecs are available (not in use) at this moment.
+      // Note that streaming video decode can reserve a decoder
+
+      // XXX See bug 1018791 Implement W3 codec reservation policy
+      // Note that currently, OMXCodecReservation needs to be held by an sp<> because it puts
+      // 'this' into an sp<EventListener> to talk to the resource reservation code
+
+      // This pref is a misnomer; it is solely for h264 _hardware_ support.
+      branch->GetBoolPref("media.peerconnection.video.h264_enabled",
+          &mHardwareH264Enabled);
+
+      if (mHardwareH264Enabled) {
+        // Ok, it is preffed on. Can we actually do it?
+        android::sp<android::OMXCodecReservation> encode = new android::OMXCodecReservation(true);
+        android::sp<android::OMXCodecReservation> decode = new android::OMXCodecReservation(false);
+
+        // Currently we just check if they're available right now, which will fail if we're
+        // trying to call ourself, for example.  It will work for most real-world cases, like
+        // if we try to add a person to a 2-way call to make a 3-way mesh call
+        if (encode->ReserveOMXCodec() && decode->ReserveOMXCodec()) {
+          CSFLogDebug( logTag, "%s: H264 hardware codec available", __FUNCTION__);
+          mHardwareH264Supported = true;
+        }
+      }
+
+#endif // MOZ_WEBRTC_OMX
+
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
+      mSoftwareH264Enabled = PeerConnectionCtx::GetInstance()->gmpHasH264();
+#else
+      // For unit-tests
+      mSoftwareH264Enabled = true;
+#endif
+
+      mH264Enabled = mHardwareH264Supported || mSoftwareH264Enabled;
+
+      branch->GetIntPref("media.navigator.video.h264.level", &mH264Level);
+      mH264Level &= 0xFF;
+
+      branch->GetIntPref("media.navigator.video.h264.max_br", &mH264MaxBr);
+
+#ifdef MOZ_WEBRTC_OMX
+      // Level 1.2; but let's allow CIF@30 or QVGA@30+ by default
+      mH264MaxMbps = 11880;
+#endif
+
+      branch->GetIntPref("media.navigator.video.h264.max_mbps", &mH264MaxMbps);
+
+      branch->GetBoolPref("media.peerconnection.video.vp9_enabled",
+          &mVP9Enabled);
+
+      branch->GetIntPref("media.navigator.video.max_fs", &mVP8MaxFs);
+      if (mVP8MaxFs <= 0) {
+        mVP8MaxFs = 12288; // We must specify something other than 0
+      }
+
+      branch->GetIntPref("media.navigator.video.max_fr", &mVP8MaxFr);
+      if (mVP8MaxFr <= 0) {
+        mVP8MaxFr = 60; // We must specify something other than 0
+      }
+
+      // TMMBR is enabled from a pref in about:config
+      branch->GetBoolPref("media.navigator.video.use_tmmbr", &mUseTmmbr);
+    }
+
+    void operator()(JsepCodecDescription* codec) const
+    {
+      switch (codec->mType) {
+        case SdpMediaSection::kAudio:
+          // Nothing to configure here, for now.
+          break;
+        case SdpMediaSection::kVideo:
+          {
+            JsepVideoCodecDescription& videoCodec =
+              static_cast<JsepVideoCodecDescription&>(*codec);
+
+            if (videoCodec.mName == "H264") {
+              // Override level
+              videoCodec.mProfileLevelId &= 0xFFFF00;
+              videoCodec.mProfileLevelId |= mH264Level;
+
+              videoCodec.mConstraints.maxBr = mH264MaxBr;
+
+              videoCodec.mConstraints.maxMbps = mH264MaxMbps;
+
+              // Might disable it, but we set up other params anyway
+              videoCodec.mEnabled = mH264Enabled;
+
+              if (videoCodec.mPacketizationMode == 0 && !mSoftwareH264Enabled) {
+                // We're assuming packetization mode 0 is unsupported by
+                // hardware.
+                videoCodec.mEnabled = false;
+              }
+
+              if (mHardwareH264Supported) {
+                videoCodec.mStronglyPreferred = true;
+              }
+            } else if (videoCodec.mName == "VP8" || videoCodec.mName == "VP9") {
+              if (videoCodec.mName == "VP9" && !mVP9Enabled) {
+                videoCodec.mEnabled = false;
+                break;
+              }
+              videoCodec.mConstraints.maxFs = mVP8MaxFs;
+              videoCodec.mConstraints.maxFps = mVP8MaxFr;
+            }
+
+            if (mUseTmmbr) {
+              videoCodec.EnableTmmbr();
+            }
+          }
+          break;
+        case SdpMediaSection::kText:
+        case SdpMediaSection::kApplication:
+        case SdpMediaSection::kMessage:
+          {} // Nothing to configure for these.
+      }
+    }
+
+  private:
+    bool mHardwareH264Enabled;
+    bool mHardwareH264Supported;
+    bool mSoftwareH264Enabled;
+    bool mH264Enabled;
+    bool mVP9Enabled;
+    int32_t mH264Level;
+    int32_t mH264MaxBr;
+    int32_t mH264MaxMbps;
+    int32_t mVP8MaxFs;
+    int32_t mVP8MaxFr;
+    bool mUseTmmbr;
+};
+#endif // !defined(MOZILLA_XPCOMRT_API)
+
 nsresult
 PeerConnectionImpl::ConfigureJsepSessionCodecs() {
-  if (mHaveConfiguredCodecs) {
-    return NS_OK;
-  }
-  mHaveConfiguredCodecs = true;
-
 #if !defined(MOZILLA_XPCOMRT_API)
   nsresult res;
   nsCOMPtr<nsIPrefService> prefs =
@@ -945,8 +1132,8 @@ PeerConnectionImpl::ConfigureJsepSessionCodecs() {
 
   if (NS_FAILED(res)) {
     CSFLogError(logTag, "%s: Couldn't get prefs service, res=%u",
-                        __FUNCTION__,
-                        static_cast<unsigned>(res));
+        __FUNCTION__,
+        static_cast<unsigned>(res));
     return res;
   }
 
@@ -956,137 +1143,11 @@ PeerConnectionImpl::ConfigureJsepSessionCodecs() {
     return NS_ERROR_FAILURE;
   }
 
-
-  bool hardwareH264Supported = false;
-
-#ifdef MOZ_WEBRTC_OMX
-  bool hardwareH264Enabled = false;
-
-  // Check to see if what HW codecs are available (not in use) at this moment.
-  // Note that streaming video decode can reserve a decoder
-
-  // XXX See bug 1018791 Implement W3 codec reservation policy
-  // Note that currently, OMXCodecReservation needs to be held by an sp<> because it puts
-  // 'this' into an sp<EventListener> to talk to the resource reservation code
-
-  // This pref is a misnomer; it is solely for h264 _hardware_ support.
-  branch->GetBoolPref("media.peerconnection.video.h264_enabled",
-                      &hardwareH264Enabled);
-
-  if (hardwareH264Enabled) {
-    // Ok, it is preffed on. Can we actually do it?
-    android::sp<android::OMXCodecReservation> encode = new android::OMXCodecReservation(true);
-    android::sp<android::OMXCodecReservation> decode = new android::OMXCodecReservation(false);
-
-    // Currently we just check if they're available right now, which will fail if we're
-    // trying to call ourself, for example.  It will work for most real-world cases, like
-    // if we try to add a person to a 2-way call to make a 3-way mesh call
-    if (encode->ReserveOMXCodec() && decode->ReserveOMXCodec()) {
-      CSFLogDebug( logTag, "%s: H264 hardware codec available", __FUNCTION__);
-      hardwareH264Supported = true;
-    }
-  }
-
-#endif // MOZ_WEBRTC_OMX
-
-#if !defined(MOZILLA_EXTERNAL_LINKAGE)
-  bool softwareH264Enabled = PeerConnectionCtx::GetInstance()->gmpHasH264();
-#else
-  // For unit-tests
-  bool softwareH264Enabled = true;
-#endif
-
-  bool h264Enabled = hardwareH264Supported || softwareH264Enabled;
-
-  bool vp9Enabled = false;
-  branch->GetBoolPref("media.peerconnection.video.vp9_enabled",
-                      &vp9Enabled);
-
-  auto& codecs = mJsepSession->Codecs();
+  ConfigureCodec configurer(branch);
+  mJsepSession->ForEachCodec(configurer);
 
   // We use this to sort the list of codecs once everything is configured
   CompareCodecPriority comparator;
-
-  // Set parameters
-  for (auto i = codecs.begin(); i != codecs.end(); ++i) {
-    auto &codec = **i;
-    switch (codec.mType) {
-      case SdpMediaSection::kAudio:
-        // Nothing to configure here, for now.
-        break;
-      case SdpMediaSection::kVideo:
-        {
-          JsepVideoCodecDescription& videoCodec =
-            static_cast<JsepVideoCodecDescription&>(codec);
-
-          if (videoCodec.mName == "H264") {
-            int32_t level = 13; // minimum suggested for WebRTC spec
-            branch->GetIntPref("media.navigator.video.h264.level", &level);
-            level &= 0xFF;
-            // Override level
-            videoCodec.mProfileLevelId &= 0xFFFF00;
-            videoCodec.mProfileLevelId |= level;
-
-            int32_t maxBr = 0; // Unlimited
-            branch->GetIntPref("media.navigator.video.h264.max_br", &maxBr);
-            videoCodec.mMaxBr = maxBr;
-
-            int32_t maxMbps = 0; // Unlimited
-#ifdef MOZ_WEBRTC_OMX
-            maxMbps = 11880;
-#endif
-            branch->GetIntPref("media.navigator.video.h264.max_mbps",
-                               &maxMbps);
-            videoCodec.mMaxBr = maxMbps;
-
-            // Might disable it, but we set up other params anyway
-            videoCodec.mEnabled = h264Enabled;
-
-            if (videoCodec.mPacketizationMode == 0 && !softwareH264Enabled) {
-              // We're assuming packetization mode 0 is unsupported by
-              // hardware.
-              videoCodec.mEnabled = false;
-            }
-
-            if (hardwareH264Supported) {
-              videoCodec.mStronglyPreferred = true;
-            }
-          } else if (codec.mName == "VP8" || codec.mName == "VP9") {
-            if (videoCodec.mName == "VP9" && !vp9Enabled) {
-              videoCodec.mEnabled = false;
-              break;
-            }
-            int32_t maxFs = 0;
-            branch->GetIntPref("media.navigator.video.max_fs", &maxFs);
-            if (maxFs <= 0) {
-              maxFs = 12288; // We must specify something other than 0
-            }
-            videoCodec.mMaxFs = maxFs;
-
-            int32_t maxFr = 0;
-            branch->GetIntPref("media.navigator.video.max_fr", &maxFr);
-            if (maxFr <= 0) {
-              maxFr = 60; // We must specify something other than 0
-            }
-            videoCodec.mMaxFr = maxFr;
-
-          }
-
-          // TMMBR is enabled from a pref in about:config
-          bool useTmmbr = false;
-          branch->GetBoolPref("media.navigator.video.use_tmmbr",
-            &useTmmbr);
-          if (useTmmbr) {
-            videoCodec.EnableTmmbr();
-          }
-        }
-        break;
-      case SdpMediaSection::kText:
-      case SdpMediaSection::kApplication:
-      case SdpMediaSection::kMessage:
-        {} // Nothing to configure for these.
-    }
-  }
 
   // Sort by priority
   int32_t preferredCodec = 0;
@@ -1097,7 +1158,7 @@ PeerConnectionImpl::ConfigureJsepSessionCodecs() {
     comparator.SetPreferredCodec(preferredCodec);
   }
 
-  std::stable_sort(codecs.begin(), codecs.end(), comparator);
+  mJsepSession->SortCodecs(comparator);
 #endif // !defined(MOZILLA_XPCOMRT_API)
   return NS_OK;
 }
@@ -1148,20 +1209,18 @@ PeerConnectionImpl::GetDatachannelParameters(
     MOZ_ASSERT(sendDataChannel == recvDataChannel);
 
     if (sendDataChannel) {
+      // This will release assert if there is no such index, and that's ok
+      const JsepTrackEncoding& encoding =
+        trackPair.mSending->GetNegotiatedDetails()->GetEncoding(0);
 
-      if (!trackPair.mSending->GetNegotiatedDetails()->GetCodecCount()) {
+      if (encoding.GetCodecs().empty()) {
         CSFLogError(logTag, "%s: Negotiated m=application with no codec. "
                             "This is likely to be broken.",
                             __FUNCTION__);
         return NS_ERROR_FAILURE;
       }
 
-      for (size_t i = 0;
-           i < trackPair.mSending->GetNegotiatedDetails()->GetCodecCount();
-           ++i) {
-        const JsepCodecDescription* codec =
-          trackPair.mSending->GetNegotiatedDetails()->GetCodec(i);
-
+      for (const JsepCodecDescription* codec : encoding.GetCodecs()) {
         if (codec->mType != SdpMediaSection::kApplication) {
           CSFLogError(logTag, "%s: Codec type for m=application was %u, this "
                               "is a bug.",
@@ -1220,17 +1279,6 @@ PeerConnectionImpl::AddTrackToJsepSession(SdpMediaSection::MediaType type,
                                           const std::string& streamId,
                                           const std::string& trackId)
 {
-  if (!PeerConnectionCtx::GetInstance()->isReady()) {
-    // We are not ready to configure codecs for this track. We need to defer.
-    PeerConnectionCtx::GetInstance()->queueJSEPOperation(
-        WrapRunnableNM(DeferredAddTrackToJsepSession,
-                       mHandle,
-                       type,
-                       streamId,
-                       trackId));
-    return NS_OK;
-  }
-
   nsresult res = ConfigureJsepSessionCodecs();
   if (NS_FAILED(res)) {
     CSFLogError(logTag, "Failed to configure codecs");
@@ -1861,19 +1909,31 @@ PeerConnectionImpl::SetRemoteDescription(int32_t action, const char* aSDP)
       mJsepSession->GetRemoteTracksRemoved();
 
     for (auto i = removedTracks.begin(); i != removedTracks.end(); ++i) {
-      RefPtr<RemoteSourceStreamInfo> info =
-        mMedia->GetRemoteStreamById((*i)->GetStreamId());
+      const std::string& streamId = (*i)->GetStreamId();
+      const std::string& trackId = (*i)->GetTrackId();
+
+      RefPtr<RemoteSourceStreamInfo> info = mMedia->GetRemoteStreamById(streamId);
       if (!info) {
         MOZ_ASSERT(false, "A stream/track was removed that wasn't in PCMedia. "
                           "This is a bug.");
         continue;
       }
 
-      mMedia->RemoveRemoteTrack((*i)->GetStreamId(), (*i)->GetTrackId());
+      mMedia->RemoveRemoteTrack(streamId, trackId);
+
+      DOMMediaStream* stream = info->GetMediaStream();
+      nsTArray<RefPtr<MediaStreamTrack>> tracks;
+      stream->GetTracks(tracks);
+      for (auto& track : tracks) {
+        if (PeerConnectionImpl::GetTrackId(*track) == trackId) {
+          pco->OnRemoveTrack(*track, jrv);
+          break;
+        }
+      }
 
       // We might be holding the last ref, but that's ok.
       if (!info->GetTrackCount()) {
-        pco->OnRemoveStream(*info->GetMediaStream(), jrv);
+        pco->OnRemoveStream(*stream, jrv);
       }
     }
 
@@ -1963,10 +2023,14 @@ PeerConnectionImpl::AddIceCandidate(const char* aCandidate, const char* aMid, un
   if(!mIceStartTime.IsNull()) {
     TimeDuration timeDelta = TimeStamp::Now() - mIceStartTime;
     if (mIceConnectionState == PCImplIceConnectionState::Failed) {
-      Telemetry::Accumulate(Telemetry::WEBRTC_ICE_LATE_TRICKLE_ARRIVAL_TIME,
+      Telemetry::Accumulate((mIsLoop ?
+                             Telemetry::LOOP_ICE_LATE_TRICKLE_ARRIVAL_TIME :
+                             Telemetry::WEBRTC_ICE_LATE_TRICKLE_ARRIVAL_TIME),
                             timeDelta.ToMilliseconds());
     } else {
-      Telemetry::Accumulate(Telemetry::WEBRTC_ICE_ON_TIME_TRICKLE_ARRIVAL_TIME,
+      Telemetry::Accumulate((mIsLoop ?
+                             Telemetry::LOOP_ICE_ON_TIME_TRICKLE_ARRIVAL_TIME :
+                             Telemetry::WEBRTC_ICE_ON_TIME_TRICKLE_ARRIVAL_TIME),
                             timeDelta.ToMilliseconds());
     }
   }
@@ -2191,6 +2255,24 @@ PeerConnectionImpl::AddTrack(MediaStreamTrack& aTrack,
   return NS_OK;
 }
 
+nsresult
+PeerConnectionImpl::SelectSsrc(MediaStreamTrack& aRecvTrack,
+                               unsigned short aSsrcIndex)
+{
+  for (size_t i = 0; i < mMedia->RemoteStreamsLength(); ++i) {
+    if (mMedia->GetRemoteStreamByIndex(i)->GetMediaStream()->
+        HasTrack(aRecvTrack)) {
+      auto& pipelines = mMedia->GetRemoteStreamByIndex(i)->GetPipelines();
+      std::string trackId = PeerConnectionImpl::GetTrackId(aRecvTrack);
+      auto it = pipelines.find(trackId);
+      if (it != pipelines.end()) {
+        it->second->SelectSsrc_m(aSsrcIndex);
+      }
+    }
+  }
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 PeerConnectionImpl::RemoveTrack(MediaStreamTrack& aTrack) {
   PC_AUTO_ENTER_API_CALL(true);
@@ -2315,6 +2397,75 @@ PeerConnectionImpl::ReplaceTrack(MediaStreamTrack& aThisTrack,
   }
 
   return NS_OK;
+}
+
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
+NS_IMETHODIMP
+PeerConnectionImpl::SetParameters(MediaStreamTrack& aTrack,
+                                  const RTCRtpParameters& aParameters) {
+  PC_AUTO_ENTER_API_CALL(true);
+
+  std::vector<JsepTrack::JsConstraints> constraints;
+  if (aParameters.mEncodings.WasPassed()) {
+    for (auto& encoding : aParameters.mEncodings.Value()) {
+      JsepTrack::JsConstraints constraint;
+      if (encoding.mRid.WasPassed()) {
+        constraint.rid = NS_ConvertUTF16toUTF8(encoding.mRid.Value()).get();
+      }
+      if (encoding.mMaxBitrate.WasPassed()) {
+        constraint.constraints.maxBr = encoding.mMaxBitrate.Value();
+      }
+      constraint.constraints.scaleDownBy = encoding.mScaleResolutionDownBy;
+      constraints.push_back(constraint);
+    }
+  }
+  return SetParameters(aTrack, constraints);
+}
+#endif
+
+nsresult
+PeerConnectionImpl::SetParameters(
+    MediaStreamTrack& aTrack,
+    const std::vector<JsepTrack::JsConstraints>& aConstraints)
+{
+  std::string trackId = PeerConnectionImpl::GetTrackId(aTrack);
+  std::string streamId = PeerConnectionImpl::GetStreamId(*aTrack.GetStream());
+
+  return mJsepSession->SetParameters(streamId, trackId, aConstraints);
+}
+
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
+NS_IMETHODIMP
+PeerConnectionImpl::GetParameters(MediaStreamTrack& aTrack,
+                                  RTCRtpParameters& aOutParameters) {
+  PC_AUTO_ENTER_API_CALL(true);
+
+  std::vector<JsepTrack::JsConstraints> constraints;
+  nsresult rv = GetParameters(aTrack, &constraints);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  aOutParameters.mEncodings.Construct();
+  for (auto& constraint : constraints) {
+    RTCRtpEncodingParameters encoding;
+    encoding.mRid.Construct(NS_ConvertASCIItoUTF16(constraint.rid.c_str()));
+    encoding.mMaxBitrate.Construct(constraint.constraints.maxBr);
+    encoding.mScaleResolutionDownBy = constraint.constraints.scaleDownBy;
+    aOutParameters.mEncodings.Value().AppendElement(Move(encoding), fallible);
+  }
+  return NS_OK;
+}
+#endif
+
+nsresult
+PeerConnectionImpl::GetParameters(
+    MediaStreamTrack& aTrack,
+    std::vector<JsepTrack::JsConstraints>* aOutConstraints)
+{
+  std::string trackId = PeerConnectionImpl::GetTrackId(aTrack);
+  std::string streamId = PeerConnectionImpl::GetStreamId(*aTrack.GetStream());
+
+  return mJsepSession->GetParameters(streamId, trackId, aOutConstraints);
 }
 
 nsresult
@@ -2487,7 +2638,7 @@ PeerConnectionImpl::PluginCrash(uint32_t aPluginID,
     PluginCrashedEvent::Constructor(doc, NS_LITERAL_STRING("PluginCrashed"), init);
 
   event->SetTrusted(true);
-  event->GetInternalNSEvent()->mFlags.mOnlyChromeDispatch = true;
+  event->WidgetEventPtr()->mFlags.mOnlyChromeDispatch = true;
 
   EventDispatcher::DispatchDOMEvent(mWindow, nullptr, event, nullptr, nullptr);
 #endif
@@ -2559,7 +2710,9 @@ PeerConnectionImpl::CloseInt()
   // for all trickle ICE candidates to come in; this can happen well after we've
   // transitioned to connected. As a bonus, this allows us to detect race
   // conditions where a stats dispatch happens right as the PC closes.
-  RecordLongtermICEStatistics();
+  if (!mPrivateWindow) {
+    RecordLongtermICEStatistics();
+  }
   RecordEndOfCallTelemetry();
   CSFLogInfo(logTag, "%s: Closing PeerConnectionImpl %s; "
              "ending call", __FUNCTION__, mHandle.c_str());

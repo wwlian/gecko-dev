@@ -8,12 +8,16 @@
 #include "AndroidBridge.h"
 #include "GeneratedJNIWrappers.h"
 
+#ifdef MOZ_CRASHREPORTER
+#include "nsExceptionHandler.h"
+#endif
+
 namespace mozilla {
 namespace jni {
 
 namespace detail {
 
-#define DEFINE_PRIMITIVE_TYPE_ADAPTER(NativeType, JNIType, JNIName, ABIName)	\
+#define DEFINE_PRIMITIVE_TYPE_ADAPTER(NativeType, JNIType, JNIName, ABIName) \
     \
     constexpr JNIType (JNIEnv::*TypeAdapter<NativeType>::Call) \
             (jobject, jmethodID, jvalue*) MOZ_JNICALL_ABI; \
@@ -26,7 +30,9 @@ namespace detail {
     constexpr void (JNIEnv::*TypeAdapter<NativeType>::Set) \
             (jobject, jfieldID, JNIType) ABIName; \
     constexpr void (JNIEnv::*TypeAdapter<NativeType>::StaticSet) \
-            (jclass, jfieldID, JNIType) ABIName
+            (jclass, jfieldID, JNIType) ABIName; \
+    constexpr void (JNIEnv::*TypeAdapter<NativeType>::GetArray) \
+            (JNIType ## Array, jsize, jsize, JNIType*)
 
 DEFINE_PRIMITIVE_TYPE_ADAPTER(bool,     jboolean, Boolean, /*nothing*/);
 DEFINE_PRIMITIVE_TYPE_ADAPTER(int8_t,   jbyte,    Byte,    /*nothing*/);
@@ -41,19 +47,19 @@ DEFINE_PRIMITIVE_TYPE_ADAPTER(double,   jdouble,  Double,  MOZ_JNICALL_ABI);
 
 } // namespace detail
 
-constexpr char Object::name[];
-template<> const char TypedObject<jstring>::name[] = "java/lang/String";
-template<> const char TypedObject<jclass>::name[] = "java/lang/Class";
-template<> const char TypedObject<jthrowable>::name[] = "java/lang/Throwable";
-template<> const char TypedObject<jbooleanArray>::name[] = "[Z";
-template<> const char TypedObject<jbyteArray>::name[] = "[B";
-template<> const char TypedObject<jcharArray>::name[] = "[C";
-template<> const char TypedObject<jshortArray>::name[] = "[S";
-template<> const char TypedObject<jintArray>::name[] = "[I";
-template<> const char TypedObject<jlongArray>::name[] = "[J";
-template<> const char TypedObject<jfloatArray>::name[] = "[F";
-template<> const char TypedObject<jdoubleArray>::name[] = "[D";
-template<> const char TypedObject<jobjectArray>::name[] = "[Ljava/lang/Object;";
+template<> const char Context<Object, jobject>::name[] = "java/lang/Object";
+template<> const char Context<TypedObject<jstring>, jstring>::name[] = "java/lang/String";
+template<> const char Context<TypedObject<jclass>, jclass>::name[] = "java/lang/Class";
+template<> const char Context<TypedObject<jthrowable>, jthrowable>::name[] = "java/lang/Throwable";
+template<> const char Context<TypedObject<jbooleanArray>, jbooleanArray>::name[] = "[Z";
+template<> const char Context<TypedObject<jbyteArray>, jbyteArray>::name[] = "[B";
+template<> const char Context<TypedObject<jcharArray>, jcharArray>::name[] = "[C";
+template<> const char Context<TypedObject<jshortArray>, jshortArray>::name[] = "[S";
+template<> const char Context<TypedObject<jintArray>, jintArray>::name[] = "[I";
+template<> const char Context<TypedObject<jlongArray>, jlongArray>::name[] = "[J";
+template<> const char Context<TypedObject<jfloatArray>, jfloatArray>::name[] = "[F";
+template<> const char Context<TypedObject<jdoubleArray>, jdoubleArray>::name[] = "[D";
+template<> const char Context<TypedObject<jobjectArray>, jobjectArray>::name[] = "[Ljava/lang/Object;";
 
 
 JNIEnv* sGeckoThreadEnv;
@@ -122,30 +128,40 @@ bool ThrowException(JNIEnv *aEnv, const char *aClass,
 {
     MOZ_ASSERT(aEnv, "Invalid thread JNI env");
 
-    ClassObject::LocalRef cls =
-            ClassObject::LocalRef::Adopt(aEnv->FindClass(aClass));
+    Class::LocalRef cls = Class::LocalRef::Adopt(aEnv->FindClass(aClass));
     MOZ_ASSERT(cls, "Cannot find exception class");
 
     return !aEnv->ThrowNew(cls.Get(), aMessage);
 }
 
-void HandleUncaughtException(JNIEnv *aEnv)
+bool HandleUncaughtException(JNIEnv* aEnv)
 {
     MOZ_ASSERT(aEnv, "Invalid thread JNI env");
 
     if (!aEnv->ExceptionCheck()) {
-        return;
+        return false;
     }
+
+#ifdef DEBUG
+    aEnv->ExceptionDescribe();
+#endif
 
     Throwable::LocalRef e =
             Throwable::LocalRef::Adopt(aEnv->ExceptionOccurred());
     MOZ_ASSERT(e);
 
     aEnv->ExceptionClear();
-    widget::GeckoAppShell::HandleUncaughtException(nullptr, e);
+    String::LocalRef stack = widget::GeckoAppShell::HandleUncaughtException(e);
 
-    // Should be dead by now...
-    MOZ_CRASH("Failed to handle uncaught exception");
+#ifdef MOZ_CRASHREPORTER
+    if (stack) {
+        // GeckoAppShell wants us to annotate and trigger the crash reporter.
+        CrashReporter::AnnotateCrashReport(
+                NS_LITERAL_CSTRING("AuxiliaryJavaStack"), stack->ToCString());
+    }
+#endif // MOZ_CRASHREPORTER
+
+    return true;
 }
 
 namespace {
@@ -186,6 +202,11 @@ void SetNativeHandle(JNIEnv* env, jobject instance, uintptr_t handle)
 
     env->SetLongField(instance, sJNIObjectHandleField,
                       static_cast<jlong>(handle));
+}
+
+jclass GetClassGlobalRef(JNIEnv* aEnv, const char* aClassName)
+{
+    return AndroidBridge::GetClassGlobalRef(aEnv, aClassName);
 }
 
 } // jni

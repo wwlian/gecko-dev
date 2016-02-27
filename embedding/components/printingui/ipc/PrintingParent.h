@@ -10,11 +10,15 @@
 #include "mozilla/dom/PBrowserParent.h"
 #include "mozilla/embedding/PPrintingParent.h"
 
-class nsIDOMWindow;
+class nsPIDOMWindowOuter;
 class PPrintProgressDialogParent;
 class PPrintSettingsDialogParent;
 
 namespace mozilla {
+namespace layout {
+class PRemotePrintJobParent;
+}
+
 namespace embedding {
 
 class PrintingParent final : public PPrintingParent
@@ -49,6 +53,12 @@ public:
     virtual bool
     DeallocPPrintSettingsDialogParent(PPrintSettingsDialogParent* aActor);
 
+    virtual PRemotePrintJobParent*
+    AllocPRemotePrintJobParent();
+
+    virtual bool
+    DeallocPRemotePrintJobParent(PRemotePrintJobParent* aActor);
+
     virtual void
     ActorDestroy(ActorDestroyReason aWhy);
 
@@ -56,7 +66,7 @@ public:
     virtual ~PrintingParent();
 
 private:
-    nsIDOMWindow*
+    nsPIDOMWindowOuter*
     DOMWindowFromBrowserParent(PBrowserParent* parent);
 
     nsresult
@@ -69,4 +79,3 @@ private:
 } // namespace mozilla
 
 #endif
-

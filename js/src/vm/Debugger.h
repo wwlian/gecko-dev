@@ -10,7 +10,6 @@
 #include "mozilla/GuardObjects.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Range.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
 
 #include "jsclist.h"
@@ -43,7 +42,7 @@ class DebuggerMemory;
 
 typedef HashSet<ReadBarrieredGlobalObject,
                 MovableCellHasher<ReadBarrieredGlobalObject>,
-                SystemAllocPolicy> WeakGlobalObjectSet;
+                RuntimeAllocPolicy> WeakGlobalObjectSet;
 
 /*
  * A weakmap from GC thing keys to JSObject values that supports the keys being
@@ -117,8 +116,9 @@ class DebuggerWeakMap : private WeakMap<RelocatablePtr<UnbarrieredKey>, Relocata
     template<typename KeyInput, typename ValueInput>
     bool relookupOrAdd(AddPtr& p, const KeyInput& k, const ValueInput& v) {
         MOZ_ASSERT(v->compartment() == this->compartment);
-        MOZ_ASSERT(!k->compartment()->options_.mergeable());
-        MOZ_ASSERT_IF(!InvisibleKeysOk, !k->compartment()->options_.invisibleToDebugger());
+        MOZ_ASSERT(!k->compartment()->creationOptions().mergeable());
+        MOZ_ASSERT_IF(!InvisibleKeysOk,
+                      !k->compartment()->creationOptions().invisibleToDebugger());
         MOZ_ASSERT(!Base::has(k));
         if (!incZoneCount(k->zone()))
             return false;
@@ -180,6 +180,32 @@ class DebuggerWeakMap : private WeakMap<RelocatablePtr<UnbarrieredKey>, Relocata
         --p->value();
         if (p->value() == 0)
             zoneCounts.remove(zone);
+    }
+};
+
+class LeaveDebuggeeNoExecute;
+
+// Suppresses all debuggee NX checks, i.e., allow all execution. Used to allow
+// certain whitelisted operations to execute code.
+//
+// WARNING
+// WARNING Do not use this unless you know what you are doing!
+// WARNING
+class AutoSuppressDebuggeeNoExecuteChecks
+{
+    EnterDebuggeeNoExecute** stack_;
+    EnterDebuggeeNoExecute* prev_;
+
+  public:
+    explicit AutoSuppressDebuggeeNoExecuteChecks(JSContext* cx) {
+        stack_ = &cx->runtime()->noExecuteDebuggerTop;
+        prev_ = *stack_;
+        *stack_ = nullptr;
+    }
+
+    ~AutoSuppressDebuggeeNoExecuteChecks() {
+        MOZ_ASSERT(!*stack_);
+        *stack_ = prev_;
     }
 };
 
@@ -260,6 +286,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
 
     // Return true if this Debugger observed a debuggee that participated in the
     // GC identified by the given GC number. Return false otherwise.
+    // May return false negatives if we have hit OOM.
     bool observedGC(uint64_t majorGCNumber) const {
         return observedGCs.has(majorGCNumber);
     }
@@ -270,33 +297,13 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
         return observedGCs.put(majorGCNumber);
     }
 
-    bool isTrackingTenurePromotions() const {
-        return trackingTenurePromotions;
-    }
-
     bool isEnabled() const {
         return enabled;
     }
 
-    void logTenurePromotion(JSRuntime* rt, JSObject& obj, double when);
     static SavedFrame* getObjectAllocationSite(JSObject& obj);
 
-    struct TenurePromotionsLogEntry : public JS::Traceable
-    {
-        TenurePromotionsLogEntry(JSRuntime* rt, JSObject& obj, double when);
-
-        const char* className;
-        double when;
-        RelocatablePtrObject frame;
-        size_t size;
-
-        static void trace(TenurePromotionsLogEntry* e, JSTracer* trc) {
-            if (e->frame)
-                TraceEdge(trc, &e->frame, "Debugger::TenurePromotionsLogEntry::frame");
-        }
-    };
-
-    struct AllocationsLogEntry : public JS::Traceable
+    struct AllocationsLogEntry
     {
         AllocationsLogEntry(HandleObject frame, double when, const char* className,
                             HandleAtom ctorName, size_t size, bool inNursery)
@@ -317,11 +324,11 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
         size_t size;
         bool inNursery;
 
-        static void trace(AllocationsLogEntry* e, JSTracer* trc) {
-            if (e->frame)
-                TraceEdge(trc, &e->frame, "Debugger::AllocationsLogEntry::frame");
-            if (e->ctorName)
-                TraceEdge(trc, &e->ctorName, "Debugger::AllocationsLogEntry::ctorName");
+        void trace(JSTracer* trc) {
+            if (frame)
+                TraceEdge(trc, &frame, "Debugger::AllocationsLogEntry::frame");
+            if (ctorName)
+                TraceEdge(trc, &ctorName, "Debugger::AllocationsLogEntry::ctorName");
         }
     };
 
@@ -340,13 +347,8 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
 
     // The set of GC numbers for which one or more of this Debugger's observed
     // debuggees participated in.
-    js::HashSet<uint64_t> observedGCs;
-
-    using TenurePromotionsLog = js::TraceableFifo<TenurePromotionsLogEntry>;
-    TenurePromotionsLog tenurePromotionsLog;
-    bool trackingTenurePromotions;
-    size_t maxTenurePromotionsLogLength;
-    bool tenurePromotionsLogOverflowed;
+    using GCNumberSet = HashSet<uint64_t, DefaultHasher<uint64_t>, RuntimeAllocPolicy>;
+    GCNumberSet observedGCs;
 
     using AllocationsLog = js::TraceableFifo<AllocationsLogEntry>;
 
@@ -446,10 +448,10 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
      * lost events.
      */
 #ifdef NIGHTLY_BUILD
-    uint32_t traceLoggerLastDrainedId;
+    uint32_t traceLoggerLastDrainedSize;
     uint32_t traceLoggerLastDrainedIteration;
 #endif
-    uint32_t traceLoggerScriptedCallsLastDrainedId;
+    uint32_t traceLoggerScriptedCallsLastDrainedSize;
     uint32_t traceLoggerScriptedCallsLastDrainedIteration;
 
     class FrameRange;
@@ -475,10 +477,13 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
      * debuggee compartment.
      */
     JSTrapStatus handleUncaughtException(mozilla::Maybe<AutoCompartment>& ac, bool callHook);
-    JSTrapStatus handleUncaughtException(mozilla::Maybe<AutoCompartment>& ac, MutableHandleValue vp, bool callHook);
+    JSTrapStatus handleUncaughtException(mozilla::Maybe<AutoCompartment>& ac, MutableHandleValue vp, bool callHook,
+                                         const mozilla::Maybe<HandleValue>& thisVForCheck = mozilla::Nothing(),
+                                         AbstractFramePtr frame = NullFramePtr());
 
     JSTrapStatus handleUncaughtExceptionHelper(mozilla::Maybe<AutoCompartment>& ac,
-                                               MutableHandleValue* vp, bool callHook);
+                                               MutableHandleValue* vp, bool callHook,
+                                               const mozilla::Maybe<HandleValue>& thisVForCheck, AbstractFramePtr frame);
 
     /*
      * Handle the result of a hook that is expected to return a resumption
@@ -505,8 +510,24 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
      *     anything else - Make a new TypeError the pending exception and
      *         return handleUncaughtException(ac, vp, callHook).
      */
-    JSTrapStatus parseResumptionValue(mozilla::Maybe<AutoCompartment>& ac, bool ok, const Value& rv,
+    JSTrapStatus parseResumptionValue(mozilla::Maybe<AutoCompartment>& ac, bool OK, const Value& rv,
+                                      AbstractFramePtr frame, jsbytecode* pc, MutableHandleValue vp,
+                                      bool callHook = true);
+
+    /*
+     * When we run the onEnterFrame hook, the |this| slot hasn't been fully
+     * initialized, because the initialzation happens in the function's
+     * prologue. To combat this, we pass the this for the primitive return
+     * check directly. When bug 1249193 is fixed, this overload should be
+     * removed.
+     */
+    JSTrapStatus parseResumptionValue(mozilla::Maybe<AutoCompartment>& ac, bool OK, const Value& rv,
+                                      const Value& thisVForCheck, AbstractFramePtr frame,
                                       MutableHandleValue vp, bool callHook = true);
+
+    JSTrapStatus parseResumptionValueHelper(mozilla::Maybe<AutoCompartment>& ac, bool ok, const Value& rv,
+                                            const mozilla::Maybe<HandleValue>& thisVForCheck, AbstractFramePtr frame,
+                                            MutableHandleValue vp, bool callHook);
 
     GlobalObject* unwrapDebuggeeArgument(JSContext* cx, const Value& v);
 
@@ -562,6 +583,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
     static bool drainTraceLoggerScriptCalls(JSContext* cx, unsigned argc, Value* vp);
     static bool startTraceLogger(JSContext* cx, unsigned argc, Value* vp);
     static bool endTraceLogger(JSContext* cx, unsigned argc, Value* vp);
+    static bool isCompilableUnit(JSContext* cx, unsigned argc, Value* vp);
 #ifdef NIGHTLY_BUILD
     static bool setupTraceLogger(JSContext* cx, unsigned argc, Value* vp);
     static bool drainTraceLogger(JSContext* cx, unsigned argc, Value* vp);
@@ -569,6 +591,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
     static bool construct(JSContext* cx, unsigned argc, Value* vp);
     static const JSPropertySpec properties[];
     static const JSFunctionSpec methods[];
+    static const JSFunctionSpec static_methods[];
 
     static void removeFromFrameMapsAndClearBreakpointsIn(JSContext* cx, AbstractFramePtr frame);
     static bool updateExecutionObservabilityOfFrames(JSContext* cx, const ExecutionObservableSet& obs,
@@ -609,8 +632,9 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
     JSObject* getHook(Hook hook) const;
     bool hasAnyLiveHooks() const;
 
+    static bool slowPathCheckNoExecute(JSContext* cx, HandleScript script);
     static JSTrapStatus slowPathOnEnterFrame(JSContext* cx, AbstractFramePtr frame);
-    static bool slowPathOnLeaveFrame(JSContext* cx, AbstractFramePtr frame, bool ok);
+    static bool slowPathOnLeaveFrame(JSContext* cx, AbstractFramePtr frame, jsbytecode* pc, bool ok);
     static JSTrapStatus slowPathOnDebuggerStatement(JSContext* cx, AbstractFramePtr frame);
     static JSTrapStatus slowPathOnExceptionUnwind(JSContext* cx, AbstractFramePtr frame);
     static void slowPathOnNewScript(JSContext* cx, HandleScript script);
@@ -717,6 +741,9 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
     static void detachAllDebuggersFromGlobal(FreeOp* fop, GlobalObject* global);
     static void findZoneEdges(JS::Zone* v, gc::ComponentFinder<JS::Zone>& finder);
 
+    // Checks it the current compartment is allowed to execute code.
+    static inline bool checkNoExecute(JSContext* cx, HandleScript script);
+
     /*
      * JSTrapStatus Overview
      * ---------------------
@@ -775,7 +802,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
      * throw, or vice versa: we can redirect to a complete copy of the
      * alternative path, containing its own call to onLeaveFrame.)
      */
-    static inline bool onLeaveFrame(JSContext* cx, AbstractFramePtr frame, bool ok);
+    static inline bool onLeaveFrame(JSContext* cx, AbstractFramePtr frame, jsbytecode* pc, bool ok);
 
     static inline void onNewScript(JSContext* cx, HandleScript script);
     static inline void onNewGlobalObject(JSContext* cx, Handle<GlobalObject*> global);
@@ -939,20 +966,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
     Debugger & operator=(const Debugger&) = delete;
 };
 
-template<>
-struct DefaultGCPolicy<Debugger::TenurePromotionsLogEntry> {
-    static void trace(JSTracer* trc, Debugger::TenurePromotionsLogEntry* e, const char*) {
-        Debugger::TenurePromotionsLogEntry::trace(e, trc);
-    }
-};
-
-template<>
-struct DefaultGCPolicy<Debugger::AllocationsLogEntry> {
-    static void trace(JSTracer* trc, Debugger::AllocationsLogEntry* e, const char*) {
-        Debugger::AllocationsLogEntry::trace(e, trc);
-    }
-};
-
 class BreakpointSite {
     friend class Breakpoint;
     friend struct ::JSCompartment;
@@ -1079,7 +1092,7 @@ Debugger::onNewScript(JSContext* cx, HandleScript script)
 {
     // We early return in slowPathOnNewScript for self-hosted scripts, so we can
     // ignore those in our assertion here.
-    MOZ_ASSERT_IF(!script->compartment()->options().invisibleToDebugger() &&
+    MOZ_ASSERT_IF(!script->compartment()->creationOptions().invisibleToDebugger() &&
                   !script->selfHosted(),
                   script->compartment()->firedOnNewGlobalObject);
     if (script->compartment()->isDebuggee())

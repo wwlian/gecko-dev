@@ -114,7 +114,7 @@ public:
     // an Array of Response objects.  The following code unwraps these
     // JS values back to an nsTArray<RefPtr<Response>>.
 
-    nsAutoTArray<RefPtr<Response>, 256> responseList;
+    AutoTArray<RefPtr<Response>, 256> responseList;
     responseList.SetCapacity(mRequestList.Length());
 
     bool isArray;
@@ -155,6 +155,26 @@ public:
 
       if (NS_WARN_IF(response->Type() == ResponseType::Error)) {
         Fail();
+        return;
+      }
+
+      // Do not allow the convenience methods .add()/.addAll() to store failed
+      // responses.  A consequence of this is that these methods cannot be
+      // used to store opaque or opaqueredirect responses since they always
+      // expose a 0 status value.
+      if (!response->Ok()) {
+        uint32_t t = static_cast<uint32_t>(response->Type());
+        NS_ConvertASCIItoUTF16 type(ResponseTypeValues::strings[t].value,
+                                    ResponseTypeValues::strings[t].length);
+        nsAutoString status;
+        status.AppendInt(response->Status());
+        nsAutoString url;
+        mRequestList[i]->GetUrl(url);
+        ErrorResult rv;
+        rv.ThrowTypeError<MSG_CACHE_ADD_FAILED_RESPONSE>(type, status, url);
+
+        // TODO: abort the fetch requests we have running (bug 1157434)
+        mPromise->MaybeReject(rv);
         return;
       }
 
@@ -234,6 +254,8 @@ Cache::Match(const RequestOrUSVString& aRequest,
     return nullptr;
   }
 
+  CacheChild::AutoLock actorLock(mActor);
+
   RefPtr<InternalRequest> ir = ToInternalRequest(aRequest, IgnoreBody, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
@@ -260,6 +282,8 @@ Cache::MatchAll(const Optional<RequestOrUSVString>& aRequest,
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
+
+  CacheChild::AutoLock actorLock(mActor);
 
   CacheQueryParams params;
   ToCacheQueryParams(params, aOptions);
@@ -290,6 +314,8 @@ Cache::Add(JSContext* aContext, const RequestOrUSVString& aRequest,
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
+
+  CacheChild::AutoLock actorLock(mActor);
 
   if (!IsValidPutRequestMethod(aRequest, aRv)) {
     return nullptr;
@@ -324,6 +350,8 @@ Cache::AddAll(JSContext* aContext,
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
+
+  CacheChild::AutoLock actorLock(mActor);
 
   GlobalObject global(aContext, mGlobal->GetGlobalJSObject());
   MOZ_ASSERT(!global.Failed());
@@ -371,6 +399,8 @@ Cache::Put(const RequestOrUSVString& aRequest, Response& aResponse,
     return nullptr;
   }
 
+  CacheChild::AutoLock actorLock(mActor);
+
   if (NS_WARN_IF(!IsValidPutRequestMethod(aRequest, aRv))) {
     return nullptr;
   }
@@ -400,6 +430,8 @@ Cache::Delete(const RequestOrUSVString& aRequest,
     return nullptr;
   }
 
+  CacheChild::AutoLock actorLock(mActor);
+
   RefPtr<InternalRequest> ir = ToInternalRequest(aRequest, IgnoreBody, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
@@ -426,6 +458,8 @@ Cache::Keys(const Optional<RequestOrUSVString>& aRequest,
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
+
+  CacheChild::AutoLock actorLock(mActor);
 
   CacheQueryParams params;
   ToCacheQueryParams(params, aOptions);
@@ -529,6 +563,8 @@ Cache::~Cache()
 already_AddRefed<Promise>
 Cache::ExecuteOp(AutoChildOpArgs& aOpArgs, ErrorResult& aRv)
 {
+  MOZ_ASSERT(mActor);
+
   RefPtr<Promise> promise = Promise::Create(mGlobal, aRv);
   if (NS_WARN_IF(!promise)) {
     return nullptr;
@@ -555,7 +591,7 @@ Cache::AddAll(const GlobalObject& aGlobal,
     return promise.forget();
   }
 
-  nsAutoTArray<RefPtr<Promise>, 256> fetchList;
+  AutoTArray<RefPtr<Promise>, 256> fetchList;
   fetchList.SetCapacity(aRequestList.Length());
 
   // Begin fetching each request in parallel.  For now, if an error occurs just
@@ -602,6 +638,8 @@ Cache::PutAll(const nsTArray<RefPtr<Request>>& aRequestList,
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
+
+  CacheChild::AutoLock actorLock(mActor);
 
   AutoChildOpArgs args(this, CachePutAllArgs());
 

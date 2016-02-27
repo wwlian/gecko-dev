@@ -1,5 +1,7 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
  * Bug 896139 - Breakpoints not triggering when reloading script.
@@ -18,7 +20,13 @@ function test() {
 
     let [tab,, panel] = yield initDebugger(EXAMPLE_URL + TAB_URL);
     let win = panel.panelWin;
-    yield waitForSourceShown(panel, SCRIPT_URL);
+
+    let Sources = win.DebuggerView.Sources;
+    yield waitForDebuggerEvents(panel, win.EVENTS.SOURCE_SHOWN);
+    if (Sources.selectedItem.attachment.source.url.indexOf(SCRIPT_URL) === -1) {
+      Sources.selectedValue = getSourceActor(win.DebuggerView.Sources, EXAMPLE_URL + SCRIPT_URL)
+    }
+
     yield panel.addBreakpoint({
       actor: getSourceActor(win.DebuggerView.Sources, EXAMPLE_URL + SCRIPT_URL),
       line: 6

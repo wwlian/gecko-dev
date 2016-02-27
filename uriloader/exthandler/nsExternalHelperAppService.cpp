@@ -408,7 +408,7 @@ static nsresult GetDownloadDirectory(nsIFile **_directory,
   // creating. Note that Creating directories with specified permission only
   // supported on Unix platform right now. That's why above if exists.
 
-  PRUint32 permissions;
+  uint32_t permissions;
   rv = dir->GetPermissions(&permissions);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -416,12 +416,12 @@ static nsresult GetDownloadDirectory(nsIFile **_directory,
     const char* userName = PR_GetEnv("USERNAME");
     if (!userName || !*userName) {
       userName = PR_GetEnv("USER");
-      if (!userName || !*userName) {
-        userName = PR_GetEnv("LOGNAME");
-      }
-      else {
-        userName = "mozillaUser";
-      }
+    }
+    if (!userName || !*userName) {
+      userName = PR_GetEnv("LOGNAME");
+    }
+    if (!userName || !*userName) {
+      userName = "mozillaUser";
     }
 
     nsAutoString userDir;
@@ -447,7 +447,12 @@ static nsresult GetDownloadDirectory(nsIFile **_directory,
         rv = finalPath->GetPermissions(&permissions);
         NS_ENSURE_SUCCESS(rv, rv);
 
-        if (permissions == PR_IRWXU) {
+        // Ensuring the path is writable by the current user.
+        bool isWritable;
+        rv = finalPath->IsWritable(&isWritable);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        if (permissions == PR_IRWXU && isWritable) {
           dir = finalPath;
           break;
         }
@@ -513,11 +518,9 @@ static nsDefaultMimeTypeEntry defaultMimeEntries [] =
   { APPLICATION_OGG, "ogg" },
   { AUDIO_OGG, "oga" },
   { AUDIO_OGG, "opus" },
-#ifdef MOZ_WEBM
   { VIDEO_WEBM, "webm" },
   { AUDIO_WEBM, "webm" },
-#endif
-#if defined(MOZ_GSTREAMER) || defined(MOZ_WMF)
+#if defined(MOZ_WMF)
   { VIDEO_MP4, "mp4" },
   { AUDIO_MP4, "m4a" },
   { AUDIO_MP3, "mp3" },
@@ -552,9 +555,7 @@ struct nsExtraMimeTypeEntry {
  */
 static nsExtraMimeTypeEntry extraMimeEntries [] =
 {
-#if defined(VMS)
-  { APPLICATION_OCTET_STREAM, "exe,com,bin,sav,bck,pcsi,dcx_axpexe,dcx_vaxexe,sfx_axpexe,sfx_vaxexe", "Binary File" },
-#elif defined(XP_MACOSX) // don't define .bin on the mac...use internet config to look that up...
+#if defined(XP_MACOSX) // don't define .bin on the mac...use internet config to look that up...
   { APPLICATION_OCTET_STREAM, "exe,com", "Binary File" },
 #else
   { APPLICATION_OCTET_STREAM, "exe,com,bin", "Binary File" },
@@ -680,7 +681,7 @@ nsExternalHelperAppService::DoContentContentProcessHelper(const nsACString& aMim
                                                           nsIInterfaceRequestor *aWindowContext,
                                                           nsIStreamListener ** aStreamListener)
 {
-  nsCOMPtr<nsIDOMWindow> window = do_GetInterface(aContentContext);
+  nsCOMPtr<nsPIDOMWindowOuter> window = do_GetInterface(aContentContext);
   NS_ENSURE_STATE(window);
 
   // We need to get a hold of a ContentChild so that we can begin forwarding
@@ -1930,7 +1931,7 @@ void nsExternalAppHandler::SendStatusChange(ErrorType type, nsresult rv, nsIRequ
                 // If we didn't have a prompter we will try and get a window
                 // instead, get it's docshell and use it to alert the user.
                 if (!prompter) {
-                  nsCOMPtr<nsPIDOMWindow> window(do_GetInterface(GetDialogParent()));
+                  nsCOMPtr<nsPIDOMWindowOuter> window(do_GetInterface(GetDialogParent()));
                   if (!window || !window->GetDocShell()) {
                     return;
                   }
@@ -2555,13 +2556,13 @@ bool nsExternalAppHandler::GetNeverAskFlagFromPref(const char * prefName, const 
 
 nsresult nsExternalAppHandler::MaybeCloseWindow()
 {
-  nsCOMPtr<nsPIDOMWindow> window = do_GetInterface(mContentContext);
+  nsCOMPtr<nsPIDOMWindowOuter> window = do_GetInterface(mContentContext);
   NS_ENSURE_STATE(window);
 
   if (mShouldCloseWindow) {
     // Reset the window context to the opener window so that the dependent
     // dialogs have a parent
-    nsCOMPtr<nsPIDOMWindow> opener = window->GetOpener();
+    nsCOMPtr<nsPIDOMWindowOuter> opener = window->GetOpener();
 
     if (opener && !opener->Closed()) {
       mContentContext = do_GetInterface(opener);
@@ -2587,8 +2588,7 @@ nsExternalAppHandler::Notify(nsITimer* timer)
 {
   NS_ASSERTION(mWindowToClose, "No window to close after timer fired");
 
-  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(mWindowToClose);
-  window->Close();
+  mWindowToClose->Close();
   mWindowToClose = nullptr;
   mTimer = nullptr;
 

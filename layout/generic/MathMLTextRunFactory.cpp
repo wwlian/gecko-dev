@@ -529,16 +529,16 @@ MathVariant(uint32_t aCh, uint8_t aMathVar)
 
 void
 MathMLTextRunFactory::RebuildTextRun(nsTransformedTextRun* aTextRun,
-                                     gfxContext* aRefContext,
+                                     mozilla::gfx::DrawTarget* aRefDrawTarget,
                                      gfxMissingFontRecorder* aMFR)
 {
   gfxFontGroup* fontGroup = aTextRun->GetFontGroup();
 
   nsAutoString convertedString;
-  nsAutoTArray<bool,50> charsToMergeArray;
-  nsAutoTArray<bool,50> deletedCharsArray;
-  nsAutoTArray<RefPtr<nsTransformedCharStyle>,50> styleArray;
-  nsAutoTArray<uint8_t,50> canBreakBeforeArray;
+  AutoTArray<bool,50> charsToMergeArray;
+  AutoTArray<bool,50> deletedCharsArray;
+  AutoTArray<RefPtr<nsTransformedCharStyle>,50> styleArray;
+  AutoTArray<uint8_t,50> canBreakBeforeArray;
   bool mergeNeeded = false;
 
   bool singleCharMI =
@@ -712,7 +712,7 @@ MathMLTextRunFactory::RebuildTextRun(nsTransformedTextRun* aTextRun,
 
   uint32_t flags;
   gfxTextRunFactory::Parameters innerParams =
-      GetParametersForInner(aTextRun, &flags, aRefContext);
+      GetParametersForInner(aTextRun, &flags, aRefDrawTarget);
 
   nsAutoPtr<nsTransformedTextRun> transformedChild;
   nsAutoPtr<gfxTextRun> cachedChild;
@@ -778,9 +778,9 @@ MathMLTextRunFactory::RebuildTextRun(nsTransformedTextRun* aTextRun,
   NS_ASSERTION(convertedString.Length() == canBreakBeforeArray.Length(),
                "Dropped characters or break-before values somewhere!");
   child->SetPotentialLineBreaks(0, canBreakBeforeArray.Length(),
-      canBreakBeforeArray.Elements(), aRefContext);
+                                canBreakBeforeArray.Elements());
   if (transformedChild) {
-    transformedChild->FinishSettingProperties(aRefContext, aMFR);
+    transformedChild->FinishSettingProperties(aRefDrawTarget, aMFR);
   }
 
   if (mergeNeeded) {

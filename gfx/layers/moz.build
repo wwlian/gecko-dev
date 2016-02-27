@@ -92,6 +92,10 @@ EXPORTS.gfxipc += [
     'ipc/ShadowLayerUtils.h',
 ]
 
+EXPORTS.mozilla.dom += [
+    'apz/util/CheckerboardReportService.h',
+]
+
 EXPORTS.mozilla.layers += [
     'apz/public/GeckoContentController.h',
     # exporting things from apz/src is temporary until we extract a
@@ -109,6 +113,8 @@ EXPORTS.mozilla.layers += [
     'apz/util/ChromeProcessController.h',
     'apz/util/DoubleTapToZoom.h',
     'apz/util/InputAPZContext.h',
+    'apz/util/ScrollInputMethods.h',
+    'apz/util/ScrollLinkedEffectDetector.h',
     'AsyncCanvasRenderer.h',
     'AtomicRefCountedWithFinalize.h',
     'AxisPhysicsModel.h',
@@ -145,6 +151,7 @@ EXPORTS.mozilla.layers += [
     'D3D9SurfaceImage.h',
     'Effects.h',
     'ImageDataSerializer.h',
+    'ipc/APZChild.h',
     'ipc/AsyncTransactionTracker.h',
     'ipc/CompositableForwarder.h',
     'ipc/CompositableTransactionParent.h',
@@ -152,12 +159,16 @@ EXPORTS.mozilla.layers += [
     'ipc/CompositorLRU.h',
     'ipc/CompositorParent.h',
     'ipc/FenceUtils.h',
+    'ipc/GonkNativeHandle.h',
+    'ipc/GonkNativeHandleUtils.h',
     'ipc/ImageBridgeChild.h',
     'ipc/ImageBridgeParent.h',
     'ipc/ImageContainerParent.h',
     'ipc/ISurfaceAllocator.h',
+    'ipc/LayerAnimationUtils.h',
     'ipc/LayerTransactionChild.h',
     'ipc/LayerTransactionParent.h',
+    'ipc/RemoteContentController.h',
     'ipc/ShadowLayerChild.h',
     'ipc/ShadowLayers.h',
     'ipc/ShadowLayersManager.h',
@@ -179,7 +190,6 @@ EXPORTS.mozilla.layers += [
     'RenderTrace.h',
     'TextureWrapperImage.h',
     'TransactionIdAllocator.h',
-    'YCbCrImageDataSerializer.h',
 ]
 
 if CONFIG['MOZ_X11']:
@@ -204,6 +214,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
         'opengl/GLManager.h',
     ]
     EXPORTS += [
+        'MacIOSurfaceHelpers.h',
         'MacIOSurfaceImage.h',
     ]
     UNIFIED_SOURCES += [
@@ -211,6 +222,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     ]
     SOURCES += [
         'ipc/ShadowLayerUtilsMac.cpp',
+        'MacIOSurfaceHelpers.cpp',
         'MacIOSurfaceImage.cpp',
     ]
 
@@ -237,6 +249,8 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
              ]
         ]
     SOURCES += [
+        'ipc/GonkNativeHandle.cpp',
+        'ipc/GonkNativeHandleUtils.cpp',
         'ipc/ShadowLayerUtilsGralloc.cpp',
     ]
 
@@ -244,12 +258,13 @@ UNIFIED_SOURCES += [
     'apz/src/APZCTreeManager.cpp',
     'apz/src/AsyncPanZoomController.cpp',
     'apz/src/Axis.cpp',
+    'apz/src/CheckerboardEvent.cpp',
     'apz/src/GestureEventListener.cpp',
     'apz/src/HitTestingTreeNode.cpp',
     'apz/src/InputBlockState.cpp',
     'apz/src/InputQueue.cpp',
     'apz/src/OverscrollHandoffState.cpp',
-    'apz/src/TaskThrottler.cpp',
+    'apz/src/PotentialCheckerboardDurationTracker.cpp',
     'apz/src/TouchCounter.cpp',
     'apz/src/WheelScrollAnimation.cpp',
     'apz/testutil/APZTestData.cpp',
@@ -257,9 +272,11 @@ UNIFIED_SOURCES += [
     'apz/util/APZCCallbackHelper.cpp',
     'apz/util/APZEventState.cpp',
     'apz/util/APZThreadUtils.cpp',
+    'apz/util/CheckerboardReportService.cpp',
     'apz/util/ChromeProcessController.cpp',
     'apz/util/DoubleTapToZoom.cpp',
     'apz/util/InputAPZContext.cpp',
+    'apz/util/ScrollLinkedEffectDetector.cpp',
     'AsyncCanvasRenderer.cpp',
     'AxisPhysicsModel.cpp',
     'AxisPhysicsMSDModel.cpp',
@@ -313,6 +330,7 @@ UNIFIED_SOURCES += [
     'GLImages.cpp',
     'ImageDataSerializer.cpp',
     'ImageLayers.cpp',
+    'ipc/APZChild.cpp',
     'ipc/AsyncTransactionTracker.cpp',
     'ipc/CompositableTransactionParent.cpp',
     'ipc/CompositorBench.cpp',
@@ -324,8 +342,10 @@ UNIFIED_SOURCES += [
     'ipc/ImageBridgeParent.cpp',
     'ipc/ImageContainerParent.cpp',
     'ipc/ISurfaceAllocator.cpp',
+    'ipc/LayerAnimationUtils.cpp',
     'ipc/LayerTransactionChild.cpp',
     'ipc/LayerTransactionParent.cpp',
+    'ipc/RemoteContentController.cpp',
     'ipc/ShadowLayerChild.cpp',
     'ipc/ShadowLayerParent.cpp',
     'ipc/ShadowLayers.cpp',
@@ -350,7 +370,6 @@ UNIFIED_SOURCES += [
     'RenderTrace.cpp',
     'RotatedBuffer.cpp',
     'TextureWrapperImage.cpp',
-    'YCbCrImageDataSerializer.cpp',
 ]
 
 SOURCES += [
@@ -382,6 +401,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
 IPDL_SOURCES = [
     'ipc/LayersMessages.ipdlh',
     'ipc/LayersSurfaces.ipdlh',
+    'ipc/PAPZ.ipdl',
     'ipc/PCompositable.ipdl',
     'ipc/PCompositor.ipdl',
     'ipc/PImageBridge.ipdl',
