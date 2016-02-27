@@ -3042,6 +3042,95 @@ if test -n "$MOZ_DEBUG"; then
 fi
 
 dnl ========================================================
+dnl Baseline JIT random NOP insertion.
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(baselinerandomnop,
+[  --enable-baselinerandomnop
+                          Enable random NOP insertion between bytecodes in the Baseline JIT.],
+    BASELINE_RANDOM_NOP=1,
+    BASELINE_RANDOM_NOP= )
+
+if test -n "$BASELINE_RANDOM_NOP"; then
+    AC_DEFINE(BASELINE_RANDOM_NOP)
+fi
+
+AC_SUBST(BASELINE_RANDOM_NOP)
+
+dnl ========================================================
+dnl IonMonkey random NOP insertion.
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(ionrandomnop,
+[  --enable-ionrandomnop
+                          Enable random NOP insertion between LIR instructions in IonMonkey.],
+    ION_RANDOM_NOP=1,
+    ION_RANDOM_NOP= )
+
+if test -n "$ION_RANDOM_NOP"; then
+    AC_DEFINE(ION_RANDOM_NOP)
+fi
+
+AC_SUBST(ION_RANDOM_NOP)
+
+dnl ========================================================
+dnl IonMonkey register randomization.
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(ionregrando,
+[  --enable-ionregrando    Enable register randomization in IonMonkey.],
+    ION_REGISTER_RANDOMIZATION=1,
+    ION_REGISTER_RANDOMIZATION= )
+
+if test -n "$ION_REGISTER_RANDOMIZATION"; then
+    AC_DEFINE(ION_REGISTER_RANDOMIZATION)
+fi
+
+AC_SUBST(ION_REGISTER_RANDOMIZATION)
+
+dnl ========================================================
+dnl Base offset randomization.
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(baseoffsetrando,
+[  --enable-baseoffsetrando
+                          Enable JIT base offset randomization.],
+    BASE_OFFSET_RANDOMIZATION=1,
+    BASE_OFFSET_RANDOMIZATION= )
+
+if test -n "$BASE_OFFSET_RANDOMIZATION"; then
+    AC_DEFINE(BASE_OFFSET_RANDOMIZATION)
+fi
+
+AC_SUBST(BASE_OFFSET_RANDOMIZATION)
+
+dnl ========================================================
+dnl Constant blinding (Baseline JIT)
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(baselineconstantblinding,
+[  --enable-baselineconstantblinding
+                          Enable constant blinding in the Baseline JIT.],
+    BASELINE_CONSTANT_BLINDING=1,
+    BASELINE_CONSTANT_BLINDING= )
+
+if test -n "$BASELINE_CONSTANT_BLINDING"; then
+    AC_DEFINE(BASELINE_CONSTANT_BLINDING)
+fi
+
+AC_SUBST(BASELINE_CONSTANT_BLINDING)
+
+dnl ========================================================
+dnl Constant blinding (IonMonkey)
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(ionconstantblinding,
+[  --enable-ionconstantblinding
+                          Enable constant blinding in IonMonkey.],
+    ION_CONSTANT_BLINDING=1,
+    ION_CONSTANT_BLINDING= )
+
+if test -n "$ION_CONSTANT_BLINDING"; then
+    AC_DEFINE(ION_CONSTANT_BLINDING)
+fi
+
+AC_SUBST(ION_CONSTANT_BLINDING)
+
+dnl ========================================================
 dnl Profiling
 dnl ========================================================
 if test -n "$MOZ_PROFILING"; then
