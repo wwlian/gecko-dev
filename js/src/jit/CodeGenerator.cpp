@@ -8713,11 +8713,7 @@ CodeGenerator::link(JSContext* cx, CompilerConstraintList* constraints)
         ionScript->copyCacheEntries(&cacheList_[0], masm);
 
     JitSpew(JitSpew_Codegen, "Created IonScript %p (raw %p)",
-<<<<<<< HEAD
             (void *) ionScript, (void *) code->raw());
-=======
-            (void*) ionScript, (void *) code->raw());
->>>>>>> rebasing
     // wwl: Log code here rather than at end of function.
     // This will reduce deviations due to the state of the machine at link-time, making it easier
     // to isolate the impact of changes to the input source code.

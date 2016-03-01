@@ -1436,10 +1436,10 @@ class MConstant : public MNullaryInstruction
         precomputationRedirect_ = redirect;
     }
 
-    void blindAddSub(TempAllocator& alloc, int32_t secret, const Value& blindedValue);
-    void blindBitAnd(TempAllocator& alloc, int32_t secret, const Value& blindedValue);
-    void blindBitOr(TempAllocator& alloc, int32_t secret, const Value& blindedValue);
-    void blindBitXor(TempAllocator& alloc, int32_t secret, const Value& blindedValue);
+    void blindAddSub(TempAllocator& alloc, int32_t secret, int32_t blindedValue);
+    void blindBitAnd(TempAllocator& alloc, int32_t secret, int32_t blindedValue);
+    void blindBitOr(TempAllocator& alloc, int32_t secret, int32_t blindedValue);
+    void blindBitXor(TempAllocator& alloc, int32_t secret, int32_t blindedValue);
     bool isAddSubBlinded();
     bool isBitAndBlinded();
     bool isBitOrBlinded();
