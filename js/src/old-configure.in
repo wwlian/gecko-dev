@@ -3131,6 +3131,21 @@ fi
 AC_SUBST(ION_CONSTANT_BLINDING)
 
 dnl ========================================================
+dnl Call frame randomization (IonMonkey)
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(ioncallframerandomization,
+[  --enable-ioncallframerandomization
+                          Enable call frame randomization in IonMonkey.],
+    ION_CALL_FRAME_RANDOMIZATION=1,
+    ION_CALL_FRAME_RANDOMIZATION= )
+
+if test -n "$ION_CALL_FRAME_RANDOMIZATION"; then
+    AC_DEFINE(ION_CALL_FRAME_RANDOMIZATION)
+fi
+
+AC_SUBST(ION_CALL_FRAME_RANDOMIZATION)
+
+dnl ========================================================
 dnl Profiling
 dnl ========================================================
 if test -n "$MOZ_PROFILING"; then

@@ -10,6 +10,9 @@
 #include "mozilla/unused.h"
 
 #include "jit/Registers.h"
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+#include "jit/RNG.h"
+#endif
 
 namespace js {
 namespace jit {
@@ -59,7 +62,11 @@ class StackSlotAllocator
 
   public:
     StackSlotAllocator() : height_(0)
-    { }
+    {
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+        height_ += RNG::nextUint32() & 0x7c;
+#endif
+    }
 
     static uint32_t width(LDefinition::Type type) {
         switch (type) {
