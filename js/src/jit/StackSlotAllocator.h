@@ -21,6 +21,10 @@ class StackSlotAllocator
 {
     js::Vector<uint32_t, 4, SystemAllocPolicy> normalSlots;
     js::Vector<uint32_t, 4, SystemAllocPolicy> doubleSlots;
+
+    // Tracks the greatest slot height returned so far for an allocation request.
+    uint32_t height_;
+
 #ifdef ION_CALL_FRAME_RANDOMIZATION
     js::Vector<uint32_t, 4, SystemAllocPolicy> quadSlots;
 
@@ -30,8 +34,6 @@ class StackSlotAllocator
     // Tracks the height of the entire pool of pre-allocated stack slots. height_ is no greater than this.
     uint32_t preallocHeight_;
 #endif
-    // Tracks the greatest slot height returned so far for an allocation request.
-    uint32_t height_;
 
     void addAvailableSlot(uint32_t index) {
         // Ignoring OOM here (and below) is fine; it just means the stack slot
@@ -205,7 +207,7 @@ class StackSlotAllocator
 
     uint32_t extractSlot(uint32_t index, js::Vector<uint32_t, 4, SystemAllocPolicy>& slots) {
         uint32_t slotCount = slots.length();
-        MOZ_ASSERT(index >= 0 && index < slotCount);
+        MOZ_ASSERT(index < slotCount);
 
         // Swap the selected slot into the end of the pool since we
         // can only remove by popping off the end.
@@ -214,7 +216,7 @@ class StackSlotAllocator
             slots[index] = slots.back();
             slots[slotCount - 1] = tmp;
         }
-        return slots->popCopy();
+        return slots.popCopy();
     }
 #else
     uint32_t allocateQuadSlot() {
