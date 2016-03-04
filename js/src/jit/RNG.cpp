@@ -4,19 +4,19 @@ using namespace js::jit;
 
 mozilla::non_crypto::XorShift128PlusRNG* RNG::randomNumberGenerator = RNG::init();
 
-int32_t
-RNG::blindingValue(const int32_t min, const int32_t max) {
-  MOZ_ASSERT(min <= max);
-  if (min == INT32_MIN && max == INT32_MAX)
-    return static_cast<int32_t>(randomNumberGenerator->next());
-
-  double range = static_cast<double>(max - min + 1);
-  return min + static_cast<int32_t>(randomNumberGenerator->nextDouble() * range);
-}
-
 uint32_t
 RNG::nextUint32() {
   return static_cast<uint32_t>(randomNumberGenerator->next());
+}
+
+int32_t
+RNG::nextInt32(const int32_t min, const int32_t max) {
+    MOZ_ASSERT(min <= max);
+    if (min == INT32_MIN && max == INT32_MAX)
+    return static_cast<int32_t>(randomNumberGenerator->next());
+
+    double range = static_cast<double>(max - min + 1);
+    return min + static_cast<int32_t>(randomNumberGenerator->nextDouble() * range);
 }
 
 uint64_t
