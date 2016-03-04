@@ -14,6 +14,9 @@
 #include "jsprf.h"
 
 #include "jit/BitSet.h"
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+#include "jit/RNG.h"
+#endif
 
 using namespace js;
 using namespace js::jit;
@@ -1974,7 +1977,17 @@ BacktrackingAllocator::reifyAllocations()
         }
     }
 
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+    /* Artificially push additional stack slots on top of the already-allocated ones.
+     * This prevents the top-most spill slot from living predictably-near the top of the stack.
+     *
+     * For architectures that do not use FrameSizeClasses, this has the additional effect of
+     * randomizing the distance of function arguments from the top of the stack.
+     */
+    graph.setLocalSlotCount(stackSlotAllocator.stackHeight() + (RNG::nextUint32() & 0xf) * JitStackAlignment);
+#else
     graph.setLocalSlotCount(stackSlotAllocator.stackHeight());
+#endif
     return true;
 }
 
