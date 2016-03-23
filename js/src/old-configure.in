@@ -3146,6 +3146,21 @@ fi
 AC_SUBST(ION_CALL_FRAME_RANDOMIZATION)
 
 dnl ========================================================
+dnl Stack arg blinding
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(stackargblinding,
+[  --enable-stackargblinding
+                          Enable stack arg blinding.],
+    STACK_ARG_BLINDING=1,
+    STACK_ARG_BLINDING= )
+
+if test -n "$STACK_ARG_BLINDING"; then
+    AC_DEFINE(STACK_ARG_BLINDING)
+fi
+
+AC_SUBST(STACK_ARG_BLINDING)
+
+dnl ========================================================
 dnl Profiling
 dnl ========================================================
 if test -n "$MOZ_PROFILING"; then

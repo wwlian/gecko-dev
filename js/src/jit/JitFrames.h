@@ -190,7 +190,11 @@ class OsiIndex
 // < highest - - - - - - - - - - - - - - lowest >
 static const uintptr_t FRAMETYPE_BITS = 4;
 static const uintptr_t FRAME_HEADER_SIZE_SHIFT = FRAMETYPE_BITS;
+#ifdef STACK_ARG_BLINDING
+static const uintptr_t FRAME_HEADER_SIZE_BITS = 4;
+#else
 static const uintptr_t FRAME_HEADER_SIZE_BITS = 3;
+#endif
 static const uintptr_t FRAME_HEADER_SIZE_MASK = (1 << FRAME_HEADER_SIZE_BITS) - 1;
 static const uintptr_t HASCACHEDSAVEDFRAME_BIT = 1 << (FRAMETYPE_BITS + FRAME_HEADER_SIZE_BITS);
 static const uintptr_t FRAMESIZE_SHIFT = FRAMETYPE_BITS +
@@ -388,6 +392,12 @@ class JitFrameLayout : public CommonFrameLayout
 {
     CalleeToken calleeToken_;
     uintptr_t numActualArgs_;
+#ifdef STACK_ARG_BLINDING
+    uint32_t argBlindingValue_;
+    uint32_t dummy1_;
+    uint32_t dummy2_;
+    uint32_t dummy3_;
+#endif
 
   public:
     CalleeToken calleeToken() const {
