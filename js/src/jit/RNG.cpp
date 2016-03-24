@@ -2,8 +2,6 @@
 
 using namespace js::jit;
 
-mozilla::non_crypto::XorShift128PlusRNG* RNG::randomNumberGenerator = RNG::init();
-
 uint32_t
 RNG::nextUint32() {
   return static_cast<uint32_t>(randomNumberGenerator->next());
@@ -29,8 +27,9 @@ RNG::nextDouble() {
   return randomNumberGenerator->nextDouble();
 }
 
-mozilla::non_crypto::XorShift128PlusRNG* RNG::init() {
+/* static */ void
+RNG::init() {
   mozilla::Array<uint64_t, 2> seed;
   js::GenerateXorShift128PlusSeed(seed);
-  return new mozilla::non_crypto::XorShift128PlusRNG(seed[0], seed[1]);
+  randomNumberGenerator = new mozilla::non_crypto::XorShift128PlusRNG(seed[0], seed[1]);
 }

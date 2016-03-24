@@ -3086,6 +3086,20 @@ fi
 AC_SUBST(ION_REGISTER_RANDOMIZATION)
 
 dnl ========================================================
+dnl Baseline JIT register randomization.
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(baselineregrando,
+[  --enable-baselineregrando    Enable register randomization in the Baseline JIT.],
+    BASELINE_REGISTER_RANDOMIZATION=1,
+    BASELINE_REGISTER_RANDOMIZATION= )
+
+if test -n "$BASELINE_REGISTER_RANDOMIZATION"; then
+    AC_DEFINE(BASELINE_REGISTER_RANDOMIZATION)
+fi
+
+AC_SUBST(BASELINE_REGISTER_RANDOMIZATION)
+
+dnl ========================================================
 dnl Base offset randomization.
 dnl ========================================================
 MOZ_ARG_ENABLE_BOOL(baseoffsetrando,

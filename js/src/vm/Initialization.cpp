@@ -107,6 +107,12 @@ JS_Init(void)
     if (!js::gcstats::Statistics::initialize())
         return false;
 
+    js::jit::RNG::init();
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    if (!js::jit::initializeSharedICRegisterMapping())
+        return false;
+#endif
+
     libraryInitState = InitState::Running;
     return true;
 }

@@ -16,7 +16,9 @@ class RNG {
     static double nextDouble();
 
   private:
-    static mozilla::non_crypto::XorShift128PlusRNG* init();
+    friend bool ::JS_Init();
+
+    static void init();
     static mozilla::non_crypto::XorShift128PlusRNG *randomNumberGenerator;
 };
 }  // namespace jit

@@ -28,6 +28,24 @@
 namespace js {
 namespace jit {
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+static bool initializeSharedICRegisterMapping();
+
+static uint32_t selectRandomOneBitPosition(Registers::SetType mask) {
+    uint32_t numCandidates = Registers::SetSize(mask);
+    // |index| is the index of the least significant 1-bit whose overall
+    // position in the original |mask| we wish to find.
+    int32_t index = RNG::nextInt32(0, numCandidates - 1);
+    uint32_t pos = Registers::FirstBit(mask);
+    while (index) {
+        mask ^= (1 << pos);
+        pos = Registers::FirstBit(mask);
+        index--;
+    }
+    return pos;
+}
+#endif  /* BASELINE_REGISTER_RANDOMIZATION  */
+
 } // namespace jit
 } // namespace js
 

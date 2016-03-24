@@ -8,6 +8,7 @@
 #define jit_arm_SharedICRegisters_arm_h
 
 #include "jit/MacroAssembler.h"
+#include "jit/arm/Architecture-arm.h"
 
 namespace js {
 namespace jit {
@@ -23,8 +24,13 @@ static MOZ_CONSTEXPR_VAR Register BaselineStackReg = sp;
 // ValueOperands R0, R1, and R2.
 // R0 == JSReturnReg, and R2 uses registers not preserved across calls. R1 value
 // should be preserved across calls.
-static MOZ_CONSTEXPR_VAR ValueOperand R0(r3, r2);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+static ValueOperand R1;
+static Registers::SetType R1Mask = Registers::NonVolatileMask & ~Registers::NonAllocatableMask;;
+#else
 static MOZ_CONSTEXPR_VAR ValueOperand R1(r5, r4);
+#endif
+static MOZ_CONSTEXPR_VAR ValueOperand R0(r3, r2);
 static MOZ_CONSTEXPR_VAR ValueOperand R2(r1, r0);
 
 // ICTailCallReg and ICStubReg
