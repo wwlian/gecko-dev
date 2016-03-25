@@ -26,7 +26,6 @@ static MOZ_CONSTEXPR_VAR Register BaselineStackReg = sp;
 // should be preserved across calls.
 #ifdef BASELINE_REGISTER_RANDOMIZATION
 static ValueOperand R1;
-static Registers::SetType R1Mask = Registers::NonVolatileMask & ~Registers::NonAllocatableMask;;
 #else
 static MOZ_CONSTEXPR_VAR ValueOperand R1(r5, r4);
 #endif

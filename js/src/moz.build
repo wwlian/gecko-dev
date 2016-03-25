@@ -451,6 +451,7 @@ elif CONFIG['JS_CODEGEN_ARM']:
         'jit/arm/MacroAssembler-arm.cpp',
         'jit/arm/MoveEmitter-arm.cpp',
         'jit/arm/SharedIC-arm.cpp',
+        'jit/arm/SharedICRegisters-arm.cpp',
         'jit/arm/Trampoline-arm.cpp',
     ]
     if CONFIG['JS_SIMULATOR_ARM']:

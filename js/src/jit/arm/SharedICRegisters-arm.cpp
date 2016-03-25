@@ -5,14 +5,28 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifdef BASELINE_REGISTER_RANDOMIZATION
-#include "jit/arm/SharedICRegisters.h"
+#include "jit/SharedICRegisters.h"
 #include "jit/RNG.h"
 
 namespace js {
 namespace jit {
 
-/* static */ bool
-initializeSharedICRegisterMapping() {
+static Registers::SetType R1Mask = (Registers::NonVolatileMask 
+                                    & ~Registers::NonAllocatableMask 
+                                    & ~(1 << BaselineFrameReg.encoding())
+                                    & ~(1 << BaselineSecondScratchReg.encoding())
+                                    & ~(1 << ICTailCallReg.encoding())
+                                    & ~(1 << ICStubReg.encoding()));
+
+bool
+initializeSharedICRegisterMapping(ValueOperand* R1_ptr) {
+    static bool inited = false;
+    static ValueOperand R1_cache;
+    if (inited) {
+      *R1_ptr = R1_cache;
+      return true;
+    }
+
     if (Registers::SetSize(R1Mask) < 2)
         return false;
 
@@ -24,7 +38,10 @@ initializeSharedICRegisterMapping() {
     pos = selectRandomOneBitPosition(mask);
     Register R1TypeReg = Register::FromCode(pos);
 
-    R1 = ValueOperand(R1TypeReg, R1PayloadReg);
+    R1_cache = ValueOperand(R1TypeReg, R1PayloadReg);
+    *R1_ptr = R1_cache;
+
+    inited = true;
     return true;
 }
 

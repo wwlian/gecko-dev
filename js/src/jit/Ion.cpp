@@ -186,6 +186,9 @@ JitRuntime::JitRuntime(JSRuntime* rt)
     ionReturnOverride_(MagicValue(JS_ARG_POISON)),
     jitcodeGlobalTable_(nullptr)
 {
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+  initializeSharedICRegisterMapping(&R1);
+#endif
 }
 
 JitRuntime::~JitRuntime()

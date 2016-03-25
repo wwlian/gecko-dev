@@ -2143,6 +2143,37 @@ MacroAssembler::alignJitStackBasedOnNArgs(uint32_t nargs)
 
 // ===============================================================
 
+MacroAssembler::MacroAssembler()
+  : framePushed_(0),
+#ifdef DEBUG
+    inCall_(false),
+#endif
+    emitProfilingInstrumentation_(false)
+{
+    JitContext* jcx = GetJitContext();
+    JSContext* cx = jcx->cx;
+    if (cx)
+        constructRoot(cx);
+
+    if (!jcx->temp) {
+        MOZ_ASSERT(cx);
+        alloc_.emplace(cx);
+    }
+
+    moveResolver_.setAllocator(*jcx->temp);
+
+#if defined(JS_CODEGEN_ARM)
+    initWithAllocator();
+    m_buffer.id = jcx->getNextAssemblerId();
+#elif defined(JS_CODEGEN_ARM64)
+    initWithAllocator();
+    armbuffer_.id = jcx->getNextAssemblerId();
+#endif
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    initializeSharedICRegisterMapping(&R1);
+#endif
+}
+
 MacroAssembler::MacroAssembler(JSContext* cx, IonScript* ion,
                                JSScript* script, jsbytecode* pc)
   : framePushed_(0),
@@ -2167,6 +2198,30 @@ MacroAssembler::MacroAssembler(JSContext* cx, IonScript* ion,
         if (pc && cx->runtime()->spsProfiler.enabled())
             enableProfilingInstrumentation();
     }
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    initializeSharedICRegisterMapping(&R1);
+#endif
+}
+
+MacroAssembler::MacroAssembler(AsmJSToken, TempAllocator& alloc)
+  : framePushed_(0),
+#ifdef DEBUG
+    inCall_(false),
+#endif
+    emitProfilingInstrumentation_(false)
+{
+    moveResolver_.setAllocator(alloc);
+
+#if defined(JS_CODEGEN_ARM)
+    initWithAllocator();
+    m_buffer.id = 0;
+#elif defined(JS_CODEGEN_ARM64)
+    initWithAllocator();
+    armbuffer_.id = 0;
+#endif
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    initializeSharedICRegisterMapping(&R1);
+#endif
 }
 
 MacroAssembler::AfterICSaveLive

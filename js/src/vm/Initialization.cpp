@@ -18,6 +18,8 @@
 #include "gc/Statistics.h"
 #include "jit/ExecutableAllocator.h"
 #include "jit/Ion.h"
+#include "jit/RNG.h"
+#include "jit/SharedICRegisters.h"
 #include "js/Utility.h"
 #if ENABLE_INTL_API
 #include "unicode/uclean.h"
@@ -108,10 +110,6 @@ JS_Init(void)
         return false;
 
     js::jit::RNG::init();
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    if (!js::jit::initializeSharedICRegisterMapping())
-        return false;
-#endif
 
     libraryInitState = InitState::Running;
     return true;

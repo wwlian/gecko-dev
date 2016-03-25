@@ -25,13 +25,16 @@
 # error "Unknown architecture!"
 #endif
 
+#include "jit/RNG.h"
+
 namespace js {
 namespace jit {
 
 #ifdef BASELINE_REGISTER_RANDOMIZATION
-static bool initializeSharedICRegisterMapping();
+bool initializeSharedICRegisterMapping(ValueOperand* R1_ptr);
 
-static uint32_t selectRandomOneBitPosition(Registers::SetType mask) {
+inline uint32_t 
+selectRandomOneBitPosition(Registers::SetType mask) {
     uint32_t numCandidates = Registers::SetSize(mask);
     // |index| is the index of the least significant 1-bit whose overall
     // position in the original |mask| we wish to find.
