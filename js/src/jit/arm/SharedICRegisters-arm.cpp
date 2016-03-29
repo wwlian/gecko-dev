@@ -11,15 +11,25 @@
 namespace js {
 namespace jit {
 
+/*
+static Registers::SetType R1Mask = ((1 << Registers::r4)
+                                    | (1 << Registers::r5));
+
 static Registers::SetType R1Mask = (Registers::NonVolatileMask 
                                     & ~Registers::NonAllocatableMask 
                                     & ~(1 << BaselineFrameReg.encoding())
+                                    & ~(1 << ScratchRegister.encoding())
                                     & ~(1 << BaselineSecondScratchReg.encoding())
+                                    & ~(1 << ArgumentsRectifierReg.encoding())
+                                    & ~(1 << GlobalReg.encoding())
+                                    & ~(1 << HeapReg.encoding())
                                     & ~(1 << ICTailCallReg.encoding())
                                     & ~(1 << ICStubReg.encoding()));
+*/
 
 bool
 initializeSharedICRegisterMapping(ValueOperand* R1_ptr) {
+    return true;
     static bool inited = false;
     static ValueOperand R1_cache;
     if (inited) {

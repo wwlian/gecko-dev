@@ -83,7 +83,9 @@ ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler& masm)
 
         // The call will preserve registers r4-r11. Save R0 and the link
         // register.
+#ifndef BASELINE_REGISTER_RANDOMIZATION
         MOZ_ASSERT(R1 == ValueOperand(r5, r4));
+#endif
         MOZ_ASSERT(R0 == ValueOperand(r3, r2));
         masm.moveValue(R0, savedValue);
 

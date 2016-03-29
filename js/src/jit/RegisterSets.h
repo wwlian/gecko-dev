@@ -7,11 +7,14 @@
 #ifndef jit_RegisterSets_h
 #define jit_RegisterSets_h
 
+#include <array>
+
 #include "mozilla/Alignment.h"
 #include "mozilla/MathAlgorithms.h"
 
 #include "jit/JitAllocPolicy.h"
 #include "jit/Registers.h"
+#include "jit/RNG.h"
 
 namespace js {
 namespace jit {
@@ -116,6 +119,28 @@ class ValueOperand
       : type_(type), payload_(payload)
     { }
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    ValueOperand(size_t slot, Registers::SetType candidates) {
+        static std::array<mozilla::Maybe<ValueOperand>, 2> diversifiedRegisters;
+        MOZ_ASSERT(slot < diversifiedRegisters.size());
+        if (diversifiedRegisters[slot].isSome()) {
+            type_ = diversifiedRegisters[slot].ref().type_;
+            payload_ = diversifiedRegisters[slot].ref().payload_;
+            return;
+        }
+
+        MOZ_ASSERT(Registers::SetSize(candidates)>= 2);
+        uint32_t pos = selectRandomOneBitPosition(candidates);
+        type_ = Register::FromCode(pos);
+
+        candidates ^= (1 << pos);
+        pos = selectRandomOneBitPosition(candidates);
+        payload_ = Register::FromCode(pos);
+
+        diversifiedRegisters[slot].emplace(type_, payload_);
+    }
+#endif
+
     Register typeReg() const {
         return type_;
     }
@@ -157,6 +182,23 @@ class ValueOperand
 #endif
 
     ValueOperand() {}
+
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+  private:
+    static uint32_t selectRandomOneBitPosition(Registers::SetType mask) {
+        uint32_t numCandidates = Registers::SetSize(mask);
+        // |index| is the index of the least significant 1-bit whose overall
+        // position in the original |mask| we wish to find.
+        int32_t index = RNG::nextInt32(0, numCandidates - 1);
+        uint32_t pos = Registers::FirstBit(mask);
+        while (index) {
+            mask ^= (1 << pos);
+            pos = Registers::FirstBit(mask);
+            index--;
+        }
+        return pos;
+    }
+#endif
 };
 
 // Registers to hold either either a typed or untyped value.

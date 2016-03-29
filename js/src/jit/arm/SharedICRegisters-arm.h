@@ -21,17 +21,6 @@ namespace jit {
 static MOZ_CONSTEXPR_VAR Register BaselineFrameReg = r11;
 static MOZ_CONSTEXPR_VAR Register BaselineStackReg = sp;
 
-// ValueOperands R0, R1, and R2.
-// R0 == JSReturnReg, and R2 uses registers not preserved across calls. R1 value
-// should be preserved across calls.
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-static ValueOperand R1;
-#else
-static MOZ_CONSTEXPR_VAR ValueOperand R1(r5, r4);
-#endif
-static MOZ_CONSTEXPR_VAR ValueOperand R0(r3, r2);
-static MOZ_CONSTEXPR_VAR ValueOperand R2(r1, r0);
-
 // ICTailCallReg and ICStubReg
 // These use registers that are not preserved across calls.
 static MOZ_CONSTEXPR_VAR Register ICTailCallReg = r14;
@@ -52,6 +41,29 @@ static MOZ_CONSTEXPR_VAR Register BaselineSecondScratchReg = r6;
 // FloatReg0 must be equal to ReturnFloatReg.
 static MOZ_CONSTEXPR_VAR FloatRegister FloatReg0      = d0;
 static MOZ_CONSTEXPR_VAR FloatRegister FloatReg1      = d1;
+
+// ValueOperands R0, R1, and R2.
+// R0 == JSReturnReg, and R2 uses registers not preserved across calls. R1 value
+// should be preserved across calls.
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+static Registers::SetType R1Mask =
+    (Registers::NonVolatileMask 
+    & ~Registers::NonAllocatableMask 
+    & ~(1 << BaselineFrameReg.encoding())
+    & ~(1 << ScratchRegister.encoding())
+    & ~(1 << BaselineSecondScratchReg.encoding())
+    & ~(1 << ArgumentsRectifierReg.encoding())
+    & ~(1 << GlobalReg.encoding())
+    & ~(1 << HeapReg.encoding())
+    & ~(1 << ICTailCallReg.encoding())
+    & ~(1 << ICStubReg.encoding()));
+
+static ValueOperand R1(1, R1Mask);
+#else
+static MOZ_CONSTEXPR_VAR ValueOperand R1(r5, r4);
+#endif
+static MOZ_CONSTEXPR_VAR ValueOperand R0(r3, r2);
+static MOZ_CONSTEXPR_VAR ValueOperand R2(r1, r0);
 
 } // namespace jit
 } // namespace js
