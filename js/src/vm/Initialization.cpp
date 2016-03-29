@@ -18,7 +18,6 @@
 #include "gc/Statistics.h"
 #include "jit/ExecutableAllocator.h"
 #include "jit/Ion.h"
-#include "jit/RNG.h"
 #include "jit/SharedICRegisters.h"
 #include "js/Utility.h"
 #if ENABLE_INTL_API
@@ -108,8 +107,6 @@ JS_Init(void)
 
     if (!js::gcstats::Statistics::initialize())
         return false;
-
-    js::jit::RNG::init();
 
     libraryInitState = InitState::Running;
     return true;

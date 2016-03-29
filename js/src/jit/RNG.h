@@ -17,6 +17,7 @@ class RNG {
 
   private:
     friend bool ::JS_Init();
+    static bool inited_;
 
     static void init();
     static mozilla::non_crypto::XorShift128PlusRNG *randomNumberGenerator;
