@@ -317,7 +317,33 @@ class MacroAssembler : public MacroAssemblerSpecific
     NonAssertingLabel failureLabel_;
 
   public:
-    MacroAssembler();
+    MacroAssembler()
+      : framePushed_(0),
+#ifdef DEBUG
+        inCall_(false),
+#endif
+        emitProfilingInstrumentation_(false)
+    {
+        JitContext* jcx = GetJitContext();
+        JSContext* cx = jcx->cx;
+        if (cx)
+            constructRoot(cx);
+
+        if (!jcx->temp) {
+            MOZ_ASSERT(cx);
+            alloc_.emplace(cx);
+        }
+
+        moveResolver_.setAllocator(*jcx->temp);
+
+#if defined(JS_CODEGEN_ARM)
+        initWithAllocator();
+        m_buffer.id = jcx->getNextAssemblerId();
+#elif defined(JS_CODEGEN_ARM64)
+        initWithAllocator();
+        armbuffer_.id = jcx->getNextAssemblerId();
+#endif
+    }
 
     // This constructor should only be used when there is no JitContext active
     // (for example, Trampoline-$(ARCH).cpp and IonCaches.cpp).
@@ -326,7 +352,23 @@ class MacroAssembler : public MacroAssemblerSpecific
 
     // asm.js compilation handles its own JitContext-pushing
     struct AsmJSToken {};
-    explicit MacroAssembler(AsmJSToken, TempAllocator& alloc);
+    explicit MacroAssembler(AsmJSToken, TempAllocator& alloc)
+      : framePushed_(0),
+#ifdef DEBUG
+        inCall_(false),
+#endif
+        emitProfilingInstrumentation_(false)
+    {
+        moveResolver_.setAllocator(alloc);
+
+#if defined(JS_CODEGEN_ARM)
+        initWithAllocator();
+        m_buffer.id = 0;
+#elif defined(JS_CODEGEN_ARM64)
+        initWithAllocator();
+        armbuffer_.id = 0;
+#endif
+    }
 
     void constructRoot(JSContext* cx) {
         autoRooter_.emplace(cx, this);

@@ -40,9 +40,13 @@ EmitCallIC(CodeOffset* patchOffset, MacroAssembler& masm)
     // Load stub pointer into ICStubReg
     masm.loadPtr(Address(ICStubReg, ICEntry::offsetOfFirstStub()), ICStubReg);
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    Register r0 = R2.payloadReg();
+#else
     // Load stubcode pointer from BaselineStubEntry.
     // R2 won't be active when we call ICs, so we can use r0.
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
+#endif
     masm.loadPtr(Address(ICStubReg, ICStub::offsetOfStubCode()), r0);
 
     // Call the stubcode via a direct branch-and-link.
@@ -57,9 +61,13 @@ EmitEnterTypeMonitorIC(MacroAssembler& masm,
     // properly initialized to point to the stub.
     masm.loadPtr(Address(ICStubReg, (uint32_t) monitorStubOffset), ICStubReg);
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    Register r0 = R2.payloadReg();
+#else
     // Load stubcode pointer from BaselineStubEntry.
     // R2 won't be active when we call ICs, so we can use r0.
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
+#endif
     masm.loadPtr(Address(ICStubReg, ICStub::offsetOfStubCode()), r0);
 
     // Jump to the stubcode.
@@ -81,9 +89,14 @@ EmitChangeICReturnAddress(MacroAssembler& masm, Register reg)
 inline void
 EmitBaselineTailCallVM(JitCode* target, MacroAssembler& masm, uint32_t argSize)
 {
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    Register r0 = R2.payloadReg();
+    Register r1 = R2.typeReg();
+#else
     // We assume during this that R0 and R1 have been pushed, and that R2 is
     // unused.
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
+#endif
 
     // Compute frame size.
     masm.movePtr(BaselineFrameReg, r0);
@@ -108,9 +121,13 @@ EmitBaselineTailCallVM(JitCode* target, MacroAssembler& masm, uint32_t argSize)
 inline void
 EmitIonTailCallVM(JitCode* target, MacroAssembler& masm, uint32_t stackSize)
 {
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    Register r0 = R2.payloadReg();
+#else
     // We assume during this that R0 and R1 have been pushed, and that R2 is
     // unused.
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
+#endif
 
     masm.loadPtr(Address(sp, stackSize), r0);
     masm.rshiftPtr(Imm32(FRAMESIZE_SHIFT), r0);
@@ -289,7 +306,11 @@ EmitUnstowICValues(MacroAssembler& masm, int values, bool discard = false)
 inline void
 EmitCallTypeUpdateIC(MacroAssembler& masm, JitCode* code, uint32_t objectOffset)
 {
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    Register r0 = R2.payloadReg();
+#else
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
+#endif
 
     // R0 contains the value that needs to be typechecked. The object we're
     // updating is a boxed Value on the stack, at offset objectOffset from esp,
@@ -356,7 +377,11 @@ EmitPreBarrier(MacroAssembler& masm, const AddrType& addr, MIRType type)
 inline void
 EmitStubGuardFailure(MacroAssembler& masm)
 {
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    Register r0 = R2.payloadReg();
+#else
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
+#endif
 
     // NOTE: This routine assumes that the stub guard code left the stack in the
     // same state it was in when it was entered.
