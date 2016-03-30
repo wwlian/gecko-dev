@@ -371,6 +371,10 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
     masm.loadPtr(slot_vp, r5);
     masm.storeValue(JSReturnOperand, Address(r5, 0));
 
+    // Note that the load-double described below is not compatible with
+    // randomized registers and should be put inside a
+    // "#ifndef BASELINE_REGISTER_RANDOMIZATION" block.
+    //
     // :TODO: Optimize storeValue with:
     // We're using a load-double here. In order for that to work, the data needs
     // to be stored in two consecutive registers, make sure this is the case
