@@ -25,9 +25,7 @@ FrameInfo::init(TempAllocator& alloc)
     size_t nstack = Max(script->nslots() - script->nfixed(), size_t(MinJITStackSize));
     if (!stack.init(alloc, nstack))
         return false;
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    initializeSharedICRegisterMapping(&R1);
-#endif
+
     return true;
 }
 

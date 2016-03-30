@@ -8,6 +8,7 @@
 #define jit_RegisterSets_h
 
 #include <array>
+#include <cstdarg>
 
 #include "mozilla/Alignment.h"
 #include "mozilla/MathAlgorithms.h"
@@ -120,8 +121,8 @@ class ValueOperand
     { }
 
 #ifdef BASELINE_REGISTER_RANDOMIZATION
-    ValueOperand(size_t slot, Registers::SetType candidates) {
-        static std::array<mozilla::Maybe<ValueOperand>, 2> diversifiedRegisters;
+    ValueOperand(size_t slot, Registers::SetType candidates, size_t numConflictingSlots, ...) {
+        static std::array<mozilla::Maybe<ValueOperand>, 3> diversifiedRegisters;
         MOZ_ASSERT(slot < diversifiedRegisters.size());
         if (diversifiedRegisters[slot].isSome()) {
             type_ = diversifiedRegisters[slot].ref().type_;
@@ -129,6 +130,15 @@ class ValueOperand
             return;
         }
 
+        va_list vl;
+        va_start(vl, numConflictingSlots);
+        for (size_t i = 0; i < numConflictingSlots; i++) {
+          size_t conflictingSlot = va_arg(vl, size_t);
+          MOZ_ASSERT(diversifiedRegisters[conflictingSlot].isSome());
+          candidates &= ~(1 << diversifiedRegisters[conflictingSlot].ref().type_.code());
+          candidates &= ~(1 << diversifiedRegisters[conflictingSlot].ref().payload_.code());
+        }
+        va_end(vl);
         MOZ_ASSERT(Registers::SetSize(candidates)>= 2);
         uint32_t pos = selectRandomOneBitPosition(candidates);
         type_ = Register::FromCode(pos);

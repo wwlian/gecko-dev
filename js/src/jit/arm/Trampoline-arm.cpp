@@ -107,9 +107,6 @@ struct EnterJITStack
 JitCode*
 JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
 {
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    initializeSharedICRegisterMapping(&R1);
-#endif
     const Address slot_token(sp, offsetof(EnterJITStack, token));
     const Address slot_vp(sp, offsetof(EnterJITStack, vp));
 

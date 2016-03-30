@@ -58,9 +58,6 @@ BaselineCompiler::BaselineCompiler(JSContext* cx, TempAllocator& alloc, JSScript
 bool
 BaselineCompiler::init()
 {
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    initializeSharedICRegisterMapping(&R1);
-#endif
     if (!analysis_.init(alloc_, cx->runtime()->gsnCache))
         return false;
 

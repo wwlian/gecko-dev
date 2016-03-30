@@ -977,11 +977,7 @@ class ICStubCompiler
 #ifdef DEBUG
       , entersStubFrame_(false), framePushedAtEnterStubFrame_(0)
 #endif
-    {
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-      initializeSharedICRegisterMapping(&R1);
-#endif
-    }
+    {}
 
     // Push a payload specialized per compiler needed to execute stubs.
     void PushStubPayload(MacroAssembler& masm, Register scratch);
