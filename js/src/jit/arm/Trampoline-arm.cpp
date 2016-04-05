@@ -42,18 +42,18 @@ GenerateReturn(MacroAssembler& masm, int returnCode, SPSProfiler* prof)
     masm.addPtr(Imm32(sizeof(void*)), sp);
 
     // Set up return value
-    masm.ma_mov(Imm32(returnCode), r0);
+    masm.ma_mov(Imm32(returnCode), { Registers::r0 });
 
     // Pop and return
     masm.startDataTransferM(IsLoad, sp, IA, WriteBack);
-    masm.transferReg(r4);
-    masm.transferReg(r5);
-    masm.transferReg(r6);
-    masm.transferReg(r7);
-    masm.transferReg(r8);
-    masm.transferReg(r9);
-    masm.transferReg(r10);
-    masm.transferReg(r11);
+    masm.transferReg({ Registers::r4 });
+    masm.transferReg({ Registers::r5 });
+    masm.transferReg({ Registers::r6 });
+    masm.transferReg({ Registers::r7 });
+    masm.transferReg({ Registers::r8 });
+    masm.transferReg({ Registers::r9 });
+    masm.transferReg({ Registers::r10 });
+    masm.transferReg({ Registers::r11 });
     // r12 isn't saved, so it shouldn't be restored.
     masm.transferReg(pc);
     masm.finishDataTransfer();
