@@ -42,11 +42,11 @@ EmitCallIC(CodeOffset* patchOffset, MacroAssembler& masm)
 
 #ifdef BASELINE_REGISTER_RANDOMIZATION
     Register r0 = R2.payloadReg();
-#else
+    Register r1 = R2.typeReg();
+#endif
     // Load stubcode pointer from BaselineStubEntry.
     // R2 won't be active when we call ICs, so we can use r0.
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
-#endif
     masm.loadPtr(Address(ICStubReg, ICStub::offsetOfStubCode()), r0);
 
     // Call the stubcode via a direct branch-and-link.
@@ -63,11 +63,11 @@ EmitEnterTypeMonitorIC(MacroAssembler& masm,
 
 #ifdef BASELINE_REGISTER_RANDOMIZATION
     Register r0 = R2.payloadReg();
-#else
+    Register r1 = R2.typeReg();
+#endif
     // Load stubcode pointer from BaselineStubEntry.
     // R2 won't be active when we call ICs, so we can use r0.
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
-#endif
     masm.loadPtr(Address(ICStubReg, ICStub::offsetOfStubCode()), r0);
 
     // Jump to the stubcode.
@@ -92,11 +92,10 @@ EmitBaselineTailCallVM(JitCode* target, MacroAssembler& masm, uint32_t argSize)
 #ifdef BASELINE_REGISTER_RANDOMIZATION
     Register r0 = R2.payloadReg();
     Register r1 = R2.typeReg();
-#else
+#endif
     // We assume during this that R0 and R1 have been pushed, and that R2 is
     // unused.
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
-#endif
 
     // Compute frame size.
     masm.movePtr(BaselineFrameReg, r0);
@@ -123,11 +122,11 @@ EmitIonTailCallVM(JitCode* target, MacroAssembler& masm, uint32_t stackSize)
 {
 #ifdef BASELINE_REGISTER_RANDOMIZATION
     Register r0 = R2.payloadReg();
-#else
+    Register r1 = R2.typeReg();
+#endif
     // We assume during this that R0 and R1 have been pushed, and that R2 is
     // unused.
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
-#endif
 
     masm.loadPtr(Address(sp, stackSize), r0);
     masm.rshiftPtr(Imm32(FRAMESIZE_SHIFT), r0);
@@ -308,9 +307,9 @@ EmitCallTypeUpdateIC(MacroAssembler& masm, JitCode* code, uint32_t objectOffset)
 {
 #ifdef BASELINE_REGISTER_RANDOMIZATION
     Register r0 = R2.payloadReg();
-#else
-    MOZ_ASSERT(R2 == ValueOperand(r1, r0));
+    Register r1 = R2.typeReg();
 #endif
+    MOZ_ASSERT(R2 == ValueOperand(r1, r0));
 
     // R0 contains the value that needs to be typechecked. The object we're
     // updating is a boxed Value on the stack, at offset objectOffset from esp,
@@ -379,9 +378,9 @@ EmitStubGuardFailure(MacroAssembler& masm)
 {
 #ifdef BASELINE_REGISTER_RANDOMIZATION
     Register r0 = R2.payloadReg();
-#else
-    MOZ_ASSERT(R2 == ValueOperand(r1, r0));
+    Register r1 = R2.typeReg();
 #endif
+    MOZ_ASSERT(R2 == ValueOperand(r1, r0));
 
     // NOTE: This routine assumes that the stub guard code left the stack in the
     // same state it was in when it was entered.

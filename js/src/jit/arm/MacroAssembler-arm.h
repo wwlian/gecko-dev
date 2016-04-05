@@ -424,6 +424,9 @@ class MacroAssemblerARM : public Assembler
         MOZ_CRASH("Invalid data transfer addressing mode");
     }
 
+    void unrandomizeRegisters();
+    void randomizeRegisters();
+
 private:
     // Implementation for transferMultipleByRuns so we can use different
     // iterators for forward/backward traversals. The sign argument should be 1

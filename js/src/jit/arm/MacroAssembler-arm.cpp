@@ -11,6 +11,7 @@
 #include "mozilla/MathAlgorithms.h"
 
 #include "asmjs/WasmBinary.h"
+#include "jit/arm/RegisterRandomizer-arm.h"
 #include "jit/arm/Simulator-arm.h"
 #include "jit/Bailouts.h"
 #include "jit/BaselineFrame.h"
@@ -38,6 +39,29 @@ isValueDTRDCandidate(ValueOperand& val)
         return false;
     return true;
 }
+
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+void
+MacroAssemblerARM::unrandomizeRegisters() {
+    RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+    for (Register::Code i = randomizer.getMaxRandomRegister() + 1; i > 0; i--) {
+        ma_push(randomizer.getRandomizedRegister(Register::FromCode(i - 1)));
+    }
+    for (Register::Code i = 0; i <= randomizer.getMaxRandomRegister(); i++) {
+        ma_pop(Register::FromCode(i));
+    }
+}
+
+void MacroAssemblerARM::randomizeRegisters() {
+    RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+    for (Register::Code i = randomizer.getMaxRandomRegister() + 1; i > 0; i--) {
+        ma_push(Register::FromCode(i - 1));
+    }
+    for (Register::Code i = 0; i <= randomizer.getMaxRandomRegister(); i++) {
+        ma_pop(randomizer.getRandomizedRegister(Register::FromCode(i)));
+    }
+}
+#endif
 
 void
 MacroAssemblerARM::convertBoolToInt32(Register source, Register dest)
@@ -4991,6 +5015,9 @@ MacroAssembler::callWithABINoProfiler(Register fun, MoveOp::Type result)
     ma_mov(fun, r12);
     uint32_t stackAdjust;
     callWithABIPre(&stackAdjust);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    unrandomizeRegisters();
+#endif
     call(r12);
     callWithABIPost(stackAdjust, result);
 }
@@ -5004,6 +5031,9 @@ MacroAssembler::callWithABINoProfiler(const Address& fun, MoveOp::Type result)
     ma_ldr(fun, r12);
     uint32_t stackAdjust;
     callWithABIPre(&stackAdjust);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    unrandomizeRegisters();
+#endif
     call(r12);
     callWithABIPost(stackAdjust, result);
 }

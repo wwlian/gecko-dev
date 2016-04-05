@@ -110,6 +110,9 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
     const Address slot_token(sp, offsetof(EnterJITStack, token));
     const Address slot_vp(sp, offsetof(EnterJITStack, vp));
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+#endif
     MOZ_ASSERT(OsrFrameReg == r3);
 
     MacroAssembler masm(cx);
@@ -119,14 +122,14 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
     // rather than the JIT'd code, because they are scanned by the conservative
     // scanner.
     masm.startDataTransferM(IsStore, sp, DB, WriteBack);
-    masm.transferReg(r4); // [sp,0]
-    masm.transferReg(r5); // [sp,4]
-    masm.transferReg(r6); // [sp,8]
-    masm.transferReg(r7); // [sp,12]
-    masm.transferReg(r8); // [sp,16]
-    masm.transferReg(r9); // [sp,20]
-    masm.transferReg(r10); // [sp,24]
-    masm.transferReg(r11); // [sp,28]
+    masm.transferReg({ Registers::r4 }); // [sp,0]
+    masm.transferReg({ Registers::r5 }); // [sp,4]
+    masm.transferReg({ Registers::r6 }); // [sp,8]
+    masm.transferReg({ Registers::r7 }); // [sp,12]
+    masm.transferReg({ Registers::r8 }); // [sp,16]
+    masm.transferReg({ Registers::r9 }); // [sp,20]
+    masm.transferReg({ Registers::r10 }); // [sp,24]
+    masm.transferReg({ Registers::r11 }); // [sp,28]
     // The abi does not expect r12 (ip) to be preserved
     masm.transferReg(lr);  // [sp,32]
     // The 5th argument is located at [sp, 36]
@@ -139,25 +142,25 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
     masm.transferMultipleByRuns(NonVolatileFloatRegs, IsStore, sp, DB);
 
     // Save stack pointer into r8
-    masm.movePtr(sp, r8);
+    masm.movePtr(sp, { Registers::r8 });
 
     // Load calleeToken into r9.
-    masm.loadPtr(slot_token, r9);
+    masm.loadPtr(slot_token, { Registers::r9 });
 
     // Save stack pointer.
     if (type == EnterJitBaseline)
-        masm.movePtr(sp, r11);
+        masm.movePtr(sp, { Registers::r11 });
 
     // Load the number of actual arguments into r10.
-    masm.loadPtr(slot_vp, r10);
-    masm.unboxInt32(Address(r10, 0), r10);
+    masm.loadPtr(slot_vp, { Registers::r10 });
+    masm.unboxInt32(Address({ Registers::r10 }, 0), { Registers::r10 });
 
     {
         Label noNewTarget;
-        masm.branchTest32(Assembler::Zero, r9, Imm32(CalleeToken_FunctionConstructing),
+        masm.branchTest32(Assembler::Zero, { Registers::r9 }, Imm32(CalleeToken_FunctionConstructing),
                           &noNewTarget);
 
-        masm.add32(Imm32(1), r1);
+        masm.add32(Imm32(1), { Registers::r1 });
 
         masm.bind(&noNewTarget);
     }
@@ -173,17 +176,19 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
     // At the end the register r4, is a pointer to the stack where the first
     // argument is expected by the Jit frame.
     //
-    aasm->as_sub(r4, sp, O2RegImmShift(r1, LSL, 3));    // r4 = sp - argc*8
-    masm.ma_and(Imm32(~(JitStackAlignment - 1)), r4, r4);
+    aasm->as_sub({ Registers::r4 },
+                 sp, 
+                 O2RegImmShift({ Registers::r1 }, LSL, 3));  // r4 = sp - argc*8
+    masm.ma_and(Imm32(~(JitStackAlignment - 1)), { Registers::r4 }, { Registers::r4 });
     // r4 is now the aligned on the bottom of the list of arguments.
     static_assert(sizeof(JitFrameLayout) % JitStackAlignment == 0,
       "No need to consider the JitFrameLayout for aligning the stack");
     // sp' = ~(JitStackAlignment - 1) & (sp - argc * sizeof(Value)) - sizeof(JitFrameLayout)
-    aasm->as_sub(sp, r4, Imm8(sizeof(JitFrameLayout)));
+    aasm->as_sub(sp, { Registers::r4 }, Imm8(sizeof(JitFrameLayout)));
 
     // Get a copy of the number of args to use as a decrement counter, also set
     // the zero condition code.
-    aasm->as_mov(r5, O2Reg(r1), SetCC);
+    aasm->as_mov({ Registers::r5 }, O2Reg({ Registers::r1 }), SetCC);
 
     // Loop over arguments, copying them from an unknown buffer onto the Ion
     // stack so they can be accessed from JIT'ed code.
@@ -193,40 +198,57 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         aasm->as_b(&footer, Assembler::Zero);
         // Get the top of the loop.
         masm.bind(&header);
-        aasm->as_sub(r5, r5, Imm8(1), SetCC);
+        aasm->as_sub({ Registers::r5 }, { Registers::r5 }, Imm8(1), SetCC);
         // We could be more awesome, and unroll this, using a loadm
         // (particularly since the offset is effectively 0) but that seems more
         // error prone, and complex.
         // BIG FAT WARNING: this loads both r6 and r7.
-        aasm->as_extdtr(IsLoad,  64, true, PostIndex, r6, EDtrAddr(r2, EDtrOffImm(8)));
-        aasm->as_extdtr(IsStore, 64, true, PostIndex, r6, EDtrAddr(r4, EDtrOffImm(8)));
+        aasm->as_extdtr(IsLoad,  64, true, PostIndex, { Registers::r6 }, 
+                        EDtrAddr({ Registers::r2 }, EDtrOffImm(8)));
+        aasm->as_extdtr(IsStore, 64, true, PostIndex, { Registers::r6 }, 
+                        EDtrAddr({ Registers::r4 }, EDtrOffImm(8)));
         aasm->as_b(&header, Assembler::NonZero);
         masm.bind(&footer);
     }
 
-    masm.ma_sub(r8, sp, r8);
-    masm.makeFrameDescriptor(r8, JitFrame_Entry, JitFrameLayout::Size());
+    masm.ma_sub({ Registers::r8 }, sp, { Registers::r8 });
+    masm.makeFrameDescriptor({ Registers::r8 }, JitFrame_Entry, JitFrameLayout::Size());
 
     masm.startDataTransferM(IsStore, sp, IB, NoWriteBack);
                            // [sp]    = return address (written later)
-    masm.transferReg(r8);  // [sp',4] = descriptor, argc*8+20
-    masm.transferReg(r9);  // [sp',8]  = callee token
-    masm.transferReg(r10); // [sp',12]  = actual arguments
+    masm.transferReg({ Registers::r8 });  // [sp',4] = descriptor, argc*8+20
+    masm.transferReg({ Registers::r9 });  // [sp',8]  = callee token
+    masm.transferReg({ Registers::r10 }); // [sp',12]  = actual arguments
     masm.finishDataTransfer();
 
     Label returnLabel;
     if (type == EnterJitBaseline) {
         // Handle OSR.
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
+        regs.take(randomizer.getUnrandomizedValueOperand(JSReturnOperand));
+        regs.takeUnchecked(randomizer.getUnrandomizedRegister(OsrFrameReg));
+        regs.take(randomizer.getUnrandomizedRegister(r11));
+        regs.take(randomizer.getUnrandomizedRegister(ReturnReg));
+#else
         AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
         regs.take(JSReturnOperand);
         regs.takeUnchecked(OsrFrameReg);
         regs.take(r11);
         regs.take(ReturnReg);
+#endif
 
-        const Address slot_numStackValues(r11, offsetof(EnterJITStack, numStackValues));
+        const Address slot_numStackValues({ Registers::r11 }, offsetof(EnterJITStack, numStackValues));
 
         Label notOsr;
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        masm.branchTestPtr(Assembler::Zero,
+                           randomizer.getUnrandomizedRegister(OsrFrameReg), 
+                           randomizer.getUnrandomizedRegister(OsrFrameReg), 
+                           &notOsr);
+#else
         masm.branchTestPtr(Assembler::Zero, OsrFrameReg, OsrFrameReg, &notOsr);
+#endif
 
         Register scratch = regs.takeAny();
 
@@ -250,10 +272,14 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         }
 
         // Push previous frame pointer.
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        masm.push(randomizer.getUnrandomizedRegister(r11));
+#else
         masm.push(r11);
+#endif
 
         // Reserve frame.
-        Register framePtr = r11;
+        Register framePtr = { Registers::r11 };
         masm.subPtr(Imm32(BaselineFrame::Size()), sp);
         masm.mov(sp, framePtr);
 
@@ -290,11 +316,20 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         masm.enterFakeExitFrame(ExitFrameLayoutBareToken);
 
         masm.push(framePtr); // BaselineFrame
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        masm.push(randomizer.getUnrandomizedRegister(r0));  // jitcode
+#else
         masm.push(r0); // jitcode
+#endif
 
         masm.setupUnalignedABICall(scratch);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        masm.passABIArg(randomizer.getUnrandomizedRegister(r11)); // BaselineFrame
+        masm.passABIArg(randomizer.getUnrandomizedRegister(OsrFrameReg)); // InterpreterFrame
+#else
         masm.passABIArg(r11); // BaselineFrame
         masm.passABIArg(OsrFrameReg); // InterpreterFrame
+#endif
         masm.passABIArg(numStackValues);
         masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, jit::InitBaselineFrameForOsr));
 
@@ -302,7 +337,11 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         masm.pop(jitcode);
         masm.pop(framePtr);
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        MOZ_ASSERT(jitcode != randomizer.getUnrandomizedRegister(ReturnReg));
+#else
         MOZ_ASSERT(jitcode != ReturnReg);
+#endif
 
         Label error;
         masm.addPtr(Imm32(ExitFrameLayout::SizeWithFooter()), sp);
@@ -329,13 +368,20 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         masm.bind(&error);
         masm.mov(framePtr, sp);
         masm.addPtr(Imm32(2 * sizeof(uintptr_t)), sp);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        masm.moveValue(MagicValue(JS_ION_ERROR),
+                       randomizer.getUnrandomizedValueOperand(JSReturnOperand));
+#else
         masm.moveValue(MagicValue(JS_ION_ERROR), JSReturnOperand);
+#endif
         masm.jump(&returnLabel);
 
         masm.bind(&notOsr);
         // Load the scope chain in R1.
+        // Only r11 needs to refer to a physical register since this code is preparing
+        // randomized registers.
         MOZ_ASSERT(R1.scratchReg() != r0);
-        masm.loadPtr(Address(r11, offsetof(EnterJITStack, scopeChain)), R1.scratchReg());
+        masm.loadPtr(Address({ Registers::r11 }, offsetof(EnterJITStack, scopeChain)), R1.scratchReg());
     }
 
     // The Data transfer is pushing 4 words, which already account for the
@@ -346,6 +392,10 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
     // The callee will push the return address on the stack, thus we check that
     // the stack would be aligned once the call is complete.
     masm.assertStackAlignment(JitStackAlignment, sizeof(uintptr_t));
+
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.randomizeRegisters();
+#endif
 
     // Call the function.
     masm.callJitNoProfiler(r0);
@@ -379,6 +429,9 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
     //   aasm->as_extdtr(IsStore, 64, true, Offset,
     //                   JSReturnReg_Data, EDtrAddr(r5, EDtrOffImm(0)));
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.unrandomizeRegisters();
+#endif
     // Restore non-volatile registers and return.
     GenerateReturn(masm, true, &cx->runtime()->spsProfiler);
 
@@ -754,13 +807,17 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
 
     // Generate a separated code for the wrapper.
     MacroAssembler masm(cx);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.unrandomizeRegisters();
+#else
+#endif
     AllocatableGeneralRegisterSet regs(Register::Codes::WrapperMask);
 
     // Wrapper register set is a superset of Volatile register set.
     JS_STATIC_ASSERT((Register::Codes::VolatileMask & ~Register::Codes::WrapperMask) == 0);
 
     // The context is the first argument; r0 is the first argument register.
-    Register cxreg = r0;
+    Register cxreg = { Registers::r0 };
     regs.take(cxreg);
 
     // Stack is:
@@ -777,25 +834,25 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
     masm.loadJSContext(cxreg);
 
     // Save the base of the argument set stored on the stack.
-    Register argsBase = InvalidReg;
+    Register argsBase = { Registers::invalid_reg };
     if (f.explicitArgs) {
-        argsBase = r5;
+        argsBase = { Registers::r5 };
         regs.take(argsBase);
         masm.ma_add(sp, Imm32(ExitFrameLayout::SizeWithFooter()), argsBase);
     }
 
     // Reserve space for the outparameter.
-    Register outReg = InvalidReg;
+    Register outReg = { Registers::invalid_reg };
     switch (f.outParam) {
       case Type_Value:
-        outReg = r4;
+        outReg = { Registers::r4 };
         regs.take(outReg);
         masm.reserveStack(sizeof(Value));
         masm.ma_mov(sp, outReg);
         break;
 
       case Type_Handle:
-        outReg = r4;
+        outReg = { Registers::r4 };
         regs.take(outReg);
         masm.PushEmptyRooted(f.outParamRootType);
         masm.ma_mov(sp, outReg);
@@ -804,14 +861,14 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
       case Type_Int32:
       case Type_Pointer:
       case Type_Bool:
-        outReg = r4;
+        outReg = { Registers::r4 };
         regs.take(outReg);
         masm.reserveStack(sizeof(int32_t));
         masm.ma_mov(sp, outReg);
         break;
 
       case Type_Double:
-        outReg = r4;
+        outReg = { Registers::r4 };
         regs.take(outReg);
         masm.reserveStack(sizeof(double));
         masm.ma_mov(sp, outReg);
@@ -858,6 +915,9 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
         masm.passABIArg(outReg);
 
     masm.callWithABI(f.wrapped);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.randomizeRegisters();
+#endif
 
     // Test for failure.
     switch (f.failType()) {
