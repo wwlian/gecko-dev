@@ -83,17 +83,9 @@ ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler& masm)
 
         // The call will preserve registers r4-r11. Save R0 and the link
         // register.
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-        MOZ_ASSERT(!R1.typeReg().volatile_() & !R1.payloadReg().volatile_());
-        bool isR0Volatile = R0.typeReg().volatile_() || R0.payloadReg().volatile_();
-        if (isR0Volatile) {
-            masm.moveValue(R0, savedValue);
-        }
-#else
         MOZ_ASSERT(R1 == ValueOperand(r5, r4));
         MOZ_ASSERT(R0 == ValueOperand(r3, r2));
         masm.moveValue(R0, savedValue);
-#endif
 
         masm.setupAlignedABICall();
         masm.passABIArg(R0.payloadReg());
@@ -109,14 +101,7 @@ ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler& masm)
             // If X % Y == 0 and X < 0, the result is -0.
             Label done;
             masm.branch32(Assembler::NotEqual, r1, Imm32(0), &done);
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-            masm.branch32(Assembler::LessThan,
-                    (isR0Volatile ? savedValue.payloadReg() : R0.payloadReg()),
-                    Imm32(0),
-                    &revertRegister);
-#else
             masm.branch32(Assembler::LessThan, savedValue.payloadReg(), Imm32(0), &revertRegister);
-#endif
             masm.bind(&done);
             masm.tagValue(JSVAL_TYPE_INT32, r1, R0);
         }

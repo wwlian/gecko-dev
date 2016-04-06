@@ -12,12 +12,11 @@ namespace jit {
 
 class RegisterRandomizer {
   private:
-    static const Registers::SetType randomizationMask = 
-        (Registers::AllMask
-        & ~(1 << Registers::ip)
-        & ~(1 << Registers::sp)
-        & ~(1 << Registers::lr)
-        & ~(1 << Registers::pc));
+    static const Registers::SetType RANDOMIZATION_MASK = (Registers::AllocatableMask
+        & ~(1 << Registers::r0)
+        & ~(1 << Registers::r1)
+        & ~(1 << Registers::r2)
+        & ~(1 << Registers::r3));
 
     // |substitutions_| maps a Registers::Encoding to the Registers::Encoding
     // that will actually be used in its stead in JIT code. Can be used to
@@ -29,82 +28,18 @@ class RegisterRandomizer {
 
     Registers::Code maxRandomRegister_;
 
-    static bool isRandomizedRegister(unsigned int r) {
-      return randomizationMask & (1 << r);
-    }
+    static bool isRandomizedRegister(unsigned int r);
 
-    RegisterRandomizer() {
-      maxRandomRegister_ = 0;
-      // Initialize arrays to identity map, and find highest randomized register.
-      for (size_t i = 0; i < Registers::Total; i++) {
-        if (isRandomizedRegister(i)) {
-          maxRandomRegister_ = i;
-        }
-        substitutions_[i] = Registers::Encoding(i);
-        reverseSubstitutions_[i] = Registers::Encoding(i);
-      }
-
-      for (size_t i = 0; i < maxRandomRegister_; i++) {
-        if (!isRandomizedRegister(i)) continue;
-        int swapRegister = RNG::nextInt32(i, maxRandomRegister_);
-        while (!isRandomizedRegister(swapRegister)) {
-          swapRegister = RNG::nextInt32(i, maxRandomRegister_);
-        }
-        Registers::Encoding tmp = substitutions_[i];
-        substitutions_[i] = substitutions_[swapRegister];
-        substitutions_[swapRegister] = tmp;
-
-        tmp = reverseSubstitutions_[substitutions_[i]];
-        reverseSubstitutions_[substitutions_[i]] = 
-            reverseSubstitutions_[substitutions_[swapRegister]];
-        reverseSubstitutions_[substitutions_[swapRegister]] = tmp;
-      }
-    }
+    RegisterRandomizer();
 
   public:
-    static RegisterRandomizer getInstance() {
-      static bool initialized = false;
-      static RegisterRandomizer instance;
+    static RegisterRandomizer getInstance();
 
-      if (!initialized) {
-        instance = RegisterRandomizer();
-        initialized = true;
-      }
-      
-      return instance;
-    }
-
-    Register getRandomizedRegister(const Register &physicalRegister) const {
-        return getRandomizedRegister(physicalRegister.encoding());
-    }
-
-    Register getRandomizedRegister(const Registers::Encoding &physicalRegister) const {
-      return { substitutions_[physicalRegister] };
-    }
-
-    ValueOperand getUnrandomizedValueOperand(const ValueOperand &v) const {
-#if defined(JS_NUNBOX32)
-      return ValueOperand(getUnrandomizedRegister(v.typeReg()),
-                          getUnrandomizedRegister(v.payloadReg()));
-#elif defined(JS_PUNBOX64)
-      return ValueOperand(getUnrandomizedRegister(v.valueReg()));
-#endif
-    }
-
-    Register getUnrandomizedRegister(const Register &r) const {
-      return { reverseSubstitutions_[r.encoding()] };
-    }
-
-    Registers::SetType randomizeMask(Registers::SetType mask) {
-      Registers::SetType result = 0;
-      uint32_t pos;
-      while (mask) {
-        pos = Registers::FirstBit(mask);
-        result |= (1 << getRandomizedRegister(Registers::Encoding(pos)).encoding());
-        mask ^=  (1 << pos);
-      }
-      return result;
-    }
+    Register getRandomizedRegister(const Register &physicalRegister) const;
+    Register getRandomizedRegister(const Registers::Encoding &physicalRegister) const;
+    ValueOperand getUnrandomizedValueOperand(const ValueOperand &v) const;
+    Register getUnrandomizedRegister(const Register &r) const;
+    Registers::SetType randomizeMask(Registers::SetType mask) const;
 
     Registers::Code getMaxRandomRegister() {
       return maxRandomRegister_;

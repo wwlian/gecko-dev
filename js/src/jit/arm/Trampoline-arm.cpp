@@ -361,7 +361,10 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
             masm.bind(&skipProfilingInstrumentation);
         }
 
-        masm.jump(jitcode);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        masm.randomizeRegisters();
+#endif
+        masm.jump(randomizer.getRandomizedRegister(jitcode));
 
         // OOM: Load error value, discard return address and previous frame
         // pointer and return.
@@ -378,10 +381,13 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
 
         masm.bind(&notOsr);
         // Load the scope chain in R1.
-        // Only r11 needs to refer to a physical register since this code is preparing
-        // randomized registers.
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        MOZ_ASSERT(R1.scratchReg() != randomizer.getUnrandomizedRegister(r0));
+        masm.loadPtr(Address({ Registers::r11 }, offsetof(EnterJITStack, scopeChain)), randomizer.getUnrandomizedRegister(R1.scratchReg()));
+#else
         MOZ_ASSERT(R1.scratchReg() != r0);
-        masm.loadPtr(Address({ Registers::r11 }, offsetof(EnterJITStack, scopeChain)), R1.scratchReg());
+        masm.loadPtr(Address(r11, offsetof(EnterJITStack, scopeChain)), R1.scratchReg());
+#endif
     }
 
     // The Data transfer is pushing 4 words, which already account for the
@@ -458,6 +464,9 @@ JitRuntime::generateInvalidator(JSContext* cx)
     // be aligned, and there is no good reason to automatically align it with a
     // call to setupUnalignedABICall.
     masm.ma_and(Imm32(~7), sp, sp);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.unrandomizeRegisters();
+#endif
     masm.startDataTransferM(IsStore, sp, DB, WriteBack);
     // We don't have to push everything, but this is likely easier.
     // Setting regs_.
@@ -477,6 +486,9 @@ JitRuntime::generateInvalidator(JSContext* cx)
     for (uint32_t i = 0; i < FloatRegisters::ActualTotalPhys(); i++)
         masm.transferFloatReg(FloatRegister(i, FloatRegister::Double));
     masm.finishFloatTransfer();
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.randomizeRegisters();
+#endif
 
     masm.ma_mov(sp, r0);
     const int sizeOfRetval = sizeof(size_t)*2;
@@ -646,6 +658,12 @@ PushBailoutFrame(MacroAssembler& masm, uint32_t frameClass, Register spArg)
     // bailoutFrame.snapshotOffset
     // bailoutFrame.frameSize
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    // Unrandomize registers so they get pushed in an order that can be used by
+    // js::jit::Bailout, a native function.
+    masm.unrandomizeRegisters();
+#endif
+
     // STEP 1a: Save our register sets to the stack so Bailout() can read
     // everything.
     // sp % 8 == 0
@@ -668,6 +686,14 @@ PushBailoutFrame(MacroAssembler& masm, uint32_t frameClass, Register spArg)
     for (uint32_t i = 0; i < FloatRegisters::ActualTotalPhys(); i++)
         masm.transferFloatReg(FloatRegister(i, FloatRegister::Double));
     masm.finishFloatTransfer();
+
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    // Go ahead and re-randomize registers now that data transfer is done.
+    // The use of Register r4 below doesn't matter if it's physical r4 or
+    // not since it doesn't look like this function's caller ever tries
+    // to read from r4.
+    masm.randomizeRegisters();
+#endif
 
     // STEP 1b: Push both the "return address" of the function call (the address
     //          of the instruction after the call that we used to get here) as

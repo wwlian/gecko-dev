@@ -38,6 +38,7 @@
 #include "vm/MatchPairs.h"
 
 #include "jit/MacroAssembler-inl.h"
+#include "jit/RegisterRandomizer-shared.h"
 
 using namespace js;
 using namespace js::irregexp;
@@ -143,8 +144,16 @@ NativeRegExpMacroAssembler::GenerateCode(JSContext* cx, bool match_only)
 #ifndef JS_CODEGEN_X86
     // The InputOutputData* is stored as an argument, save it on the stack
     // above the frame.
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    // This code doesn't use the randomized register aliases defined
+    // in jit/RegisterAliases-shared.h. Make sure everything uses
+    // the intended physical register numbers.
+    RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+    masm.Push(randomizer.getUnrandomizedRegister(IntArgReg0));
+#else
     masm.Push(IntArgReg0);
-#endif
+#endif  // BASELINE_REGISTER_RANDOMIZATION
+#endif  // JS_CODEGEN_X86
 
     size_t frameSize = sizeof(FrameData) + num_registers_ * sizeof(void*);
     frameSize = JS_ROUNDUP(frameSize + masm.framePushed(), ABIStackAlignment) - masm.framePushed();

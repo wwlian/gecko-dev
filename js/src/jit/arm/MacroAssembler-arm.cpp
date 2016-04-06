@@ -5015,9 +5015,6 @@ MacroAssembler::callWithABINoProfiler(Register fun, MoveOp::Type result)
     ma_mov(fun, r12);
     uint32_t stackAdjust;
     callWithABIPre(&stackAdjust);
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    unrandomizeRegisters();
-#endif
     call(r12);
     callWithABIPost(stackAdjust, result);
 }
@@ -5031,9 +5028,6 @@ MacroAssembler::callWithABINoProfiler(const Address& fun, MoveOp::Type result)
     ma_ldr(fun, r12);
     uint32_t stackAdjust;
     callWithABIPre(&stackAdjust);
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    unrandomizeRegisters();
-#endif
     call(r12);
     callWithABIPost(stackAdjust, result);
 }

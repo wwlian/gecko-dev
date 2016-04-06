@@ -92,9 +92,9 @@ static ValueOperand R0(0, R0Mask, 0);
 static ValueOperand R1(1, R1Mask, 1, 0);
 static ValueOperand R2(2, R2Mask, 2, 0, 1);
 */
-static ValueOperand R0(r3, r2);
-static ValueOperand R1(r5, r4);
-static ValueOperand R2(r1, r0);
+static const ValueOperand R0(r3, r2);
+static const ValueOperand R1(r5, r4);
+static const ValueOperand R2(r1, r0);
 #else
 static MOZ_CONSTEXPR_VAR ValueOperand R0(r3, r2);
 static MOZ_CONSTEXPR_VAR ValueOperand R1(r5, r4);

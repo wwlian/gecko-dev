@@ -40,10 +40,6 @@ EmitCallIC(CodeOffset* patchOffset, MacroAssembler& masm)
     // Load stub pointer into ICStubReg
     masm.loadPtr(Address(ICStubReg, ICEntry::offsetOfFirstStub()), ICStubReg);
 
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    Register r0 = R2.payloadReg();
-    Register r1 = R2.typeReg();
-#endif
     // Load stubcode pointer from BaselineStubEntry.
     // R2 won't be active when we call ICs, so we can use r0.
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
@@ -61,10 +57,6 @@ EmitEnterTypeMonitorIC(MacroAssembler& masm,
     // properly initialized to point to the stub.
     masm.loadPtr(Address(ICStubReg, (uint32_t) monitorStubOffset), ICStubReg);
 
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    Register r0 = R2.payloadReg();
-    Register r1 = R2.typeReg();
-#endif
     // Load stubcode pointer from BaselineStubEntry.
     // R2 won't be active when we call ICs, so we can use r0.
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
@@ -89,10 +81,6 @@ EmitChangeICReturnAddress(MacroAssembler& masm, Register reg)
 inline void
 EmitBaselineTailCallVM(JitCode* target, MacroAssembler& masm, uint32_t argSize)
 {
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    Register r0 = R2.payloadReg();
-    Register r1 = R2.typeReg();
-#endif
     // We assume during this that R0 and R1 have been pushed, and that R2 is
     // unused.
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
@@ -120,10 +108,6 @@ EmitBaselineTailCallVM(JitCode* target, MacroAssembler& masm, uint32_t argSize)
 inline void
 EmitIonTailCallVM(JitCode* target, MacroAssembler& masm, uint32_t stackSize)
 {
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    Register r0 = R2.payloadReg();
-    Register r1 = R2.typeReg();
-#endif
     // We assume during this that R0 and R1 have been pushed, and that R2 is
     // unused.
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
@@ -305,10 +289,6 @@ EmitUnstowICValues(MacroAssembler& masm, int values, bool discard = false)
 inline void
 EmitCallTypeUpdateIC(MacroAssembler& masm, JitCode* code, uint32_t objectOffset)
 {
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    Register r0 = R2.payloadReg();
-    Register r1 = R2.typeReg();
-#endif
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
 
     // R0 contains the value that needs to be typechecked. The object we're
@@ -376,10 +356,6 @@ EmitPreBarrier(MacroAssembler& masm, const AddrType& addr, MIRType type)
 inline void
 EmitStubGuardFailure(MacroAssembler& masm)
 {
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    Register r0 = R2.payloadReg();
-    Register r1 = R2.typeReg();
-#endif
     MOZ_ASSERT(R2 == ValueOperand(r1, r0));
 
     // NOTE: This routine assumes that the stub guard code left the stack in the
