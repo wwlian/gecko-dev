@@ -52,9 +52,14 @@ static MOZ_CONSTEXPR_VAR Register lr  = { Registers::lr };
 static MOZ_CONSTEXPR_VAR Register pc  = { Registers::pc };
 #endif
 
-static Register ScratchRegister = {Registers::ip};
+static Register ScratchRegister = ip;
 
+// Holds a pointer to the frame that OSRed into an OSR entry point, if applicable.
+// In most JIT code, this refers to the randomized register. In the EnterJIT
+// stub, this refers to the physical register Registers::r3, since the value
+// is passed to the stub via a native C++ call.
 static Register OsrFrameReg = r3;
+// Used to pass an argument into the ArgumentsRectifier stub.
 static Register ArgumentsRectifierReg = r8;
 static Register CallTempReg0 = r5;
 static Register CallTempReg1 = r6;
@@ -63,17 +68,21 @@ static Register CallTempReg3 = r8;
 static Register CallTempReg4 = r0;
 static Register CallTempReg5 = r1;
 
-static Register IntArgReg0 = r0;
-static Register IntArgReg1 = r1;
-static Register IntArgReg2 = r2;
-static Register IntArgReg3 = r3;
+// IntArgReg[0-9] refer to the physical registers into which the architecture
+// ABI requires integer arguments be placed, in order. To avoid having to use
+// RegisterRandomizer::getUnrandomizedRegister everywhere we reference 
+// IntArgReg[0-9], we do not randomize these values.
+static Register IntArgReg0 = { Registers::r0 };
+static Register IntArgReg1 = { Registers::r1 };
+static Register IntArgReg2 = { Registers::r2 };
+static Register IntArgReg3 = { Registers::r3 };
 static Register GlobalReg = r10;
 static Register HeapReg = r11;
 static Register CallTempNonArgRegs[] = { r5, r6, r7, r8 };
 static const uint32_t NumCallTempNonArgRegs =
     mozilla::ArrayLength(CallTempNonArgRegs);
 
-static Register ReturnReg = r0;
+static Register ReturnReg = { Registers::r0 };
 static MOZ_CONSTEXPR_VAR Register InvalidReg = { Registers::invalid_reg };
 
 static MOZ_CONSTEXPR_VAR FloatRegister d0  = {FloatRegisters::d0, VFPRegister::Double};

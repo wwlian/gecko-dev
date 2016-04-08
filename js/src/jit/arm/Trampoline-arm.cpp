@@ -229,7 +229,8 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         regs.take(randomizer.getUnrandomizedValueOperand(JSReturnOperand));
         regs.takeUnchecked(randomizer.getUnrandomizedRegister(OsrFrameReg));
         regs.take(randomizer.getUnrandomizedRegister(r11));
-        regs.take(randomizer.getUnrandomizedRegister(ReturnReg));
+        // Don't need to unrandomize ReturnReg because it's pinned to a physical register.
+        regs.take(ReturnReg); 
 #else
         AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
         regs.take(JSReturnOperand);
@@ -337,11 +338,8 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         masm.pop(jitcode);
         masm.pop(framePtr);
 
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-        MOZ_ASSERT(jitcode != randomizer.getUnrandomizedRegister(ReturnReg));
-#else
+        // Don't need to unrandomize ReturnReg because it's pinned to a physical register.
         MOZ_ASSERT(jitcode != ReturnReg);
-#endif
 
         Label error;
         masm.addPtr(Imm32(ExitFrameLayout::SizeWithFooter()), sp);
@@ -363,8 +361,10 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
 
 #ifdef BASELINE_REGISTER_RANDOMIZATION
         masm.randomizeRegisters();
-#endif
         masm.jump(randomizer.getRandomizedRegister(jitcode));
+#else
+        masm.jump(jitcode);
+#endif
 
         // OOM: Load error value, discard return address and previous frame
         // pointer and return.
@@ -609,6 +609,7 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
     masm.andPtr(Imm32(CalleeTokenMask), r1);
     masm.ma_ldr(DTRAddr(r1, DtrOffImm(JSFunction::offsetOfNativeOrScript())), r3);
     masm.loadBaselineOrIonRaw(r3, r3, nullptr);
+
     uint32_t returnOffset = masm.callJitNoProfiler(r3);
 
     // arg1
