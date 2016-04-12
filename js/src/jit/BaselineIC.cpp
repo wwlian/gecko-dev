@@ -175,6 +175,8 @@ ICWarmUpCounter_Fallback::Compiler::generateStubCode(MacroAssembler& masm)
 {
     MOZ_ASSERT(engine_ == Engine::Baseline);
 
+    // ICStubReg can't be used as a temporary value in in enterStubFrame because we need it later.
+    MOZ_ASSERT(R1.scratchReg() != ICStubReg);
     // Push a stub frame so that we can perform a non-tail call.
     enterStubFrame(masm, R1.scratchReg());
 
@@ -207,6 +209,7 @@ ICWarmUpCounter_Fallback::Compiler::generateStubCode(MacroAssembler& masm)
     Register osrDataReg = R0.scratchReg();
     regs.take(osrDataReg);
     regs.takeUnchecked(OsrFrameReg);
+    MOZ_ASSERT(OsrFrameReg != R0.scratchReg());
 
     Register scratchReg = regs.takeAny();
 
