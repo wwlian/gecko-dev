@@ -34,6 +34,7 @@ class RegisterRandomizer {
 
   public:
     static RegisterRandomizer getInstance();
+    static Register randomize(const Register &physicalRegister);
 
     Register getRandomizedRegister(const Register &physicalRegister) const;
     Register getRandomizedRegister(const Registers::Encoding &physicalRegister) const;

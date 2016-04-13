@@ -229,7 +229,8 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         regs.take(randomizer.getUnrandomizedValueOperand(JSReturnOperand));
         regs.takeUnchecked(randomizer.getUnrandomizedRegister(OsrFrameReg));
         regs.take(randomizer.getUnrandomizedRegister(r11));
-        // Don't need to unrandomize ReturnReg because it's pinned to a physical register.
+        // Don't need to unrandomize ReturnReg because it's pinned to a physical register,
+        // and this is an un-randomized context.
         regs.take(ReturnReg); 
 #else
         AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
@@ -338,7 +339,8 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         masm.pop(jitcode);
         masm.pop(framePtr);
 
-        // Don't need to unrandomize ReturnReg because it's pinned to a physical register.
+        // Don't need to unrandomize ReturnReg because it's pinned to a physical register,
+        // and this is an un-randomized context.
         MOZ_ASSERT(jitcode != ReturnReg);
 
         Label error;
@@ -938,10 +940,19 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
         MOZ_CRASH("unknown failure kind");
     }
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+#endif
     // Load the outparam and free any allocated stack.
     switch (f.outParam) {
       case Type_Handle:
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        masm.popRooted(f.outParamRootType,
+                       randomizer.getRandomizedRegister(ReturnReg),
+                       JSReturnOperand);
+#else
         masm.popRooted(f.outParamRootType, ReturnReg, JSReturnOperand);
+#endif
         break;
 
       case Type_Value:
@@ -951,12 +962,22 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
 
       case Type_Int32:
       case Type_Pointer:
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        masm.load32(Address(sp, 0),
+                    randomizer.getRandomizedRegister(ReturnReg));
+#else
         masm.load32(Address(sp, 0), ReturnReg);
+#endif
         masm.freeStack(sizeof(int32_t));
         break;
 
       case Type_Bool:
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        masm.load8ZeroExtend(Address(sp, 0),
+                             randomizer.getRandomizedRegister(ReturnReg));
+#else
         masm.load8ZeroExtend(Address(sp, 0), ReturnReg);
+#endif
         masm.freeStack(sizeof(int32_t));
         break;
 
@@ -1068,7 +1089,15 @@ JitRuntime::generateDebugTrapHandler(JSContext* cx)
     // from the JS frame). If the stub returns |false|, just return from the
     // trap stub so that execution continues at the current pc.
     Label forcedReturn;
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+    masm.branchTest32(Assembler::NonZero,
+                      randomizer.getRandomizedRegister(ReturnReg),
+                      randomizer.getRandomizedRegister(ReturnReg),
+                      &forcedReturn);
+#else
     masm.branchTest32(Assembler::NonZero, ReturnReg, ReturnReg, &forcedReturn);
+#endif
     masm.mov(lr, pc);
 
     masm.bind(&forcedReturn);

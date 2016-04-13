@@ -632,7 +632,12 @@ BaselineCompiler::emitDebugPrologue()
         // If the stub returns |true|, we have to return the value stored in the
         // frame's return value slot.
         Label done;
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+        masm.branchTest32(Assembler::Zero, randomizer.getRandomizedRegister(ReturnReg), randomizer.getRandomizedRegister(ReturnReg), &done);
+#else
         masm.branchTest32(Assembler::Zero, ReturnReg, ReturnReg, &done);
+#endif
         {
             masm.loadValue(frame.addressOfReturnValue(), JSReturnOperand);
             masm.jump(&return_);
@@ -1551,7 +1556,11 @@ BaselineCompiler::emit_JSOP_OBJECT()
             return false;
 
         // Box and push return value.
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        masm.tagValue(JSVAL_TYPE_OBJECT, RegisterRandomizer::randomize(ReturnReg), R0);
+#else
         masm.tagValue(JSVAL_TYPE_OBJECT, ReturnReg, R0);
+#endif
         frame.push(R0);
         return true;
     }
@@ -1593,7 +1602,11 @@ BaselineCompiler::emit_JSOP_REGEXP()
         return false;
 
     // Box and push return value.
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.tagValue(JSVAL_TYPE_OBJECT, RegisterRandomizer::randomize(ReturnReg), R0);
+#else
     masm.tagValue(JSVAL_TYPE_OBJECT, ReturnReg, R0);
+#endif
     frame.push(R0);
     return true;
 }
@@ -1616,7 +1629,11 @@ BaselineCompiler::emit_JSOP_LAMBDA()
         return false;
 
     // Box and push return value.
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.tagValue(JSVAL_TYPE_OBJECT, RegisterRandomizer::randomize(ReturnReg), R0);
+#else
     masm.tagValue(JSVAL_TYPE_OBJECT, ReturnReg, R0);
+#endif
     frame.push(R0);
     return true;
 }
@@ -1643,7 +1660,11 @@ BaselineCompiler::emit_JSOP_LAMBDA_ARROW()
         return false;
 
     // Box and push return value.
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.tagValue(JSVAL_TYPE_OBJECT, RegisterRandomizer::randomize(ReturnReg), R0);
+#else
     masm.tagValue(JSVAL_TYPE_OBJECT, ReturnReg, R0);
+#endif
     frame.push(R0);
     return true;
 }
@@ -1964,7 +1985,11 @@ BaselineCompiler::emit_JSOP_NEWARRAY_COPYONWRITE()
         return false;
 
     // Box and push return value.
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.tagValue(JSVAL_TYPE_OBJECT, RegisterRandomizer::randomize(ReturnReg), R0);
+#else
     masm.tagValue(JSVAL_TYPE_OBJECT, ReturnReg, R0);
+#endif
     frame.push(R0);
     return true;
 }
@@ -2210,7 +2235,11 @@ BaselineCompiler::emit_JSOP_DELELEM()
     if (!callVM(strict ? DeleteElementStrictInfo : DeleteElementNonStrictInfo))
         return false;
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.boxNonDouble(JSVAL_TYPE_BOOLEAN, RegisterRandomizer::randomize(ReturnReg), R1);
+#else
     masm.boxNonDouble(JSVAL_TYPE_BOOLEAN, ReturnReg, R1);
+#endif
     frame.popn(2);
     frame.push(R1);
     return true;
@@ -2319,7 +2348,11 @@ BaselineCompiler::emit_JSOP_BINDVAR()
     if (!callVM(BindVarInfo))
         return false;
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.tagValue(JSVAL_TYPE_OBJECT, RegisterRandomizer::randomize(ReturnReg), R0);
+#else
     masm.tagValue(JSVAL_TYPE_OBJECT, ReturnReg, R0);
+#endif
     frame.push(R0);
     return true;
 }
@@ -2426,7 +2459,11 @@ BaselineCompiler::emit_JSOP_DELPROP()
     if (!callVM(strict ? DeletePropertyStrictInfo : DeletePropertyNonStrictInfo))
         return false;
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.boxNonDouble(JSVAL_TYPE_BOOLEAN, RegisterRandomizer::randomize(ReturnReg), R1);
+#else
     masm.boxNonDouble(JSVAL_TYPE_BOOLEAN, ReturnReg, R1);
+#endif
     frame.pop();
     frame.push(R1);
     return true;
@@ -3251,7 +3288,11 @@ BaselineCompiler::emit_JSOP_OPTIMIZE_SPREADCALL()
     if (!callVM(OptimizeSpreadCallInfo))
         return false;
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.boxNonDouble(JSVAL_TYPE_BOOLEAN, RegisterRandomizer::randomize(ReturnReg), R0);
+#else
     masm.boxNonDouble(JSVAL_TYPE_BOOLEAN, ReturnReg, R0);
+#endif
     frame.push(R0);
     return true;
 }
@@ -3565,7 +3606,12 @@ BaselineCompiler::emit_JSOP_DEBUGGER()
 
     // If the stub returns |true|, return the frame's return value.
     Label done;
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+    masm.branchTest32(Assembler::Zero, randomizer.getRandomizedRegister(ReturnReg), randomizer.getRandomizedRegister(ReturnReg), &done);
+#else
     masm.branchTest32(Assembler::Zero, ReturnReg, ReturnReg, &done);
+#endif
     {
         masm.loadValue(frame.addressOfReturnValue(), JSReturnOperand);
         masm.jump(&return_);
@@ -3730,7 +3776,11 @@ BaselineCompiler::emit_JSOP_TOSTRING()
     if (!callVM(ToStringInfo))
         return false;
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.tagValue(JSVAL_TYPE_STRING, RegisterRandomizer::randomize(ReturnReg), R0);
+#else
     masm.tagValue(JSVAL_TYPE_STRING, ReturnReg, R0);
+#endif
 
     masm.bind(&done);
     frame.push(R0);
@@ -3927,7 +3977,11 @@ BaselineCompiler::emit_JSOP_GENERATOR()
     if (!callVM(CreateGeneratorInfo))
         return false;
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.tagValue(JSVAL_TYPE_OBJECT, RegisterRandomizer::randomize(ReturnReg), R0);
+#else
     masm.tagValue(JSVAL_TYPE_OBJECT, ReturnReg, R0);
+#endif
     frame.push(R0);
     return true;
 }

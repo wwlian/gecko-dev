@@ -61,6 +61,10 @@ static Register ScratchRegister = ip;
 static Register OsrFrameReg = r3;
 // Used to pass an argument into the ArgumentsRectifier stub.
 static Register ArgumentsRectifierReg = r8;
+
+// It is important that CallTempReg[0-3] do not reference a volatile virtual register,
+// which could be randomized to point to physical register r0/ReturnReg. There is code that
+// assumes that CallTempReg[0-3] (or js::jit::Registers that alias them) are distinct from ReturnReg.
 static Register CallTempReg0 = r5;
 static Register CallTempReg1 = r6;
 static Register CallTempReg2 = r7;

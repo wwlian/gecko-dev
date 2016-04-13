@@ -1278,9 +1278,12 @@ MacroAssembler::generateBailoutTail(Register scratch, Register bailoutInfo)
 
     // Fall-through: overrecursed.
     {
-        loadJSContext(ReturnReg);
+        AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
+        regs.take(scratch);
+        Register cxreg = regs.takeAny();
+        loadJSContext(cxreg);
         setupUnalignedABICall(scratch);
-        passABIArg(ReturnReg);
+        passABIArg(cxreg);
         callWithABI(JS_FUNC_TO_DATA_PTR(void*, BailoutReportOverRecursed));
         jump(exceptionLabel());
     }

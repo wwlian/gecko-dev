@@ -70,6 +70,12 @@ RegisterRandomizer::getInstance() {
     return instance;
 }
 
+/* static */ Register
+RegisterRandomizer::randomize(const Register &physicalRegister) {
+    RegisterRandomizer instance = getInstance();
+    instance.getRandomizedRegister(physicalRegister);
+}
+
 Register
 RegisterRandomizer::getRandomizedRegister(const Register &physicalRegister) const {
     return getRandomizedRegister(physicalRegister.encoding());

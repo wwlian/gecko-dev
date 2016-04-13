@@ -123,6 +123,9 @@ static Register RegExpMatcherLastIndexReg = CallTempReg2;
 static Register RegExpMatcherStickyReg = CallTempReg3;
 
 // Registerd used in RegExpTester instruction (do not use ReturnReg).
+// With BASELINE_REGSITER_RANDOMIZATION, don't even use a volatile register,
+// as the physical return register could be randomized into it (assuming
+// ReturnReg is a volatile register).
 static Register RegExpTesterRegExpReg = CallTempReg0;
 static Register RegExpTesterStringReg = CallTempReg1;
 static Register RegExpTesterLastIndexReg = CallTempReg2;

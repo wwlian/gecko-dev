@@ -1082,8 +1082,18 @@ EmitBaselineDebugModeOSRHandlerTail(MacroAssembler& masm, Register temp, bool re
     // R1 but do need to propagate the original ReturnReg value. Otherwise we
     // need to worry about R0 and R1 but can clobber ReturnReg. Indeed, on
     // x86, R1 contains ReturnReg.
+    // Moreover, if we're returning from callVM, then the value in ReturnReg will have been shuffled
+    // into its randomized location, so we need to randomize it since |ReturnReg| refers
+    // to the physical register.
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+#endif
     if (returnFromCallVM) {
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        masm.push(randomizer.getRandomizedRegister(ReturnReg));
+#else
         masm.push(ReturnReg);
+#endif
     } else {
         masm.pushValue(Address(temp, offsetof(BaselineDebugModeOSRInfo, valueR0)));
         masm.pushValue(Address(temp, offsetof(BaselineDebugModeOSRInfo, valueR1)));
@@ -1100,7 +1110,11 @@ EmitBaselineDebugModeOSRHandlerTail(MacroAssembler& masm, Register temp, bool re
     // Restore saved values.
     AllocatableGeneralRegisterSet jumpRegs(GeneralRegisterSet::All());
     if (returnFromCallVM) {
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        jumpRegs.take(randomizer.getRandomizedRegister(ReturnReg));
+#else
         jumpRegs.take(ReturnReg);
+#endif
     } else {
         jumpRegs.take(R0);
         jumpRegs.take(R1);
@@ -1111,7 +1125,11 @@ EmitBaselineDebugModeOSRHandlerTail(MacroAssembler& masm, Register temp, bool re
     masm.pop(target);
     masm.pop(BaselineFrameReg);
     if (returnFromCallVM) {
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        masm.pop(randomizer.getRandomizedRegister(ReturnReg));
+#else
         masm.pop(ReturnReg);
+#endif
     } else {
         masm.popValue(R1);
         masm.popValue(R0);
