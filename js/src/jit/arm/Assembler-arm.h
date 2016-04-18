@@ -1421,6 +1421,18 @@ class Assembler : public AssemblerShared
 
     // Size of the instruction stream, in bytes, after pools are flushed.
     size_t size() const;
+#if defined (BASELINE_RANDOM_NOP_EXPANDED) || defined (ION_RANDOM_NOP_EXPANDED)
+  private:
+    // These 2 methods need access to the size of the buffer without
+    // having to flush pending pools in order to quickly determine the 
+    // change in the buffer size.
+    //friend bool CodeGenerator::generateBody();
+    //friend MethodStatus BaselineCompiler::emitBody();
+    friend class CodeGenerator;
+    friend class BaselineCompiler;
+    size_t sizeExcludingCurrentPool() const;
+  public:
+#endif
     // Size of the jump relocation table, in bytes.
     size_t jumpRelocationTableBytes() const;
     size_t dataRelocationTableBytes() const;

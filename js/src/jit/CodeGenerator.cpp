@@ -39,7 +39,7 @@
 #include "jit/MIRGenerator.h"
 #include "jit/MoveEmitter.h"
 #include "jit/RangeAnalysis.h"
-#ifdef ION_RANDOM_NOP
+#if defined (ION_RANDOM_NOP) || defined (ION_RANDOM_NOP_EXPANDED)
 #include "jit/RNG.h"
 #endif
 #include "jit/SharedICHelpers.h"
@@ -4618,6 +4618,9 @@ CodeGenerator::generateBody()
     if (gen->compilingAsmJS())
         perfSpewer = &gen->perfSpewer();
 #endif
+#ifdef ION_RANDOM_NOP_EXPANDED
+    size_t bytesEmitted = masm.sizeExcludingCurrentPool();
+#endif
 
     for (size_t i = 0; i < graph.numBlocks(); i++) {
         current = graph.getBlock(i);
@@ -4698,6 +4701,21 @@ CodeGenerator::generateBody()
             if (!(RNG::nextUint32() & 7)) {  // 1/8 probability
             	masm.nop();
             }
+#endif
+#ifdef ION_RANDOM_NOP_EXPANDED
+            // For each instruction emitted in the last time around the loop, emit a NOP
+            // with some probability. This is different than emitting between 0 and N NOPs
+            // uniformly at random and more closely simulates the distribution over the number
+            // of NOPs inserted that we're going for.
+            size_t newSize = masm.sizeExcludingCurrentPool();
+            MOZ_ASSERT(newSize >= bytesEmitted);  // Overflow?!?
+            uint32_t numInsns = (newSize - bytesEmitted) / Assembler::NopSize();
+            for (uint32_t i = 0; i < numInsns; i++) {
+                if (!(RNG::nextUint32() & 7)) {
+                    masm.nop();
+                }
+            }
+            bytesEmitted = masm.sizeExcludingCurrentPool();
 #endif
             iter->accept(this);
 
