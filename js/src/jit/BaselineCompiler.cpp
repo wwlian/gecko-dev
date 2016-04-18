@@ -39,7 +39,7 @@
 #include "vm/Interpreter-inl.h"
 #include "vm/NativeObject-inl.h"
 
-#ifdef BASELINE_RANDOM_NOP
+#if defined (BASELINE_RANDOM_NOP) || defined (BASELINE_RANDOM_NOP_EXPANDED)
 #include "jit/RNG.h"
 #endif
 
@@ -964,11 +964,29 @@ BaselineCompiler::emitBody()
     mozilla::DebugOnly<jsbytecode*> prevpc = pc;
     bool compileCoverage = script->hasScriptCounts();
 
+#ifdef BASELINE_RANDOM_NOP_EXPANDED
+    size_t bytesEmitted = masm.sizeExcludingCurrentPool();
+#endif
     while (true) {
 #ifdef BASELINE_RANDOM_NOP
-    	if (!(RNG::nextUint32() & 7)) {
-    		masm.nop();
-    	}
+        if (!(RNG::nextUint32() & 7)) {
+            masm.nop();
+        }
+#endif
+#ifdef BASELINE_RANDOM_NOP_EXPANDED
+        // For each instruction emitted in the last time around the loop, emit a NOP
+        // with some probability. This is different than emitting between 0 and N NOPs
+        // uniformly at random and more closely simulates the distribution over the number
+        // of NOPs inserted that we're going for.
+        size_t newSize = masm.sizeExcludingCurrentPool();
+        MOZ_ASSERT(newSize >= bytesEmitted);  // Overflow?!?
+        uint32_t numInsns = (newSize - bytesEmitted) / Assembler::NopSize();
+        for (uint32_t i = 0; i < numInsns; i++) {
+            if (!(RNG::nextUint32() & 7)) {
+              masm.nop();
+            }
+        }
+        bytesEmitted = masm.sizeExcludingCurrentPool();
 #endif
         JSOp op = JSOp(*pc);
         JitSpew(JitSpew_BaselineOp, "Compiling op @ %d: %s",

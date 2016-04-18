@@ -698,6 +698,10 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
     }
 
   private:
+#if defined (BASELINE_RANDOM_NOP_EXPANDED) || defined (ION_RANDOM_NOP_EXPANDED)
+    friend class Assembler;
+#endif
+
     size_t sizeExcludingCurrentPool() const {
         // Return the actual size of the buffer, excluding the current pending
         // pool.
@@ -1026,6 +1030,12 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
         JitSpew(JitSpew_Pools, "[%d] Requesting a pool flush", id);
         finishPool();
     }
+
+#ifdef RANDOM_NOP_FINEGRAIN
+    bool canNotPlacePool() {
+        return canNotPlacePool_;
+    }
+#endif
 
     void enterNoPool(size_t maxInst) {
         // Don't allow re-entry.

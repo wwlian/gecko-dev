@@ -22,6 +22,10 @@
 #include "jit/JitCompartment.h"
 #include "jit/MacroAssembler.h"
 
+#ifdef RANDOM_NOP_FINEGRAIN
+#include "jit/RNG.h"
+#endif
+
 using namespace js;
 using namespace js::jit;
 
@@ -724,6 +728,11 @@ Assembler::GetCF32Target(Iter* iter)
 
         // Extract the top part of the immediate.
         Instruction* inst2 = iter->next();
+#ifdef RANDOM_NOP_FINEGRAIN
+        while (inst2->is<InstNOP>()) {
+          inst2 = iter->next();
+        }
+#endif
         MOZ_ASSERT(inst2->is<InstMovT>());
         InstMovT* top = inst2->as<InstMovT>();
         top->extractImm(&targ_top);
@@ -772,6 +781,11 @@ Assembler::GetPtr32Target(Iter* start, Register* dest, RelocStyle* style)
 {
     Instruction* load1 = start->cur();
     Instruction* load2 = start->next();
+#ifdef RANDOM_NOP_FINEGRAIN
+    while (load2->is<InstNOP>()) {
+      load2 = start->next();
+    }
+#endif
 
     if (load1->is<InstMovW>() && load2->is<InstMovT>()) {
         if (style)
@@ -1331,6 +1345,13 @@ Assembler::size() const
 {
     return m_buffer.size();
 }
+#if defined (BASELINE_RANDOM_NOP_EXPANDED) || defined (ION_RANDOM_NOP_EXPANDED)
+size_t
+Assembler::sizeExcludingCurrentPool() const
+{
+    return m_buffer.sizeExcludingCurrentPool();
+}
+#endif
 // Size of the relocation table, in bytes.
 size_t
 Assembler::jumpRelocationTableBytes() const
@@ -1602,12 +1623,31 @@ Assembler::writeInst(uint32_t x)
 #ifdef JS_DISASM_ARM
     spew(m_buffer.getInstOrNull(offs));
 #endif
+#ifdef RANDOM_NOP_FINEGRAIN
+    // Don't insert NOPs in pool-free regions because code in those regions are
+    // used in conjunction with static assumptions about the locations of 
+    // specific instructions in the region.
+    if (!m_buffer.canNotPlacePool() && !(RNG::nextUint32() & 7)) {
+        BufferOffset o = m_buffer.putInt(0xe320f000);
+#ifdef JS_DISASM_ARM
+        spew(m_buffer.getInstOrNull(o));
+#endif
+    }
+#endif
     return offs;
 }
 
 BufferOffset
 Assembler::writeBranchInst(uint32_t x, Label* documentation)
 {
+#ifdef RANDOM_NOP_FINEGRAIN
+    if (!(RNG::nextUint32() & 7)) {
+        //BufferOffset o = m_buffer.putInt(0xe320f000);
+#ifdef JS_DISASM_ARM
+        //spew(m_buffer.getInstOrNull(o));
+#endif
+    }
+#endif
     BufferOffset offs = m_buffer.putInt(x, /* markAsBranch = */ true);
 #ifdef JS_DISASM_ARM
     spewBranch(m_buffer.getInstOrNull(offs), documentation);
@@ -3259,6 +3299,11 @@ Assembler::ToggleCall(CodeLocationLabel inst_, bool enabled)
         // If it looks like the start of a movw/movt sequence, then make sure we
         // have all of it (and advance the iterator past the full sequence).
         inst = inst->next();
+#ifdef RANDOM_NOP_FINEGRAIN
+        while (inst->is<InstNOP>()) {
+          inst = inst->next();
+        }
+#endif
         MOZ_ASSERT(inst->is<InstMovT>());
     }
 
@@ -3290,6 +3335,11 @@ Assembler::ToggledCallSize(uint8_t* code)
         // If it looks like the start of a movw/movt sequence, then make sure we
         // have all of it (and advance the iterator past the full sequence).
         inst = inst->next();
+#ifdef RANDOM_NOP_FINEGRAIN
+        while (inst->is<InstNOP>()) {
+          inst = inst->next();
+        }
+#endif
         MOZ_ASSERT(inst->is<InstMovT>());
     }
 

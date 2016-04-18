@@ -3057,6 +3057,23 @@ fi
 AC_SUBST(BASELINE_RANDOM_NOP)
 
 dnl ========================================================
+dnl Expanded Baseline JIT random NOP insertion. Number of attempted insertions between
+dnl bytecode translations is dictated by the number of instructions emitted by the previous
+dnl bytecode.
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(baselinerandomnopexpanded,
+[  --enable-baselinerandomnopexpanded
+                          Enable expanded random NOP insertion between bytecodes in the Baseline JIT.],
+    BASELINE_RANDOM_NOP_EXPANDED=1,
+    BASELINE_RANDOM_NOP_EXPANDED= )
+
+if test -n "$BASELINE_RANDOM_NOP_EXPANDED"; then
+    AC_DEFINE(BASELINE_RANDOM_NOP_EXPANDED)
+fi
+
+AC_SUBST(BASELINE_RANDOM_NOP_EXPANDED)
+
+dnl ========================================================
 dnl IonMonkey random NOP insertion.
 dnl ========================================================
 MOZ_ARG_ENABLE_BOOL(ionrandomnop,
@@ -3070,6 +3087,38 @@ if test -n "$ION_RANDOM_NOP"; then
 fi
 
 AC_SUBST(ION_RANDOM_NOP)
+
+dnl ========================================================
+dnl Expanded IonMonkey random NOP insertion. Same idea as expanded
+dnl Baseline random NOP insertion.
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(ionrandomnopexpanded,
+[  --enable-ionrandomnopexpanded
+                          Enable expanded random NOP insertion between LIR instructions in IonMonkey.],
+    ION_RANDOM_NOP_EXPANDED=1,
+    ION_RANDOM_NOP_EXPANDED= )
+
+if test -n "$ION_RANDOM_NOP_EXPANDED"; then
+    AC_DEFINE(ION_RANDOM_NOP_EXPANDED)
+fi
+
+AC_SUBST(ION_RANDOM_NOP_EXPANDED)
+
+dnl ========================================================
+dnl Fine-grained random NOP insertion at the assembler level
+dnl between each instruction.
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(randomnopfinegrain,
+[  --enable-randomnopfinegrain
+                          Enable fine-grained random NOP insertion in all dynamically-generated.],
+    RANDOM_NOP_FINEGRAIN=1,
+    RANDOM_NOP_FINEGRAIN= )
+
+if test -n "$RANDOM_NOP_FINEGRAIN"; then
+    AC_DEFINE(RANDOM_NOP_FINEGRAIN)
+fi
+
+AC_SUBST(RANDOM_NOP_FINEGRAIN)
 
 dnl ========================================================
 dnl IonMonkey register randomization.
