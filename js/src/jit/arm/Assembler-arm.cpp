@@ -696,6 +696,11 @@ const uint32_t*
 Assembler::GetCF32Target(Iter* iter)
 {
     Instruction* inst1 = iter->cur();
+#ifdef RANDOM_NOP_FINEGRAIN
+    while (inst1->is<InstNOP>()) {
+      inst1 = iter->next();
+    }
+#endif
 
     if (inst1->is<InstBranchImm>()) {
         // See if we have a simple case, b #offset.
@@ -780,6 +785,11 @@ const uint32_t*
 Assembler::GetPtr32Target(Iter* start, Register* dest, RelocStyle* style)
 {
     Instruction* load1 = start->cur();
+#ifdef RANDOM_NOP_FINEGRAIN
+    while (load1->is<InstNOP>()) {
+      load1 = start->next();
+    }
+#endif
     Instruction* load2 = start->next();
 #ifdef RANDOM_NOP_FINEGRAIN
     while (load2->is<InstNOP>()) {
@@ -1619,10 +1629,6 @@ Assembler::SpewNodes::remove(uint32_t key)
 BufferOffset
 Assembler::writeInst(uint32_t x)
 {
-    BufferOffset offs = m_buffer.putInt(x);
-#ifdef JS_DISASM_ARM
-    spew(m_buffer.getInstOrNull(offs));
-#endif
 #ifdef RANDOM_NOP_FINEGRAIN
     // Don't insert NOPs in pool-free regions because code in those regions are
     // used in conjunction with static assumptions about the locations of 
@@ -1634,6 +1640,10 @@ Assembler::writeInst(uint32_t x)
 #endif
     }
 #endif
+    BufferOffset offs = m_buffer.putInt(x);
+#ifdef JS_DISASM_ARM
+    spew(m_buffer.getInstOrNull(offs));
+#endif
     return offs;
 }
 
@@ -1641,10 +1651,10 @@ BufferOffset
 Assembler::writeBranchInst(uint32_t x, Label* documentation)
 {
 #ifdef RANDOM_NOP_FINEGRAIN
-    if (!(RNG::nextUint32() & 7)) {
-        //BufferOffset o = m_buffer.putInt(0xe320f000);
+    if (!m_buffer.canNotPlacePool() && !(RNG::nextUint32() & 7)) {
+        BufferOffset o = m_buffer.putInt(0xe320f000);
 #ifdef JS_DISASM_ARM
-        //spew(m_buffer.getInstOrNull(o));
+        spew(m_buffer.getInstOrNull(o));
 #endif
     }
 #endif
@@ -3293,6 +3303,11 @@ Assembler::ToggleCall(CodeLocationLabel inst_, bool enabled)
     Instruction* inst = (Instruction*)inst_.raw();
     // Skip a pool with an artificial guard.
     inst = inst->skipPool();
+#ifdef RANDOM_NOP_FINEGRAIN
+    while (inst->is<InstNOP>()) {
+      inst = inst->next();
+    }
+#endif
     MOZ_ASSERT(inst->is<InstMovW>() || inst->is<InstLDR>());
 
     if (inst->is<InstMovW>()) {
@@ -3329,6 +3344,11 @@ Assembler::ToggledCallSize(uint8_t* code)
     Instruction* inst = (Instruction*)code;
     // Skip a pool with an artificial guard.
     inst = inst->skipPool();
+#ifdef RANDOM_NOP_FINEGRAIN
+    while (inst->is<InstNOP>()) {
+      inst = inst->next();
+    }
+#endif
     MOZ_ASSERT(inst->is<InstMovW>() || inst->is<InstLDR>());
 
     if (inst->is<InstMovW>()) {
