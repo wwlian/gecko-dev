@@ -380,8 +380,18 @@ MacroAssemblerARM::ma_mov_patch(Imm32 imm_, Register dest, Assembler::Condition 
 
     switch(rs) {
       case L_MOVWT:
+#ifdef RANDOM_NOP_FINEGRAIN
+        while (i->is<InstNOP>()) {
+          i= i->next();
+        }
+#endif
         Assembler::as_movw_patch(dest, Imm16(imm & 0xffff), c, i);
         i = i->next();
+#ifdef RANDOM_NOP_FINEGRAIN
+        while (i->is<InstNOP>()) {
+          i= i->next();
+        }
+#endif
         Assembler::as_movt_patch(dest, Imm16(imm >> 16 & 0xffff), c, i);
         break;
       case L_LDR:
