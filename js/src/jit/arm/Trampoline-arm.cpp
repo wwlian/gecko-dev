@@ -561,8 +561,8 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
         ValueOperand thisValue(r5, r4);
 #ifdef BASELINE_REGISTER_RANDOMIZATION
         if (!isValueDTRDCandidate(thisValue)) {
-            masm.ma_dtr(IsLoad, r3, Imm32(4), thisValue.typeReg(), Offset);
-            masm.ma_dtr(IsLoad, r3, Imm32(-8), thisValue.payloadReg(), PostIndex);
+            masm.ma_dtr(IsLoad, r3, Imm32(8), thisValue.payloadReg(), Offset);
+            masm.ma_dtr(IsLoad, r3, Imm32(12), thisValue.typeReg(), Offset);
             masm.pushValue(thisValue);
         } else
 #else
