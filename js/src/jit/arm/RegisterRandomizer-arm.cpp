@@ -73,7 +73,7 @@ RegisterRandomizer::getInstance() {
 /* static */ Register
 RegisterRandomizer::randomize(const Register &physicalRegister) {
     RegisterRandomizer instance = getInstance();
-    instance.getRandomizedRegister(physicalRegister);
+    return instance.getRandomizedRegister(physicalRegister);
 }
 
 Register
@@ -115,23 +115,7 @@ RegisterRandomizer::randomizeMask(Registers::SetType mask) const {
 
 /* static */ bool
 RegisterRandomizer::isRandomizedRegister(unsigned int r) {
-    // TODO: go back to using the class variable once done bug hunting.
-    Registers::SetType randomizationMaskTmp = (Registers::AllocatableMask
-        /*& ~(1 << Registers::r0)
-        & ~(1 << Registers::r1)
-        & ~(1 << Registers::r2)
-        & ~(1 << Registers::r3)
-        & ~(1 << Registers::r4)
-        & ~(1 << Registers::r5)
-        & ~(1 << Registers::r6)
-        & ~(1 << Registers::r7)
-        & ~(1 << Registers::r8)
-        & ~(1 << Registers::r9)
-        & ~(1 << Registers::r10)
-        & ~(1 << Registers::r11)*/
-        );
-    return randomizationMaskTmp & (1 << r);
-    //return RANDOMIZATION_MASK & (1 << r);
+    return RANDOMIZATION_MASK & (1 << r);
 }
 
 } // namespace jit

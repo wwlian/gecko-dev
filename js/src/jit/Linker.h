@@ -19,6 +19,8 @@
 #include "jit/RNG.h"
 #endif
 
+#include "jsprf.h"
+
 namespace js {
 namespace jit {
 
@@ -89,6 +91,16 @@ class Linker
         masm.link(code);
         if (masm.embedsNurseryPointers())
             cx->runtime()->gc.storeBuffer.putWholeCell(code);
+
+#if DEBUG
+    char *buf = js_pod_malloc<char>(code->instructionsSize() * 4 + 1);
+    for (size_t i = 0; i < code->instructionsSize(); i++) {
+    	JS_snprintf(buf + 4 * i, 5, "\\x%02x", *(code->raw() + i));
+    }
+    buf[code->instructionsSize() * 4] = '\0';
+    JitSpew(JitSpew_CodeBytes, "Linking (%d bytes) @%p:%s", code->instructionsSize(), code->raw(), buf);
+    js_free(buf);
+#endif
         return code;
     }
 };

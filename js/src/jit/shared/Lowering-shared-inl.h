@@ -223,7 +223,13 @@ LIRGeneratorShared::defineReturn(LInstruction* lir, MDefinition* mir)
       default:
         LDefinition::Type type = LDefinition::TypeFrom(mir->type());
         MOZ_ASSERT(type != LDefinition::DOUBLE && type != LDefinition::FLOAT32);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        lir->setDef(0, LDefinition(vreg,
+                                   type,
+                                   LGeneralReg(RegisterRandomizer::randomize(ReturnReg))));
+#else
         lir->setDef(0, LDefinition(vreg, type, LGeneralReg(ReturnReg)));
+#endif
         break;
     }
 
