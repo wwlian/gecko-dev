@@ -538,7 +538,7 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
     // Copy number of actual arguments into r0.
     masm.ma_ldr(DTRAddr(sp, DtrOffImm(RectifierFrameLayout::offsetOfNumActualArgs())), r0);
 
-    // Load the number of |undefined|s to push into r6.
+    // Load the number of |undefined|s to push into r2.
     masm.ma_ldr(DTRAddr(sp, DtrOffImm(RectifierFrameLayout::offsetOfCalleeToken())), r1);
     masm.ma_and(Imm32(CalleeTokenMask), r1, r6);
     masm.ma_ldrh(EDtrAddr(r6, EDtrOffImm(JSFunction::offsetOfNargs())), r6);
@@ -546,7 +546,7 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
     masm.ma_sub(r6, r8, r2);
 
     // Get the topmost argument.
-    masm.ma_alu(sp, lsl(r8, 3), r3, OpAdd); // r3 <- r3 + nargs * 8
+    masm.ma_alu(sp, lsl(r8, 3), r3, OpAdd); // r3 <- sp + nargs * 8
     masm.ma_add(r3, Imm32(sizeof(RectifierFrameLayout)), r3);
 
     {
