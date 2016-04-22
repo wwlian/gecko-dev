@@ -44,22 +44,24 @@ isValueDTRDCandidate(ValueOperand& val)
 void
 MacroAssemblerARM::unrandomizeRegisters() {
     RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+    startDataTransferM(IsLoad, sp, IA, WriteBack);
     for (Register::Code i = randomizer.getMaxRandomRegister() + 1; i > 0; i--) {
+        if (!RegisterRandomizer::isRandomizedRegister(i - 1)) { continue; }
         ma_push(randomizer.getRandomizedRegister(Register::FromCode(i - 1)));
+        transferReg(Register::FromCode(i - 1));
     }
-    for (Register::Code i = 0; i <= randomizer.getMaxRandomRegister(); i++) {
-        ma_pop(Register::FromCode(i));
-    }
+    finishDataTransfer();
 }
 
 void MacroAssemblerARM::randomizeRegisters() {
     RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+    startDataTransferM(IsLoad, sp, IA, WriteBack);
     for (Register::Code i = randomizer.getMaxRandomRegister() + 1; i > 0; i--) {
-        ma_push(Register::FromCode(i - 1));
+        if (!RegisterRandomizer::isRandomizedRegister(i - 1)) { continue; }
+        ma_push(randomizer.getUnrandomizedRegister(Register::FromCode(i - 1)));
+        transferReg(Register::FromCode(i - 1));
     }
-    for (Register::Code i = 0; i <= randomizer.getMaxRandomRegister(); i++) {
-        ma_pop(randomizer.getRandomizedRegister(Register::FromCode(i)));
-    }
+    finishDataTransfer();
 }
 #endif
 
