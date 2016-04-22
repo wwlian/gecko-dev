@@ -46,7 +46,10 @@ MacroAssemblerARM::unrandomizeRegisters() {
     RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
     startDataTransferM(IsLoad, sp, IA, WriteBack);
     for (Register::Code i = randomizer.getMaxRandomRegister() + 1; i > 0; i--) {
-        if (!RegisterRandomizer::isRandomizedRegister(i - 1)) { continue; }
+        if (!RegisterRandomizer::isRandomizedRegister(i - 1)
+            || (i - 1) == randomizer.getRandomizedRegister(Register::FromCode(i - 1)).code()) {
+          continue;
+        }
         ma_push(randomizer.getRandomizedRegister(Register::FromCode(i - 1)));
         transferReg(Register::FromCode(i - 1));
     }
@@ -57,7 +60,10 @@ void MacroAssemblerARM::randomizeRegisters() {
     RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
     startDataTransferM(IsLoad, sp, IA, WriteBack);
     for (Register::Code i = randomizer.getMaxRandomRegister() + 1; i > 0; i--) {
-        if (!RegisterRandomizer::isRandomizedRegister(i - 1)) { continue; }
+        if (!RegisterRandomizer::isRandomizedRegister(i - 1)
+            || (i - 1) == randomizer.getRandomizedRegister(Register::FromCode(i - 1)).code()) {
+          continue;
+        }
         ma_push(randomizer.getUnrandomizedRegister(Register::FromCode(i - 1)));
         transferReg(Register::FromCode(i - 1));
     }
