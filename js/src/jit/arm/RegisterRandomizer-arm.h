@@ -13,10 +13,7 @@ namespace jit {
 class RegisterRandomizer {
   private:
     static const Registers::SetType RANDOMIZATION_MASK = (Registers::AllocatableMask
-        & ~(1 << Registers::r0)
-        & ~(1 << Registers::r1)
-        & ~(1 << Registers::r2)
-        & ~(1 << Registers::r3));
+        & ~(1 << Registers::r0));
 
     // |substitutions_| maps a Registers::Encoding to the Registers::Encoding
     // that will actually be used in its stead in JIT code. Can be used to
@@ -27,10 +24,11 @@ class RegisterRandomizer {
     std::array<Registers::Encoding, Registers::Total> reverseSubstitutions_;
 
     Registers::Code maxRandomRegister_;
+    RegisterRandomizer();
 
+  public:
     static bool isRandomizedRegister(unsigned int r);
 
-    RegisterRandomizer();
 
   public:
     static RegisterRandomizer getInstance();

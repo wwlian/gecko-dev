@@ -19,6 +19,8 @@
 
 #include "jit/MacroAssembler-inl.h"
 
+#include "jsprf.h"
+
 using namespace js;
 using namespace js::jit;
 
@@ -538,7 +540,7 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
     // Copy number of actual arguments into r0.
     masm.ma_ldr(DTRAddr(sp, DtrOffImm(RectifierFrameLayout::offsetOfNumActualArgs())), r0);
 
-    // Load the number of |undefined|s to push into r6.
+    // Load the number of |undefined|s to push into r2.
     masm.ma_ldr(DTRAddr(sp, DtrOffImm(RectifierFrameLayout::offsetOfCalleeToken())), r1);
     masm.ma_and(Imm32(CalleeTokenMask), r1, r6);
     masm.ma_ldrh(EDtrAddr(r6, EDtrOffImm(JSFunction::offsetOfNargs())), r6);
@@ -546,7 +548,7 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
     masm.ma_sub(r6, r8, r2);
 
     // Get the topmost argument.
-    masm.ma_alu(sp, lsl(r8, 3), r3, OpAdd); // r3 <- r3 + nargs * 8
+    masm.ma_alu(sp, lsl(r8, 3), r3, OpAdd); // r3 <- sp + nargs * 8
     masm.ma_add(r3, Imm32(sizeof(RectifierFrameLayout)), r3);
 
     {
@@ -556,8 +558,19 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
                           &notConstructing);
 
         // Add sizeof(Value) to overcome |this|
-        masm.ma_dataTransferN(IsLoad, 64, true, r3, Imm32(8), r4, Offset);
-        masm.ma_dataTransferN(IsStore, 64, true, sp, Imm32(-8), r4, PreIndex);
+        ValueOperand thisValue(r5, r4);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        if (!isValueDTRDCandidate(thisValue)) {
+            masm.ma_dtr(IsLoad, r3, Imm32(8), thisValue.payloadReg(), Offset);
+            masm.ma_dtr(IsLoad, r3, Imm32(12), thisValue.typeReg(), Offset);
+            masm.pushValue(thisValue);
+        } else
+#else
+#endif
+        {
+            masm.ma_dataTransferN(IsLoad, 64, true, r3, Imm32(8), thisValue.payloadReg(), Offset);
+            masm.ma_dataTransferN(IsStore, 64, true, sp, Imm32(-8), thisValue.payloadReg(), PreIndex);
+        }
 
         // Include the newly pushed newTarget value in the frame size
         // calculated below.
@@ -567,11 +580,21 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
     }
 
     // Push undefined.
-    masm.moveValue(UndefinedValue(), r5, r4);
+    ValueOperand undefValue(r5, r4);
+    masm.moveValue(UndefinedValue(), undefValue);
     {
         Label undefLoopTop;
         masm.bind(&undefLoopTop);
-        masm.ma_dataTransferN(IsStore, 64, true, sp, Imm32(-8), r4, PreIndex);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        if (!isValueDTRDCandidate(undefValue)) {
+            masm.pushValue(undefValue);
+        } else
+#else
+#endif
+        {
+            masm.ma_dataTransferN(IsStore, 64, true, sp, Imm32(-8),
+                                  undefValue.payloadReg(), PreIndex);
+        }
         masm.ma_sub(r2, Imm32(1), r2, SetCC);
 
         masm.ma_b(&undefLoopTop, Assembler::NonZero);
@@ -581,8 +604,19 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
     {
         Label copyLoopTop;
         masm.bind(&copyLoopTop);
-        masm.ma_dataTransferN(IsLoad, 64, true, r3, Imm32(-8), r4, PostIndex);
-        masm.ma_dataTransferN(IsStore, 64, true, sp, Imm32(-8), r4, PreIndex);
+        ValueOperand copyValue(r5, r4);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+        if (!isValueDTRDCandidate(copyValue)) {
+            masm.ma_dtr(IsLoad, r3, Imm32(4), copyValue.typeReg(), Offset);
+            masm.ma_dtr(IsLoad, r3, Imm32(-8), copyValue.payloadReg(), PostIndex);
+            masm.pushValue(copyValue);
+        } else
+#else
+#endif
+        {
+            masm.ma_dataTransferN(IsLoad, 64, true, r3, Imm32(-8), copyValue.payloadReg(), PostIndex);
+            masm.ma_dataTransferN(IsStore, 64, true, sp, Imm32(-8), copyValue.payloadReg(), PreIndex);
+        }
 
         masm.ma_sub(r8, Imm32(1), r8, SetCC);
         masm.ma_b(&copyLoopTop, Assembler::NotSigned);
@@ -1003,6 +1037,16 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
     JitCode* wrapper = linker.newCode<NoGC>(cx, OTHER_CODE);
     if (!wrapper)
         return nullptr;
+
+#if DEBUG
+    char *buf = js_pod_malloc<char>(wrapper->instructionsSize() * 4 + 1);
+    for (size_t i = 0; i < wrapper->instructionsSize(); i++) {
+    	JS_snprintf(buf + 4 * i, 5, "\\x%02x", *(wrapper->raw() + i));
+    }
+    buf[wrapper->instructionsSize() * 4] = '\0';
+    JitSpew(JitSpew_CodeBytes, "VM Wrapper (%d bytes) @%p:%s", wrapper->instructionsSize(), wrapper->raw(), buf);
+    js_free(buf);
+#endif
 
     // linker.newCode may trigger a GC and sweep functionWrappers_ so we have to
     // use relookupOrAdd instead of add.

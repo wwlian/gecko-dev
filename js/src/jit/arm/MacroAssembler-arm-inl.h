@@ -356,6 +356,12 @@ MacroAssembler::divDouble(FloatRegister src, FloatRegister dest)
 void
 MacroAssembler::inc64(AbsoluteAddress dest)
 {
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    // Doesn't matter which two registers we choose here as long as they're 
+    // consecutive, and r0 is lower, since we save and restore the contents.
+    Register r0 = { Registers::r0 };
+    Register r1 = { Registers::r1 };
+#endif
     ScratchRegisterScope scratch(*this);
 
     ma_strd(r0, r1, EDtrAddr(sp, EDtrOffImm(-8)), PreIndex);
