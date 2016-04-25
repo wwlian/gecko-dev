@@ -108,10 +108,18 @@ ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler& masm)
         } else {
             // If X % Y == 0 and X < 0, the result is -0.
             Label done;
+#ifdef BASELINE_REGISTER_RANDOMIZATION
             masm.branch32(Assembler::NotEqual, randomizer.getUnrandomizedRegister(r1), Imm32(0), &done);
+#else
+            masm.branch32(Assembler::NotEqual, r1, Imm32(0), &done);
+#endif
             masm.branch32(Assembler::LessThan, savedValue.payloadReg(), Imm32(0), &revertRegister);
             masm.bind(&done);
+#ifdef BASELINE_REGISTER_RANDOMIZATION
             masm.tagValue(JSVAL_TYPE_INT32, randomizer.getUnrandomizedRegister(r1), R0);
+#else
+            masm.tagValue(JSVAL_TYPE_INT32, r1, R0);
+#endif
         }
         break;
       }
