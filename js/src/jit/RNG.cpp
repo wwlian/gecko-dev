@@ -5,12 +5,6 @@ using namespace js::jit;
 mozilla::non_crypto::XorShift128PlusRNG* RNG::randomNumberGenerator = nullptr;
 bool RNG::inited_ = false;
 
-uint32_t
-RNG::nextUint32() {
-  if (!inited_) {init();}
-  return static_cast<uint32_t>(randomNumberGenerator->next());
-}
-
 int32_t
 RNG::nextInt32(const int32_t min, const int32_t max) {
   if (!inited_) {init();}
@@ -20,6 +14,17 @@ RNG::nextInt32(const int32_t min, const int32_t max) {
 
     double range = static_cast<double>(max - min + 1);
     return min + static_cast<int32_t>(randomNumberGenerator->nextDouble() * range);
+}
+
+uint32_t
+RNG::nextUint32(const uint32_t min, const uint32_t max) {
+  if (!inited_) {init();}
+    MOZ_ASSERT(min <= max);
+    if (min == 0 && max == UINT32_MAX)
+    return static_cast<uint32_t>(randomNumberGenerator->next());
+
+    double range = static_cast<double>(max - min + 1);
+    return min + static_cast<uint32_t>(randomNumberGenerator->nextDouble() * range);
 }
 
 uint64_t
