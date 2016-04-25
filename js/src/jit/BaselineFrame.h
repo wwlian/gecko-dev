@@ -9,6 +9,9 @@
 
 #include "jit/JitFrames.h"
 #include "vm/Stack.h"
+#ifdef LOCAL_VAR_RANDOMIZATION
+#include "jit/RNG.h"
+#endif
 
 namespace js {
 namespace jit {
@@ -420,7 +423,12 @@ class BaselineFrame
         return FramePointerOffset + js::jit::JitFrameLayout::offsetOfNumActualArgs();
     }
     static size_t Size() {
+#ifdef LOCAL_VAR_RANDOMIZATION
+        static size_t padding = 2 * sizeof(uintptr_t) * (RNG::nextUint32() & 0xf);
+        return sizeof(BaselineFrame) + padding;
+#else
         return sizeof(BaselineFrame);
+#endif
     }
 
     // The reverseOffsetOf methods below compute the offset relative to the

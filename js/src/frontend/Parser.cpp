@@ -43,6 +43,10 @@
 #include "frontend/ParseNode-inl.h"
 #include "vm/ScopeObject-inl.h"
 
+#ifdef LOCAL_VAR_RANDOMIZATION
+#include "jit/RNG.h"
+#endif
+
 using namespace js;
 using namespace js::gc;
 
@@ -267,6 +271,9 @@ ParseContext<FullParseHandler>::define(TokenStream& ts, HandlePropertyName name,
         pn->pn_dflags |= PND_CONST;
 
     Definition* dn = &pn->as<Definition>();
+#ifdef LOCAL_VAR_RANDOMIZATION
+    uint32_t swap;
+#endif
     switch (kind) {
       case Definition::ARG:
         MOZ_ASSERT(sc->isFunctionBox());
@@ -296,6 +303,20 @@ ParseContext<FullParseHandler>::define(TokenStream& ts, HandlePropertyName name,
         // on the global object and their static scope is never consulted.
         if (!vars_.append(dn))
             return false;
+#ifdef LOCAL_VAR_RANDOMIZATION
+        swap = vars_.length() - 1;
+        if (vars_.length() > 1) {
+            swap = js::jit::RNG::nextUint32(0, vars_.length() - 1);
+            Definition* tmp = vars_[vars_.length() - 1];
+            vars_[vars_.length() - 1] = vars_[swap];
+            vars_[swap] = tmp;
+        }
+        if (swap != vars_.length() - 1 && !vars_[vars_.length() - 1]->pn_scopecoord.isFree()) {
+            if (!vars_[vars_.length() - 1]->pn_scopecoord.setSlot(ts, vars_.length() - 1)) {
+                return false;
+            }
+        }
+#endif
 
         // We always track vars for redeclaration checks, but only non-global
         // and non-deoptimized (e.g., inside a with scope) vars live in frame
@@ -303,7 +324,11 @@ ParseContext<FullParseHandler>::define(TokenStream& ts, HandlePropertyName name,
         if (!sc->isGlobalContext() && !dn->isDeoptimized()) {
             dn->setOp((CodeSpec[dn->getOp()].format & JOF_SET) ? JSOP_SETLOCAL : JSOP_GETLOCAL);
             dn->pn_dflags |= PND_BOUND;
+#ifdef LOCAL_VAR_RANDOMIZATION
+            if (!dn->pn_scopecoord.setSlot(ts, swap))
+#else
             if (!dn->pn_scopecoord.setSlot(ts, vars_.length() - 1))
+#endif
                 return false;
             if (!checkLocalsOverflow(ts))
                 return false;
@@ -565,11 +590,32 @@ ParseContext<ParseHandler>::generateBindings(ExclusiveContext* cx, TokenStream& 
 
         // Fix up the slots of body-level lets to come after the vars now that we
         // know how many vars there are.
-        for (size_t i = 0; i < bodyLevelLexicals_.length(); i++) {
+        size_t numLexicals = bodyLevelLexicals_.length();
+#ifdef LOCAL_VAR_RANDOMIZATION
+        size_t *perm = new size_t[numLexicals];
+        for (size_t i = 0; i < numLexicals; i++)
+            perm[i] = i;
+        if (numLexicals) {
+          for (size_t i = 0; i < numLexicals - 1; i++) {
+              uint32_t swap = js::jit::RNG::nextUint32(i, numLexicals - 1);
+              size_t tmp = perm[i];
+              perm[i] = perm[swap];
+              perm[swap] = tmp;
+          }
+        }
+#endif
+        for (size_t i = 0; i < numLexicals; i++) {
             Definition* dn = bodyLevelLexicals_[i];
+#ifdef LOCAL_VAR_RANDOMIZATION
+            if (!dn->pn_scopecoord.setSlot(ts, vars_.length() + perm[i]))
+#else
             if (!dn->pn_scopecoord.setSlot(ts, vars_.length() + i))
+#endif
                 return false;
         }
+#ifdef LOCAL_VAR_RANDOMIZATION
+        delete[] perm;
+#endif
     }
 
     uint32_t count = args_.length() + vars_.length() + bodyLevelLexicals_.length();
