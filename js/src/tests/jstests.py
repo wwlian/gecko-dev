@@ -162,6 +162,8 @@ def parse_args():
     # If we do not have a shell, we must be in a special mode.
     if options.js_shell is None and not options.make_manifests:
         op.error('missing JS_SHELL argument')
+    else:
+      call(['md5sum', options.js_shell])
 
     # Valgrind, gdb, and rr are mutually exclusive.
     if sum(map(lambda e: 1 if e else 0, [options.valgrind, options.debug, options.rr])) > 1:
