@@ -1231,7 +1231,15 @@ CodeGeneratorARM::visitTruncateFToInt32(LTruncateFToInt32* ins)
     emitTruncateFloat32(ToFloatRegister(ins->input()), ToRegister(ins->output()), ins->mir());
 }
 
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+static const uint32_t FrameSizes[] = { 
+    128 + (RNG::nextUint32() & 0xf) * JitStackAlignment,
+    256 + (RNG::nextUint32() & 0xf) * JitStackAlignment,
+    512 + (RNG::nextUint32() & 0xf) * JitStackAlignment,
+    1024 + (RNG::nextUint32() & 0xf) * JitStackAlignment };
+#else
 static const uint32_t FrameSizes[] = { 128, 256, 512, 1024 };
+#endif
 
 FrameSizeClass
 FrameSizeClass::FromDepth(uint32_t frameDepth)
