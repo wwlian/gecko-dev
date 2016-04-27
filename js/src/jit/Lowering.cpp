@@ -4674,7 +4674,16 @@ LIRGenerator::generate()
             return false;
     }
 
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+    // Randomly padding out the number of outgoing arg slots serves to randomize
+    // the stack pointer offset used to access incoming args, locals, and
+    // outgoing args on architectures that don't use bailout tables/FrameSizeClasses.
+    // This padding randomizes the offsets of everything below the outgoing stack
+    // args (things pushed previously).
+    lirGraph_.setArgumentSlotCount(maxargslots_ + (RNG::nextUint32() & 0xf));
+#else
     lirGraph_.setArgumentSlotCount(maxargslots_);
+#endif
     return true;
 }
 
