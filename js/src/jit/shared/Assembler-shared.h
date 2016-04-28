@@ -279,6 +279,25 @@ struct Address
     Address() { mozilla::PodZero(this); }
 };
 
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+// Like Address, but with includes a secret to use to blind the offset in
+// generated code.
+struct BlindedAddress
+{
+    Register base;
+    int32_t offset;
+    uint32_t secret;
+
+    BlindedAddress(Register base, int32_t offset)
+      : base(base)
+      , offset(offset)
+      , secret(RNG::nextUint32() & 0x3c)  // 4 bits, multiples of 4
+    { }
+
+    BlindedAddress() { mozilla::PodZero(this); }
+};
+#endif
+
 // Specifies an address computed in the form of a register base, a register
 // index with a scale, and a constant, 32-bit offset.
 struct BaseIndex

@@ -1687,6 +1687,45 @@ BaselineCompiler::emit_JSOP_LAMBDA_ARROW()
     return true;
 }
 
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+void
+BaselineCompiler::storeValue(const StackValue* source, const BlindedAddress& dest,
+                             const ValueOperand& scratch)
+{
+    switch (source->kind()) {
+      case StackValue::Constant:
+        masm.storeValue(source->constant(), dest);
+        break;
+      case StackValue::Register:
+        masm.storeValue(source->reg(), dest);
+        break;
+      case StackValue::LocalSlot:
+        masm.loadValue(frame.addressOfLocal(source->localSlot()), scratch);
+        masm.storeValue(scratch, dest);
+        break;
+      case StackValue::ArgSlot:
+        masm.loadValue(frame.addressOfArg(source->argSlot()), scratch);
+        masm.storeValue(scratch, dest);
+        break;
+      case StackValue::ThisSlot:
+        masm.loadValue(frame.addressOfThis(), scratch);
+        masm.storeValue(scratch, dest);
+        break;
+      case StackValue::EvalNewTargetSlot:
+        MOZ_ASSERT(script->isForEval());
+        masm.loadValue(frame.addressOfEvalNewTarget(), scratch);
+        masm.storeValue(scratch, dest);
+        break;
+      case StackValue::Stack:
+        masm.loadValue(frame.addressOfStackValue(source), scratch);
+        masm.storeValue(scratch, dest);
+        break;
+      default:
+        MOZ_CRASH("Invalid kind");
+    }
+}
+#endif
+
 void
 BaselineCompiler::storeValue(const StackValue* source, const Address& dest,
                              const ValueOperand& scratch)

@@ -3217,6 +3217,21 @@ MacroAssemblerARMCompat::moveValue(const Value& val, const ValueOperand& dest)
 /////////////////////////////////////////////////////////////////
 // X86/X64-common (ARM too now) interface.
 /////////////////////////////////////////////////////////////////
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+void
+MacroAssemblerARMCompat::storeValue(ValueOperand val, const BlindedAddress& dst)
+{
+    ScratchRegisterScope scratch(asMasm());
+    ma_sub(dst.base, Imm32(dst.secret), scratch);
+    int blindedOffset = dst.offset + dst.secret;
+    Address payload = ToPayload(Address(scratch, blindedOffset));
+    Address type = ToType(Address(scratch, blindedOffset));
+
+    ma_str(val.payloadReg(), payload);
+    ma_str(val.typeReg(), type);
+}
+#endif
+
 void
 MacroAssemblerARMCompat::storeValue(ValueOperand val, const Address& dst)
 {
@@ -3275,6 +3290,65 @@ MacroAssemblerARMCompat::loadValue(const BaseIndex& addr, ValueOperand val)
         loadValue(Address(scratch, addr.offset), val);
     }
 }
+
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+void
+MacroAssemblerARMCompat::loadValue(BlindedAddress src, ValueOperand val)
+{
+    // Use the secondary scratch register here because down the line, a callee
+    // of ma_ldr will need the Address's base register not to be the primary
+    // scratch register.
+    AutoRegisterScope scratch(asMasm(), secondScratchReg_);
+    ma_sub(src.base, Imm32(src.secret), scratch);
+    int blindedOffset = src.offset + src.secret;
+
+    // TODO: copy this code into a generic function that acts on all sequences
+    // of memory accesses
+    if (isValueDTRDCandidate(val)) {
+        // If the value we want is in two consecutive registers starting with an
+        // even register, they can be combined as a single ldrd.
+        if (blindedOffset < 256 && blindedOffset > -256) {
+            ma_ldrd(EDtrAddr(scratch, EDtrOffImm(blindedOffset)), val.payloadReg(), val.typeReg());
+            return;
+        }
+    }
+    // If the value is lower than the type, then we may be able to use an ldm
+    // instruction.
+
+    if (val.payloadReg().code() < val.typeReg().code()) {
+        if (blindedOffset <= 4 && blindedOffset >= -8 && (blindedOffset & 3) == 0) {
+            // Turns out each of the 4 value -8, -4, 0, 4 corresponds exactly
+            // with one of LDM{DB, DA, IA, IB}
+            DTMMode mode;
+            switch (blindedOffset) {
+              case -8: mode = DB; break;
+              case -4: mode = DA; break;
+              case  0: mode = IA; break;
+              case  4: mode = IB; break;
+              default: MOZ_CRASH("Bogus Offset for LoadValue as DTM");
+            }
+            startDataTransferM(IsLoad, scratch, mode);
+            transferReg(val.payloadReg());
+            transferReg(val.typeReg());
+            finishDataTransfer();
+            return;
+        }
+    }
+
+    Address payload = ToPayload(Address(scratch, blindedOffset));
+    Address type = ToType(Address(scratch, blindedOffset));
+
+    // Ensure that loading the payload does not erase the pointer to the Value
+    // in memory.
+    if (type.base != val.payloadReg()) {
+        ma_ldr(payload, val.payloadReg());
+        ma_ldr(type, val.typeReg());
+    } else {
+        ma_ldr(type, val.typeReg());
+        ma_ldr(payload, val.payloadReg());
+    }
+}
+#endif
 
 void
 MacroAssemblerARMCompat::loadValue(Address src, ValueOperand val)
@@ -3341,6 +3415,23 @@ MacroAssemblerARMCompat::pushValue(ValueOperand val)
     ma_push(val.typeReg());
     ma_push(val.payloadReg());
 }
+
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+void
+MacroAssemblerARMCompat::pushValue(const BlindedAddress& addr)
+{
+    ScratchRegisterScope scratch(asMasm());
+    AutoRegisterScope scratch2(asMasm(), secondScratchReg_);
+    ma_sub(addr.base, Imm32(addr.secret), scratch);
+    Address blindedAddr(scratch, addr.offset + addr.secret);
+    ma_ldr(ToType(blindedAddr), scratch2);
+    ma_push(scratch2);
+
+    ma_sub(addr.base, Imm32(addr.secret), scratch);
+    ma_ldr(ToPayloadAfterStackPush(blindedAddr), scratch2);
+    ma_push(scratch2);
+}
+#endif
 
 void
 MacroAssemblerARMCompat::pushValue(const Address& addr)

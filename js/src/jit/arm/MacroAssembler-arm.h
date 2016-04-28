@@ -902,6 +902,9 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
             ma_mov(s1, d1);
     }
 
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+    void storeValue(ValueOperand val, const BlindedAddress& dst);
+#endif
     void storeValue(ValueOperand val, const Address& dst);
     void storeValue(ValueOperand val, const BaseIndex& dest);
     void storeValue(JSValueType type, Register reg, BaseIndex dest) {
@@ -915,6 +918,25 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         ma_mov(ImmTag(JSVAL_TYPE_TO_TAG(type)), scratch2);
         ma_str(scratch2, Address(dest.base, dest.offset + 4));
     }
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+    void storeValue(const Value& val, const BlindedAddress& dest) {
+        ScratchRegisterScope scratch(asMasm());
+        ma_sub(dest.base, Imm32(dest.secret), scratch);
+        int blindedOffset = dest.offset + dest.secret;
+        Address payload = ToPayload(Address(scratch, blindedOffset));
+        Address type = ToType(Address(scratch, blindedOffset));
+
+        AutoRegisterScope scratch2(asMasm(), secondScratchReg_);
+        jsval_layout jv = JSVAL_TO_IMPL(val);
+        ma_mov(Imm32(jv.s.tag), scratch2);
+        ma_str(scratch2, type);
+        if (val.isMarkable())
+            ma_mov(ImmGCPtr(reinterpret_cast<gc::Cell*>(val.toGCThing())), scratch2);
+        else
+            ma_mov(Imm32(jv.s.payload.i32), scratch2);
+        ma_str(scratch2, payload);
+    }
+#endif
     void storeValue(const Value& val, const Address& dest) {
         AutoRegisterScope scratch2(asMasm(), secondScratchReg_);
         jsval_layout jv = JSVAL_TO_IMPL(val);
@@ -932,6 +954,9 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         storeValue(val, Address(scratch, dest.offset));
     }
 
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+    void loadValue(BlindedAddress src, ValueOperand val);
+#endif
     void loadValue(Address src, ValueOperand val);
     void loadValue(Operand dest, ValueOperand val) {
         loadValue(dest.toAddress(), val);
@@ -953,6 +978,9 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         push(ImmTag(JSVAL_TYPE_TO_TAG(type)));
         ma_push(reg);
     }
+#ifdef ION_CALL_FRAME_RANDOMIZATION
+    void pushValue(const BlindedAddress& addr);
+#endif
     void pushValue(const Address& addr);
 
     void storePayload(const Value& val, const Address& dest);
