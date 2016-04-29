@@ -1687,7 +1687,7 @@ BaselineCompiler::emit_JSOP_LAMBDA_ARROW()
     return true;
 }
 
-#ifdef ION_CALL_FRAME_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
 void
 BaselineCompiler::storeValue(const StackValue* source, const BlindedAddress& dest,
                              const ValueOperand& scratch)

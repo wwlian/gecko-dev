@@ -299,7 +299,7 @@ class BaselineCompiler : public BaselineCompilerSpecific
 
     bool initScopeChain();
 
-#ifdef ION_CALL_FRAME_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
     void storeValue(const StackValue* source, const BlindedAddress& dest,
                     const ValueOperand& scratch);
 #endif

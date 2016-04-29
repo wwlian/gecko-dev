@@ -4674,7 +4674,7 @@ LIRGenerator::generate()
             return false;
     }
 
-#ifdef ION_CALL_FRAME_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
     // Randomly padding out the number of outgoing arg slots serves to randomize
     // the stack pointer offset used to access incoming args, locals, and
     // outgoing args on architectures that don't use bailout tables/FrameSizeClasses.

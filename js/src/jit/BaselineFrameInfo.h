@@ -261,7 +261,7 @@ class FrameInfo
         MOZ_ASSERT(local < nlocals());
         return Address(BaselineFrameReg, BaselineFrame::reverseOffsetOfLocal(local));
     }
-#ifdef ION_CALL_FRAME_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
     BlindedAddress addressOfArg(size_t arg) const {
         MOZ_ASSERT(arg < nargs());
         return BlindedAddress(BaselineFrameReg, BaselineFrame::offsetOfArg(arg));

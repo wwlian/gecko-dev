@@ -902,7 +902,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
             ma_mov(s1, d1);
     }
 
-#ifdef ION_CALL_FRAME_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
     void storeValue(ValueOperand val, const BlindedAddress& dst);
 #endif
     void storeValue(ValueOperand val, const Address& dst);
@@ -918,7 +918,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         ma_mov(ImmTag(JSVAL_TYPE_TO_TAG(type)), scratch2);
         ma_str(scratch2, Address(dest.base, dest.offset + 4));
     }
-#ifdef ION_CALL_FRAME_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
     void storeValue(const Value& val, const BlindedAddress& dest) {
         ScratchRegisterScope scratch(asMasm());
         ma_sub(dest.base, Imm32(dest.secret), scratch);
@@ -954,7 +954,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         storeValue(val, Address(scratch, dest.offset));
     }
 
-#ifdef ION_CALL_FRAME_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
     void loadValue(BlindedAddress src, ValueOperand val);
 #endif
     void loadValue(Address src, ValueOperand val);
@@ -978,7 +978,7 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         push(ImmTag(JSVAL_TYPE_TO_TAG(type)));
         ma_push(reg);
     }
-#ifdef ION_CALL_FRAME_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
     void pushValue(const BlindedAddress& addr);
 #endif
     void pushValue(const Address& addr);

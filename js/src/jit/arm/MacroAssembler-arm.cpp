@@ -3217,7 +3217,7 @@ MacroAssemblerARMCompat::moveValue(const Value& val, const ValueOperand& dest)
 /////////////////////////////////////////////////////////////////
 // X86/X64-common (ARM too now) interface.
 /////////////////////////////////////////////////////////////////
-#ifdef ION_CALL_FRAME_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
 void
 MacroAssemblerARMCompat::storeValue(ValueOperand val, const BlindedAddress& dst)
 {
@@ -3291,7 +3291,7 @@ MacroAssemblerARMCompat::loadValue(const BaseIndex& addr, ValueOperand val)
     }
 }
 
-#ifdef ION_CALL_FRAME_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
 void
 MacroAssemblerARMCompat::loadValue(BlindedAddress src, ValueOperand val)
 {
@@ -3416,7 +3416,7 @@ MacroAssemblerARMCompat::pushValue(ValueOperand val)
     ma_push(val.payloadReg());
 }
 
-#ifdef ION_CALL_FRAME_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
 void
 MacroAssemblerARMCompat::pushValue(const BlindedAddress& addr)
 {

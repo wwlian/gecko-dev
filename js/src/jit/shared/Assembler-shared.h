@@ -279,7 +279,7 @@ struct Address
     Address() { mozilla::PodZero(this); }
 };
 
-#ifdef ION_CALL_FRAME_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
 // Like Address, but with includes a secret to use to blind the offset in
 // generated code.
 struct BlindedAddress
