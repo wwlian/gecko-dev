@@ -424,6 +424,10 @@ class BaselineFrame
     }
     static size_t Size() {
 #ifdef CALL_FRAME_RANDOMIZATION
+        // Since locals live on the stack on top of (lower addressed) the
+        // BaselineFrame, this padding randomizes the distance between the
+        // frame pointer and the locals.
+        // Make sure all code uses this method instead of sizeof(BaselineFrame).
         static size_t padding = 2 * sizeof(uintptr_t) * (RNG::nextUint32() & 0xf);
         return sizeof(BaselineFrame) + padding;
 #else

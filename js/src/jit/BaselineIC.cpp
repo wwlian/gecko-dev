@@ -94,7 +94,11 @@ PrepareOsrTempData(JSContext* cx, ICWarmUpCounter_Fallback* stub, BaselineFrame*
     //      IonOsrTempData space:
     //          sizeof(IonOsrTempData)
 
+#ifdef CALL_FRAME_RANDOMIZATION
+    size_t frameSpace = BaselineFrame::Size() + sizeof(Value) * numLocalsAndStackVals;
+#else
     size_t frameSpace = sizeof(BaselineFrame) + sizeof(Value) * numLocalsAndStackVals;
+#endif
     size_t ionOsrTempDataSpace = sizeof(IonOsrTempData);
 
     size_t totalSpace = AlignBytes(frameSpace, sizeof(Value)) +

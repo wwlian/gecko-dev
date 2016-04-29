@@ -43,7 +43,7 @@
 #include "frontend/ParseNode-inl.h"
 #include "vm/ScopeObject-inl.h"
 
-#ifdef LOCAL_VAR_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
 #include "jit/RNG.h"
 #endif
 
@@ -271,7 +271,7 @@ ParseContext<FullParseHandler>::define(TokenStream& ts, HandlePropertyName name,
         pn->pn_dflags |= PND_CONST;
 
     Definition* dn = &pn->as<Definition>();
-#ifdef LOCAL_VAR_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
     uint32_t swap;
 #endif
     switch (kind) {
@@ -303,7 +303,10 @@ ParseContext<FullParseHandler>::define(TokenStream& ts, HandlePropertyName name,
         // on the global object and their static scope is never consulted.
         if (!vars_.append(dn))
             return false;
-#ifdef LOCAL_VAR_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
+        // Permute function-scoped local var slots by keeping the vars_ vector 
+        // shuffled at all times and keeping assigned slots in accordance with 
+        // position in the vector.
         swap = vars_.length() - 1;
         if (vars_.length() > 1) {
             swap = js::jit::RNG::nextUint32(0, vars_.length() - 1);
@@ -324,7 +327,7 @@ ParseContext<FullParseHandler>::define(TokenStream& ts, HandlePropertyName name,
         if (!sc->isGlobalContext() && !dn->isDeoptimized()) {
             dn->setOp((CodeSpec[dn->getOp()].format & JOF_SET) ? JSOP_SETLOCAL : JSOP_GETLOCAL);
             dn->pn_dflags |= PND_BOUND;
-#ifdef LOCAL_VAR_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
             if (!dn->pn_scopecoord.setSlot(ts, swap))
 #else
             if (!dn->pn_scopecoord.setSlot(ts, vars_.length() - 1))
@@ -591,7 +594,8 @@ ParseContext<ParseHandler>::generateBindings(ExclusiveContext* cx, TokenStream& 
         // Fix up the slots of body-level lets to come after the vars now that we
         // know how many vars there are.
         size_t numLexicals = bodyLevelLexicals_.length();
-#ifdef LOCAL_VAR_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
+        // Randomize body-level lexicals (let/const).
         size_t *perm = new size_t[numLexicals];
         for (size_t i = 0; i < numLexicals; i++)
             perm[i] = i;
@@ -606,14 +610,14 @@ ParseContext<ParseHandler>::generateBindings(ExclusiveContext* cx, TokenStream& 
 #endif
         for (size_t i = 0; i < numLexicals; i++) {
             Definition* dn = bodyLevelLexicals_[i];
-#ifdef LOCAL_VAR_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
             if (!dn->pn_scopecoord.setSlot(ts, vars_.length() + perm[i]))
 #else
             if (!dn->pn_scopecoord.setSlot(ts, vars_.length() + i))
 #endif
                 return false;
         }
-#ifdef LOCAL_VAR_RANDOMIZATION
+#ifdef CALL_FRAME_RANDOMIZATION
         delete[] perm;
 #endif
     }
