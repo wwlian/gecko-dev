@@ -1564,8 +1564,25 @@ BacktrackingAllocator::spill(LiveBundle* bundle)
 bool
 BacktrackingAllocator::pickStackSlots()
 {
-    for (size_t i = 1; i < graph.numVirtualRegisters(); i++) {
+#ifdef CALL_FRAME_RANDOMIZATION
+    size_t *perm = new size_t[graph.numVirtualRegisters()];
+    for (size_t i = 0; i < graph.numVirtualRegisters(); i++)
+        perm[i] = i;
+    for (size_t i = 0; i < graph.numVirtualRegisters(); i++) {
+        size_t swapIndex = RNG::nextUint32(i, graph.numVirtualRegisters() - 1);
+        if (swapIndex == i)
+            continue;
+        size_t tmp = perm[i];
+        perm[i] = perm[swapIndex];
+        perm[swapIndex] = tmp;
+    }
+#endif
+    for (size_t i = 0; i < graph.numVirtualRegisters(); i++) {
+#ifdef CALL_FRAME_RANDOMIZATION
+        VirtualRegister& reg = vregs[perm[i]];
+#else
         VirtualRegister& reg = vregs[i];
+#endif
 
         if (mir->shouldCancel("Backtracking Pick Stack Slots"))
             return false;
@@ -1581,6 +1598,9 @@ BacktrackingAllocator::pickStackSlots()
             }
         }
     }
+#ifdef CALL_FRAME_RANDOMIZATION
+    delete[] perm;
+#endif
 
     return true;
 }
