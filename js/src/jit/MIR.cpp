@@ -769,7 +769,7 @@ MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
         break;
       case MIRType_Int32:
         payload_.i32 = vp.toInt32();
-#ifdef CONSTANT_BLINDING
+#ifdef ION_CONSTANT_BLINDING
         unblindedInt32_ = payload_.i32;
 #endif
         break;
