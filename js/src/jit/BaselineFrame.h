@@ -13,6 +13,12 @@
 #include "jit/RNG.h"
 #endif
 
+#if defined(JS_CODEGEN_ARM)
+#include "jit/arm/Assembler-arm.h"
+#elif defined(JS_CODEGEN_X64)
+#include "jit/x64/Assembler-x64.h"
+#endif
+
 namespace js {
 namespace jit {
 
@@ -428,7 +434,7 @@ class BaselineFrame
         // BaselineFrame, this padding randomizes the distance between the
         // frame pointer and the locals.
         // Make sure all code uses this method instead of sizeof(BaselineFrame).
-        static size_t padding = 2 * sizeof(uintptr_t) * (RNG::nextUint32() & 0xf);
+        static size_t padding = JitStackAlignment * (RNG::nextUint32() & 0xf);
         return sizeof(BaselineFrame) + padding;
 #else
         return sizeof(BaselineFrame);

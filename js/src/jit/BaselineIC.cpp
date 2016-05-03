@@ -213,7 +213,6 @@ ICWarmUpCounter_Fallback::Compiler::generateStubCode(MacroAssembler& masm)
     Register osrDataReg = R0.scratchReg();
     regs.take(osrDataReg);
     regs.takeUnchecked(OsrFrameReg);
-    MOZ_ASSERT(OsrFrameReg != R0.scratchReg());
 
     Register scratchReg = regs.takeAny();
 

@@ -113,6 +113,15 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
     void storeValue(ValueOperand val, Operand dest) {
         movq(val.valueReg(), dest);
     }
+#ifdef CALL_FRAME_RANDOMIZATION
+    void storeValue(ValueOperand val, const BlindedAddress& dest) {
+        ScratchRegisterScope scratch(asMasm());
+        MOZ_ASSERT(scratch != val.valueReg());
+        movePtr(dest.base, scratch);
+        subq(Imm32(dest.secret), scratch);
+        storeValue(val, Operand(scratch, dest.offset + dest.secret));
+    }
+#endif
     void storeValue(ValueOperand val, const Address& dest) {
         storeValue(val, Operand(dest));
     }
@@ -128,6 +137,23 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
             movq(scratch, Operand(dest));
         }
     }
+#ifdef CALL_FRAME_RANDOMIZATION
+    void storeValue(const Value& val, const BlindedAddress& dest) {
+        ScratchRegisterScope scratch(asMasm());
+        jsval_layout jv = JSVAL_TO_IMPL(val);
+        if (val.isMarkable()) {
+            movWithPatch(ImmWord(jv.asBits), scratch);
+            writeDataRelocation(val);
+        } else {
+            mov(ImmWord(jv.asBits), scratch);
+        }
+        // Since the scratch register is tied up, we'll have to clobber and
+        // restore the dest base register.
+        subq(Imm32(dest.secret), dest.base);
+        movq(scratch, Operand(dest.base, dest.offset + dest.secret));
+        addq(Imm32(dest.secret), dest.base);
+    }
+#endif
     template <typename T>
     void storeValue(const Value& val, const T& dest) {
         ScratchRegisterScope scratch(asMasm());
@@ -146,6 +172,14 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
     void loadValue(Operand src, ValueOperand val) {
         movq(src, val.valueReg());
     }
+#ifdef CALL_FRAME_RANDOMIZATION
+    void loadValue(BlindedAddress src, ValueOperand val) {
+        ScratchRegisterScope scratch(asMasm());
+        movePtr(src.base, scratch);
+        subq(Imm32(src.secret), scratch);
+        loadValue(Operand(scratch, src.offset + src.secret), val);
+    }
+#endif
     void loadValue(Address src, ValueOperand val) {
         loadValue(Operand(src), val);
     }
@@ -182,6 +216,20 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
         boxValue(type, reg, scratch);
         push(scratch);
     }
+#ifdef CALL_FRAME_RANDOMIZATION
+    void pushValue(const BlindedAddress& addr) {
+        ScratchRegisterScope scratch(asMasm());
+        if (scratch == addr.base) {
+            subq(Imm32(addr.secret), addr.base);
+            push(Operand(addr.base, addr.offset + addr.secret));
+            addq(Imm32(addr.secret), addr.base);
+        } else {
+            movePtr(addr.base, scratch);
+            subq(Imm32(addr.secret), scratch);
+            push(Operand(scratch, addr.offset + addr.secret));
+        }
+    }
+#endif
     void pushValue(const Address& addr) {
         push(Operand(addr));
     }

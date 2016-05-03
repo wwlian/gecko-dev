@@ -17,6 +17,9 @@
 #include "jit/RegisterAliases-shared.h"
 #include "jit/Registers.h"
 #include "jit/RegisterSets.h"
+#ifdef CALL_FRAME_RANDOMIZATION
+#include "jit/RNG.h"
+#endif
 #include "vm/HelperThreads.h"
 
 #if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64)
