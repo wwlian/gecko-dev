@@ -43,7 +43,12 @@ class JitCode : public gc::TenuredCell
     uint32_t jumpRelocTableBytes_;    // Size of the jump relocation table.
     uint32_t dataRelocTableBytes_;    // Size of the data relocation table.
     uint32_t preBarrierTableBytes_;   // Size of the prebarrier table.
-    uint8_t headerSize_ : 8;          // Number of bytes allocated before codeStart.
+#ifdef BASE_OFFSET_RANDOMIZATION
+    // The header can be larger with base offset randomization.
+    uint16_t headerSize_ : 9;          // Number of bytes allocated before codeStart.
+#else
+    uint8_t headerSize_ : 5;          // Number of bytes allocated before codeStart.
+#endif
     uint8_t kind_ : 3;                // jit::CodeKind, for the memory reporters.
     bool invalidated_ : 1;            // Whether the code object has been invalidated.
                                       // This is necessary to prevent GC tracing.
