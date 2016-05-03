@@ -3,11 +3,10 @@
 using namespace js::jit;
 
 mozilla::non_crypto::XorShift128PlusRNG* RNG::randomNumberGenerator = nullptr;
-bool RNG::inited_ = false;
 
 int32_t
 RNG::nextInt32(const int32_t min, const int32_t max) {
-  if (!inited_) {init();}
+    init();
     MOZ_ASSERT(min <= max);
     if (min == INT32_MIN && max == INT32_MAX)
     return static_cast<int32_t>(randomNumberGenerator->next());
@@ -18,7 +17,7 @@ RNG::nextInt32(const int32_t min, const int32_t max) {
 
 uint32_t
 RNG::nextUint32(const uint32_t min, const uint32_t max) {
-  if (!inited_) {init();}
+    init();
     MOZ_ASSERT(min <= max);
     if (min == 0 && max == UINT32_MAX)
     return static_cast<uint32_t>(randomNumberGenerator->next());
@@ -29,21 +28,20 @@ RNG::nextUint32(const uint32_t min, const uint32_t max) {
 
 uint64_t
 RNG::nextUint64() {
-  if (!inited_) {init();}
+  init();
   return randomNumberGenerator->next();
 }
 
 double
 RNG::nextDouble() {
-  if (!inited_) {init();}
+  init();
   return randomNumberGenerator->nextDouble();
 }
 
-/* static */ void
+inline void
 RNG::init() {
-  if (inited_) return;
+  if (randomNumberGenerator != nullptr) return;
   mozilla::Array<uint64_t, 2> seed;
   js::GenerateXorShift128PlusSeed(seed);
   randomNumberGenerator = new mozilla::non_crypto::XorShift128PlusRNG(seed[0], seed[1]);
-  inited_ = true;
 }
