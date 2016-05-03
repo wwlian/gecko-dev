@@ -1084,7 +1084,7 @@ EmitBaselineDebugModeOSRHandlerTail(MacroAssembler& masm, Register temp, bool re
     // x86, R1 contains ReturnReg.
     // Moreover, if we're returning from callVM, then the value in ReturnReg will have been shuffled
     // into its randomized location, so we need to randomize it since |ReturnReg| refers
-    // to the physical register.
+    // to the physical register. (At least, if r0 hasn't been pinned.)
 #ifdef BASELINE_REGISTER_RANDOMIZATION
     RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
 #endif

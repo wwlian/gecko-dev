@@ -15,7 +15,9 @@
 
 #include "jit/JitAllocPolicy.h"
 #include "jit/Registers.h"
+#ifdef BASELINE_REGISTER_RANDOMIZATION
 #include "jit/RNG.h"
+#endif
 
 namespace js {
 namespace jit {

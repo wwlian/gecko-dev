@@ -565,7 +565,6 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
             masm.ma_dtr(IsLoad, r3, Imm32(12), thisValue.typeReg(), Offset);
             masm.pushValue(thisValue);
         } else
-#else
 #endif
         {
             masm.ma_dataTransferN(IsLoad, 64, true, r3, Imm32(8), thisValue.payloadReg(), Offset);
@@ -611,7 +610,6 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
             masm.ma_dtr(IsLoad, r3, Imm32(-8), copyValue.payloadReg(), PostIndex);
             masm.pushValue(copyValue);
         } else
-#else
 #endif
         {
             masm.ma_dataTransferN(IsLoad, 64, true, r3, Imm32(-8), copyValue.payloadReg(), PostIndex);
@@ -852,7 +850,6 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
     MacroAssembler masm(cx);
 #ifdef BASELINE_REGISTER_RANDOMIZATION
     masm.unrandomizeRegisters();
-#else
 #endif
     AllocatableGeneralRegisterSet regs(Register::Codes::WrapperMask);
 

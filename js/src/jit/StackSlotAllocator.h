@@ -60,8 +60,7 @@ class StackSlotAllocator
     }
 
   public:
-    StackSlotAllocator()
-      : height_(0)
+    StackSlotAllocator() : height_(0)
     { }
 
     static uint32_t width(LDefinition::Type type) {

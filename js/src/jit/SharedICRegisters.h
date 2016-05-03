@@ -25,8 +25,6 @@
 # error "Unknown architecture!"
 #endif
 
-#include "jit/RNG.h"
-
 namespace js {
 namespace jit {
 
