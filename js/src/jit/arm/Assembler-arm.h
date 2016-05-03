@@ -66,13 +66,13 @@ class ABIArgGenerator
     static const Register NonReturn_VolatileReg1;
 };
 
-static Register PreBarrierReg = r1;
+static const Register PreBarrierReg = r1;
 
 static MOZ_CONSTEXPR_VAR FloatRegister InvalidFloatReg;
 
 static const Register JSReturnReg_Type = R0.typeReg();
 static const Register JSReturnReg_Data = R0.payloadReg();
-static Register StackPointer = sp;
+static const Register StackPointer = sp;
 static MOZ_CONSTEXPR_VAR Register FramePointer = InvalidReg;
 static MOZ_CONSTEXPR_VAR FloatRegister ReturnFloat32Reg = { FloatRegisters::d0, VFPRegister::Single };
 static MOZ_CONSTEXPR_VAR FloatRegister ReturnDoubleReg = { FloatRegisters::d0, VFPRegister::Double};
@@ -102,34 +102,34 @@ struct ScratchDoubleScope : public AutoFloatRegisterScope
 static const int32_t AsmJSGlobalRegBias = 1024;
 
 // Registers used in the GenerateFFIIonExit Enable Activation block.
-static Register AsmJSIonExitRegCallee = r4;
-static Register AsmJSIonExitRegE0 = r0;
-static Register AsmJSIonExitRegE1 = r1;
-static Register AsmJSIonExitRegE2 = r2;
-static Register AsmJSIonExitRegE3 = r3;
+static const Register AsmJSIonExitRegCallee = r4;
+static const Register AsmJSIonExitRegE0 = r0;
+static const Register AsmJSIonExitRegE1 = r1;
+static const Register AsmJSIonExitRegE2 = r2;
+static const Register AsmJSIonExitRegE3 = r3;
 
 // Registers used in the GenerateFFIIonExit Disable Activation block.
 // None of these may be the second scratch register (lr).
 static const Register AsmJSIonExitRegReturnData = JSReturnReg_Data;
 static const Register AsmJSIonExitRegReturnType = JSReturnReg_Type;
-static Register AsmJSIonExitRegD0 = r0;
-static Register AsmJSIonExitRegD1 = r1;
-static Register AsmJSIonExitRegD2 = r4;
+static const Register AsmJSIonExitRegD0 = r0;
+static const Register AsmJSIonExitRegD1 = r1;
+static const Register AsmJSIonExitRegD2 = r4;
 
 // Registerd used in RegExpMatcher instruction (do not use JSReturnOperand).
-static Register RegExpMatcherRegExpReg = CallTempReg0;
-static Register RegExpMatcherStringReg = CallTempReg1;
-static Register RegExpMatcherLastIndexReg = CallTempReg2;
-static Register RegExpMatcherStickyReg = CallTempReg3;
+static const Register RegExpMatcherRegExpReg = CallTempReg0;
+static const Register RegExpMatcherStringReg = CallTempReg1;
+static const Register RegExpMatcherLastIndexReg = CallTempReg2;
+static const Register RegExpMatcherStickyReg = CallTempReg3;
 
 // Registerd used in RegExpTester instruction (do not use ReturnReg).
 // With BASELINE_REGSITER_RANDOMIZATION, don't even use a volatile register,
 // as the physical return register could be randomized into it (assuming
-// ReturnReg is a volatile register).
-static Register RegExpTesterRegExpReg = CallTempReg0;
-static Register RegExpTesterStringReg = CallTempReg1;
-static Register RegExpTesterLastIndexReg = CallTempReg2;
-static Register RegExpTesterStickyReg = CallTempReg3;
+// ReturnReg is a volatile register and isn't pinned).
+static const Register RegExpTesterRegExpReg = CallTempReg0;
+static const Register RegExpTesterStringReg = CallTempReg1;
+static const Register RegExpTesterLastIndexReg = CallTempReg2;
+static const Register RegExpTesterStickyReg = CallTempReg3;
 
 // For maximal awesomeness, 8 should be sufficent. ldrd/strd (dual-register
 // load/store) operate in a single cycle when the address they are dealing with

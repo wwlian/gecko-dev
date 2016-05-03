@@ -13,24 +13,24 @@ namespace jit {
 // the return address.
 #ifdef BASELINE_REGISTER_RANDOMIZATION
 static RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
-static Register r0  = randomizer.getRandomizedRegister(Registers::r0);
-static Register r1  = randomizer.getRandomizedRegister(Registers::r1);
-static Register r2  = randomizer.getRandomizedRegister(Registers::r2);
-static Register r3  = randomizer.getRandomizedRegister(Registers::r3);
-static Register r4  = randomizer.getRandomizedRegister(Registers::r4);
-static Register r5  = randomizer.getRandomizedRegister(Registers::r5);
-static Register r6  = randomizer.getRandomizedRegister(Registers::r6);
-static Register r7  = randomizer.getRandomizedRegister(Registers::r7);
-static Register r8  = randomizer.getRandomizedRegister(Registers::r8);
-static Register r9  = randomizer.getRandomizedRegister(Registers::r9);
-static Register r10 = randomizer.getRandomizedRegister(Registers::r10);
-static Register r11 = randomizer.getRandomizedRegister(Registers::r11);
-static Register r12 = randomizer.getRandomizedRegister(Registers::ip);
-static Register ip  = randomizer.getRandomizedRegister(Registers::ip);
-static Register sp  = randomizer.getRandomizedRegister(Registers::sp);
-static Register r14 = randomizer.getRandomizedRegister(Registers::lr);
-static Register lr  = randomizer.getRandomizedRegister(Registers::lr);
-static Register pc  = randomizer.getRandomizedRegister(Registers::pc);
+static const Register r0  = randomizer.getRandomizedRegister(Registers::r0);
+static const Register r1  = randomizer.getRandomizedRegister(Registers::r1);
+static const Register r2  = randomizer.getRandomizedRegister(Registers::r2);
+static const Register r3  = randomizer.getRandomizedRegister(Registers::r3);
+static const Register r4  = randomizer.getRandomizedRegister(Registers::r4);
+static const Register r5  = randomizer.getRandomizedRegister(Registers::r5);
+static const Register r6  = randomizer.getRandomizedRegister(Registers::r6);
+static const Register r7  = randomizer.getRandomizedRegister(Registers::r7);
+static const Register r8  = randomizer.getRandomizedRegister(Registers::r8);
+static const Register r9  = randomizer.getRandomizedRegister(Registers::r9);
+static const Register r10 = randomizer.getRandomizedRegister(Registers::r10);
+static const Register r11 = randomizer.getRandomizedRegister(Registers::r11);
+static const Register r12 = randomizer.getRandomizedRegister(Registers::ip);
+static const Register ip  = randomizer.getRandomizedRegister(Registers::ip);
+static const Register sp  = randomizer.getRandomizedRegister(Registers::sp);
+static const Register r14 = randomizer.getRandomizedRegister(Registers::lr);
+static const Register lr  = randomizer.getRandomizedRegister(Registers::lr);
+static const Register pc  = randomizer.getRandomizedRegister(Registers::pc);
 #else
 static MOZ_CONSTEXPR_VAR Register r0  = { Registers::r0 };
 static MOZ_CONSTEXPR_VAR Register r1  = { Registers::r1 };
@@ -52,41 +52,41 @@ static MOZ_CONSTEXPR_VAR Register lr  = { Registers::lr };
 static MOZ_CONSTEXPR_VAR Register pc  = { Registers::pc };
 #endif
 
-static Register ScratchRegister = ip;
+static const Register ScratchRegister = ip;
 
 // Holds a pointer to the frame that OSRed into an OSR entry point, if applicable.
 // In most JIT code, this refers to the randomized register. In the EnterJIT
 // stub, this refers to the physical register Registers::r3, since the value
 // is passed to the stub via a native C++ call.
-static Register OsrFrameReg = r3;
+static const Register OsrFrameReg = r3;
 // Used to pass an argument into the ArgumentsRectifier stub.
-static Register ArgumentsRectifierReg = r8;
+static const Register ArgumentsRectifierReg = r8;
 
 // It is important that CallTempReg[0-3] do not reference a volatile virtual register,
 // which could be randomized to point to physical register r0/ReturnReg. There is code that
 // assumes that CallTempReg[0-3] (or js::jit::Registers that alias them) are distinct from ReturnReg.
-static Register CallTempReg0 = r5;
-static Register CallTempReg1 = r6;
-static Register CallTempReg2 = r7;
-static Register CallTempReg3 = r8;
-static Register CallTempReg4 = r0;
-static Register CallTempReg5 = r1;
+static const Register CallTempReg0 = r5;
+static const Register CallTempReg1 = r6;
+static const Register CallTempReg2 = r7;
+static const Register CallTempReg3 = r8;
+static const Register CallTempReg4 = r0;
+static const Register CallTempReg5 = r1;
 
 // IntArgReg[0-9] refer to the physical registers into which the architecture
 // ABI requires integer arguments be placed, in order. To avoid having to use
 // RegisterRandomizer::getUnrandomizedRegister everywhere we reference 
 // IntArgReg[0-9], we do not randomize these values.
-static Register IntArgReg0 = { Registers::r0 };
-static Register IntArgReg1 = { Registers::r1 };
-static Register IntArgReg2 = { Registers::r2 };
-static Register IntArgReg3 = { Registers::r3 };
-static Register GlobalReg = r10;
-static Register HeapReg = r11;
-static Register CallTempNonArgRegs[] = { r5, r6, r7, r8 };
+static MOZ_CONSTEXPR_VAR Register IntArgReg0 = { Registers::r0 };
+static MOZ_CONSTEXPR_VAR Register IntArgReg1 = { Registers::r1 };
+static MOZ_CONSTEXPR_VAR Register IntArgReg2 = { Registers::r2 };
+static MOZ_CONSTEXPR_VAR Register IntArgReg3 = { Registers::r3 };
+static const Register GlobalReg = r10;
+static const Register HeapReg = r11;
+static const Register CallTempNonArgRegs[] = { r5, r6, r7, r8 };
 static const uint32_t NumCallTempNonArgRegs =
     mozilla::ArrayLength(CallTempNonArgRegs);
 
-static Register ReturnReg = { Registers::r0 };
+static MOZ_CONSTEXPR_VAR Register ReturnReg = { Registers::r0 };
 static MOZ_CONSTEXPR_VAR Register InvalidReg = { Registers::invalid_reg };
 
 static MOZ_CONSTEXPR_VAR FloatRegister d0  = {FloatRegisters::d0, VFPRegister::Double};
