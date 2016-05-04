@@ -1565,17 +1565,7 @@ bool
 BacktrackingAllocator::pickStackSlots()
 {
 #ifdef CALL_FRAME_RANDOMIZATION
-    size_t *perm = new size_t[graph.numVirtualRegisters()];
-    for (size_t i = 0; i < graph.numVirtualRegisters(); i++)
-        perm[i] = i;
-    for (size_t i = 0; i < graph.numVirtualRegisters(); i++) {
-        size_t swapIndex = RNG::nextUint32(i, graph.numVirtualRegisters() - 1);
-        if (swapIndex == i)
-            continue;
-        size_t tmp = perm[i];
-        perm[i] = perm[swapIndex];
-        perm[swapIndex] = tmp;
-    }
+    uint32_t *perm = RNG::createIndexPermutation(graph.numVirtualRegisters());
 #endif
     for (size_t i = 0; i < graph.numVirtualRegisters(); i++) {
 #ifdef CALL_FRAME_RANDOMIZATION

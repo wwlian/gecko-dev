@@ -596,17 +596,7 @@ ParseContext<ParseHandler>::generateBindings(ExclusiveContext* cx, TokenStream& 
         size_t numLexicals = bodyLevelLexicals_.length();
 #ifdef CALL_FRAME_RANDOMIZATION
         // Randomize body-level lexicals (let/const).
-        size_t *perm = new size_t[numLexicals];
-        for (size_t i = 0; i < numLexicals; i++)
-            perm[i] = i;
-        if (numLexicals) {
-          for (size_t i = 0; i < numLexicals - 1; i++) {
-              uint32_t swap = js::jit::RNG::nextUint32(i, numLexicals - 1);
-              size_t tmp = perm[i];
-              perm[i] = perm[swap];
-              perm[swap] = tmp;
-          }
-        }
+        unsigned *perm = js::jit::RNG::createIndexPermutation(numLexicals);
 #endif
         for (size_t i = 0; i < numLexicals; i++) {
             Definition* dn = bodyLevelLexicals_[i];

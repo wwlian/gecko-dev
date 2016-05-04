@@ -38,6 +38,38 @@ RNG::nextDouble() {
   return randomNumberGenerator->nextDouble();
 }
 
+unsigned*
+RNG::createIndexPermutation(unsigned size) {
+    unsigned *perm = new unsigned[size];
+    for (unsigned i = 0; i < size; i++)
+        perm[i] = i;
+    permute(perm, size);
+    return perm;
+}
+
+template <typename T>
+void
+RNG::permute(T* arr, unsigned size) {
+    if (size <= 1) return;
+    for (unsigned i = 0; i < size - 1; i++) {
+        T* swap = &arr[nextUint32(i, size - 1)];
+        T tmp = arr[i];
+        arr[i] = *swap;
+        *swap = tmp;
+    }
+}
+
+template <typename T>
+void
+RNG::permute(std::vector<T> &v) {
+    for (unsigned i = 0; i < v.size() - 1; i++) {
+        unsigned swap = nextUint32(i, v.size() - 1);
+        T tmp = v[i];
+        v[i] = v[swap];
+        v[swap] = tmp;
+    }
+}
+
 inline void
 RNG::init() {
   if (randomNumberGenerator != nullptr) return;
