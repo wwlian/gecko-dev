@@ -36,6 +36,10 @@
 #include "jit/x86-shared/Encoding-x86-shared.h"
 #include "jit/x86-shared/Patching-x86-shared.h"
 
+#ifdef RANDOM_NOP_FINEGRAIN
+#include "jit/RNG.h"
+#endif
+
 namespace js {
 namespace jit {
 
@@ -45,7 +49,12 @@ class BaseAssembler : public GenericAssembler {
 public:
     BaseAssembler()
       : useVEX_(true)
-    { }
+    {
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+        m_formatter.assembler = this;
+#endif
+    }
 
     void disableVEX() { useVEX_ = false; }
 
@@ -53,6 +62,15 @@ public:
     const unsigned char* buffer() const { return m_formatter.buffer(); }
     unsigned char* data() { return m_formatter.data(); }
     bool oom() const { return m_formatter.oom(); }
+
+#ifdef RANDOM_NOP_FINEGRAIN
+    void enableRandomNop() {
+      m_formatter.isRandomNopEnabled = true;
+    }
+    void disableRandomNop() {
+      m_formatter.isRandomNopEnabled = false;
+    }
+#endif
 
     void nop()
     {
@@ -62,9 +80,16 @@ public:
 
     void twoByteNop()
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("nop (2 byte)");
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_NOP);
+#ifdef RANDOM_NOP_FINEGRAIN
+        disableRandomNop();
+#endif
     }
 
     /*
@@ -3296,17 +3321,29 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
     void haltingAlign(int alignment)
     {
         spew(".balign %d, 0x%x   # hlt", alignment, OP_HLT);
+#ifdef RANDOM_NOP_FINEGRAIN
+        disableRandomNop();
+#endif
         while (!m_formatter.isAligned(alignment))
             m_formatter.oneByteOp(OP_HLT);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void nopAlign(int alignment)
     {
         spew(".balign %d", alignment);
 
+#ifdef RANDOM_NOP_FINEGRAIN
+        disableRandomNop();
+#endif
         int remainder = m_formatter.size() % alignment;
         if (remainder > 0)
             insert_nop(alignment - remainder);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void jumpTablePointer(uintptr_t ptr)
@@ -3482,12 +3519,19 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                        XMMRegisterID rm, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             if (IsXMMReversedOperands(opcode))
                 spew("%-11s%s, %s", legacySSEOpName(name), XMMRegName(dst), XMMRegName(rm));
             else
                 spew("%-11s%s, %s", legacySSEOpName(name), XMMRegName(rm), XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp(opcode, (RegisterID)rm, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3506,10 +3550,17 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                           uint32_t imm, XMMRegisterID rm, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s$0x%x, %s, %s", legacySSEOpName(name), imm, XMMRegName(rm), XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp(opcode, (RegisterID)rm, dst);
             m_formatter.immediate8u(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3525,6 +3576,10 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                        int32_t offset, RegisterID base, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             if (IsXMMReversedOperands(opcode)) {
                 spew("%-11s%s, " MEM_ob, legacySSEOpName(name),
                      XMMRegName(dst), ADDR_ob(offset, base));
@@ -3534,6 +3589,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
             }
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp(opcode, offset, base, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3553,12 +3611,19 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                               int32_t offset, RegisterID base, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             if (IsXMMReversedOperands(opcode))
                 spew("%-11s%s, " MEM_o32b, legacySSEOpName(name), XMMRegName(dst), ADDR_o32b(offset, base));
             else
                 spew("%-11s" MEM_o32b ", %s", legacySSEOpName(name), ADDR_o32b(offset, base), XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp_disp32(opcode, offset, base, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3578,11 +3643,18 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                           uint32_t imm, int32_t offset, RegisterID base, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s$0x%x, " MEM_ob ", %s", legacySSEOpName(name), imm,
                  ADDR_ob(offset, base), XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp(opcode, offset, base, dst);
             m_formatter.immediate8u(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3597,6 +3669,10 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                        XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             if (IsXMMReversedOperands(opcode)) {
                 spew("%-11s%s, " MEM_obs, legacySSEOpName(name),
                      XMMRegName(dst), ADDR_obs(offset, base, index, scale));
@@ -3606,6 +3682,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
             }
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp(opcode, offset, base, index, scale, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3628,12 +3707,19 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                        const void* address, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             if (IsXMMReversedOperands(opcode))
                 spew("%-11s%s, %p", legacySSEOpName(name), XMMRegName(dst), address);
             else
                 spew("%-11s%p, %s", legacySSEOpName(name), address, XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp(opcode, address, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3652,10 +3738,17 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                           uint32_t imm, const void* address, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s$0x%x, %p, %s", legacySSEOpName(name), imm, address, XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp(opcode, address, dst);
             m_formatter.immediate8u(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3668,12 +3761,19 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                             RegisterID rm, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             if (IsXMMReversedOperands(opcode))
                 spew("%-11s%s, %s", legacySSEOpName(name), XMMRegName(dst), GPReg32Name(rm));
             else
                 spew("%-11s%s, %s", legacySSEOpName(name), GPReg32Name(rm), XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp(opcode, rm, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3692,6 +3792,10 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                             XMMRegisterID rm, RegisterID dst)
     {
         if (useLegacySSEEncodingForOtherOutput()) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             if (IsXMMReversedOperands(opcode))
                 spew("%-11s%s, %s", legacySSEOpName(name), GPReg32Name(dst), XMMRegName(rm));
             else if (opcode == OP2_MOVD_EdVd)
@@ -3700,6 +3804,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                 spew("%-11s%s, %s", legacySSEOpName(name), XMMRegName(rm), GPReg32Name(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp(opcode, (RegisterID)rm, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3716,10 +3823,17 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                                uint32_t imm, XMMRegisterID rm, RegisterID dst)
     {
         if (useLegacySSEEncodingForOtherOutput()) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s$0x%x, %s, %s", legacySSEOpName(name), imm, XMMRegName(rm), GPReg32Name(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp(opcode, (RegisterID)rm, dst);
             m_formatter.immediate8u(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3732,9 +3846,16 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                             XMMRegisterID rm, XMMRegisterID reg)
     {
         if (useLegacySSEEncodingForOtherOutput()) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s%s, %s", legacySSEOpName(name), XMMRegName(rm), XMMRegName(reg));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp(opcode, (RegisterID)rm, reg);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3746,10 +3867,17 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                             int32_t offset, RegisterID base, XMMRegisterID reg)
     {
         if (useLegacySSEEncodingForOtherOutput()) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s" MEM_ob ", %s", legacySSEOpName(name),
                  ADDR_ob(offset, base), XMMRegName(reg));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp(opcode, offset, base, reg);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3763,9 +3891,16 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                          XMMRegisterID rm, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s%s, %s", legacySSEOpName(name), XMMRegName(rm), XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.threeByteOp(opcode, escape, (RegisterID)rm, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3778,10 +3913,17 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                             uint32_t imm, XMMRegisterID rm, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s$0x%x, %s, %s", legacySSEOpName(name), imm, XMMRegName(rm), XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.threeByteOp(opcode, escape, (RegisterID)rm, dst);
             m_formatter.immediate8u(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3795,10 +3937,17 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                          int32_t offset, RegisterID base, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s" MEM_ob ", %s", legacySSEOpName(name),
                  ADDR_ob(offset, base), XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.threeByteOp(opcode, escape, offset, base, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3812,11 +3961,18 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                             uint32_t imm, int32_t offset, RegisterID base, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s$0x%x, " MEM_ob ", %s", legacySSEOpName(name), imm,
                  ADDR_ob(offset, base), XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.threeByteOp(opcode, escape, offset, base, dst);
             m_formatter.immediate8u(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3831,9 +3987,16 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                          const void* address, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s%p, %s", legacySSEOpName(name), address, XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.threeByteOp(opcode, escape, address, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3846,10 +4009,17 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                                  RegisterID src1, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s$0x%x, %s, %s", legacySSEOpName(name), imm, GPReg32Name(src1), XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.threeByteOp(opcode, escape, src1, dst);
             m_formatter.immediate8u(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3863,10 +4033,17 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                                  int32_t offset, RegisterID base, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s$0x%x, " MEM_ob ", %s", legacySSEOpName(name), imm, ADDR_ob(offset, base), XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.threeByteOp(opcode, escape, offset, base, dst);
             m_formatter.immediate8u(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3880,10 +4057,17 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                                  XMMRegisterID src, RegisterID dst)
     {
         if (useLegacySSEEncodingForOtherOutput()) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s$0x%x, %s, %s", legacySSEOpName(name), imm, XMMRegName(src), GPReg32Name(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.threeByteOp(opcode, escape, (RegisterID)src, dst);
             m_formatter.immediate8u(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3900,10 +4084,17 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                                  int32_t offset, RegisterID base, RegisterID dst)
     {
         if (useLegacySSEEncodingForOtherOutput()) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s$0x%x, " MEM_ob ", %s", legacySSEOpName(name), imm, ADDR_ob(offset, base), GPReg32Name(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.threeByteOp(opcode, escape, offset, base, dst);
             m_formatter.immediate8u(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3917,10 +4108,17 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
     void vblendvOpSimd(XMMRegisterID mask, XMMRegisterID rm, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncodingForVblendv(mask, src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("blendvps   %s, %s", XMMRegName(rm), XMMRegName(dst));
             // Even though a "ps" instruction, vblendv is encoded with the "pd" prefix.
             m_formatter.legacySSEPrefix(VEX_PD);
             m_formatter.threeByteOp(OP3_BLENDVPS_VdqWdq, ESCAPE_3A, (RegisterID)rm, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3934,10 +4132,17 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
     void vblendvOpSimd(XMMRegisterID mask, int32_t offset, RegisterID base, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncodingForVblendv(mask, src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("blendvps   " MEM_ob ", %s", ADDR_ob(offset, base), XMMRegName(dst));
             // Even though a "ps" instruction, vblendv is encoded with the "pd" prefix.
             m_formatter.legacySSEPrefix(VEX_PD);
             m_formatter.threeByteOp(OP3_BLENDVPS_VdqWdq, ESCAPE_3A, offset, base, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3952,10 +4157,17 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
                         uint32_t imm, XMMRegisterID src, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             spew("%-11s$%d, %s", legacySSEOpName(name), imm, XMMRegName(dst));
             m_formatter.legacySSEPrefix(VEX_PD);
             m_formatter.twoByteOp(opcode, (RegisterID)dst, (int)shiftKind);
             m_formatter.immediate8u(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+            enableRandomNop();
+#endif
             return;
         }
 
@@ -3967,6 +4179,14 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
     class X86InstructionFormatter {
 
     public:
+#ifdef RANDOM_NOP_FINEGRAIN
+        void maybeNop() {
+            if (!isRandomNopEnabled) return;// || (RNG::nextUint32() & 0x7)) return;
+            assembler->spew("nop");
+            m_buffer.ensureSpace(MaxInstructionSize);
+            m_buffer.putByteUnchecked(OP_NOP);
+        }
+#endif
         // Legacy prefix bytes:
         //
         // These are emmitted prior to the instruction.
@@ -4004,12 +4224,18 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp(OneByteOpcodeID opcode)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             m_buffer.putByteUnchecked(opcode);
         }
 
         void oneByteOp(OneByteOpcodeID opcode, RegisterID reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(0, 0, reg);
             m_buffer.putByteUnchecked(opcode + (reg & 7));
@@ -4017,6 +4243,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp(OneByteOpcodeID opcode, RegisterID rm, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, rm);
             m_buffer.putByteUnchecked(opcode);
@@ -4025,6 +4254,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp(OneByteOpcodeID opcode, int32_t offset, RegisterID base, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, base);
             m_buffer.putByteUnchecked(opcode);
@@ -4033,6 +4265,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp_disp32(OneByteOpcodeID opcode, int32_t offset, RegisterID base, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, base);
             m_buffer.putByteUnchecked(opcode);
@@ -4041,6 +4276,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp(OneByteOpcodeID opcode, int32_t offset, RegisterID base, RegisterID index, int scale, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, index, base);
             m_buffer.putByteUnchecked(opcode);
@@ -4049,6 +4287,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp_disp32(OneByteOpcodeID opcode, int32_t offset, RegisterID index, int scale, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, index, 0);
             m_buffer.putByteUnchecked(opcode);
@@ -4057,6 +4298,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp(OneByteOpcodeID opcode, const void* address, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, 0);
             m_buffer.putByteUnchecked(opcode);
@@ -4065,6 +4309,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp_disp32(OneByteOpcodeID opcode, const void* address, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, 0);
             m_buffer.putByteUnchecked(opcode);
@@ -4073,6 +4320,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 #ifdef JS_CODEGEN_X64
         void oneByteRipOp(OneByteOpcodeID opcode, int ripOffset, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, 0);
             m_buffer.putByteUnchecked(opcode);
@@ -4082,6 +4332,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteRipOp64(OneByteOpcodeID opcode, int ripOffset, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexW(reg, 0, 0);
             m_buffer.putByteUnchecked(opcode);
@@ -4091,6 +4344,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteRipOp(TwoByteOpcodeID opcode, int ripOffset, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, 0);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4113,6 +4369,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteOp(TwoByteOpcodeID opcode)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
             m_buffer.putByteUnchecked(opcode);
@@ -4120,6 +4379,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteOp(TwoByteOpcodeID opcode, RegisterID rm, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, rm);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4139,6 +4401,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteOp(TwoByteOpcodeID opcode, int32_t offset, RegisterID base, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, base);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4158,6 +4423,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteOp_disp32(TwoByteOpcodeID opcode, int32_t offset, RegisterID base, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, base);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4177,6 +4445,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteOp(TwoByteOpcodeID opcode, int32_t offset, RegisterID base, RegisterID index, int scale, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, index, base);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4197,6 +4468,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteOp(TwoByteOpcodeID opcode, const void* address, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, 0);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4216,6 +4490,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void threeByteOp(ThreeByteOpcodeID opcode, ThreeByteEscape escape, RegisterID rm, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, rm);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4240,6 +4517,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void threeByteOp(ThreeByteOpcodeID opcode, ThreeByteEscape escape, int32_t offset, RegisterID base, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, base);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4264,6 +4544,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void threeByteOp(ThreeByteOpcodeID opcode, ThreeByteEscape escape, const void* address, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIfNeeded(reg, 0, 0);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4325,6 +4608,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp64(OneByteOpcodeID opcode)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexW(0, 0, 0);
             m_buffer.putByteUnchecked(opcode);
@@ -4332,6 +4618,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp64(OneByteOpcodeID opcode, RegisterID reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexW(0, 0, reg);
             m_buffer.putByteUnchecked(opcode + (reg & 7));
@@ -4339,6 +4628,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp64(OneByteOpcodeID opcode, RegisterID rm, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexW(reg, 0, rm);
             m_buffer.putByteUnchecked(opcode);
@@ -4347,6 +4639,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp64(OneByteOpcodeID opcode, int32_t offset, RegisterID base, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexW(reg, 0, base);
             m_buffer.putByteUnchecked(opcode);
@@ -4355,6 +4650,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp64_disp32(OneByteOpcodeID opcode, int32_t offset, RegisterID base, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexW(reg, 0, base);
             m_buffer.putByteUnchecked(opcode);
@@ -4363,6 +4661,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp64(OneByteOpcodeID opcode, int32_t offset, RegisterID base, RegisterID index, int scale, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexW(reg, index, base);
             m_buffer.putByteUnchecked(opcode);
@@ -4371,6 +4672,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp64(OneByteOpcodeID opcode, const void* address, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexW(reg, 0, 0);
             m_buffer.putByteUnchecked(opcode);
@@ -4379,6 +4683,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteOp64(TwoByteOpcodeID opcode, RegisterID rm, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexW(reg, 0, rm);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4388,6 +4695,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteOp64(TwoByteOpcodeID opcode, int offset, RegisterID base, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexW(reg, 0, base);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4397,6 +4707,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteOp64(TwoByteOpcodeID opcode, int offset, RegisterID base, RegisterID index, int scale, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexW(reg, index, base);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4406,6 +4719,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteOp64(TwoByteOpcodeID opcode, const void* address, int reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexW(reg, 0, 0);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4442,12 +4758,18 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp8(OneByteOpcodeID opcode)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             m_buffer.putByteUnchecked(opcode);
         }
 
         void oneByteOp8(OneByteOpcodeID opcode, RegisterID r)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIf(byteRegRequiresRex(r), 0, 0, r);
             m_buffer.putByteUnchecked(opcode + (r & 7));
@@ -4455,6 +4777,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp8(OneByteOpcodeID opcode, RegisterID rm, GroupOpcodeID groupOp)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIf(byteRegRequiresRex(rm), 0, 0, rm);
             m_buffer.putByteUnchecked(opcode);
@@ -4464,6 +4789,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
         // Like oneByteOp8, but never emits a REX prefix.
         void oneByteOp8_norex(OneByteOpcodeID opcode, HRegisterID rm, GroupOpcodeID groupOp)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             MOZ_ASSERT(!regRequiresRex(RegisterID(rm)));
             m_buffer.ensureSpace(MaxInstructionSize);
             m_buffer.putByteUnchecked(opcode);
@@ -4472,6 +4800,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp8(OneByteOpcodeID opcode, int32_t offset, RegisterID base, RegisterID reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIf(byteRegRequiresRex(reg), reg, 0, base);
             m_buffer.putByteUnchecked(opcode);
@@ -4481,6 +4812,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
         void oneByteOp8_disp32(OneByteOpcodeID opcode, int32_t offset, RegisterID base,
                                RegisterID reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIf(byteRegRequiresRex(reg), reg, 0, base);
             m_buffer.putByteUnchecked(opcode);
@@ -4490,6 +4824,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
         void oneByteOp8(OneByteOpcodeID opcode, int32_t offset, RegisterID base,
                         RegisterID index, int scale, RegisterID reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIf(byteRegRequiresRex(reg), reg, index, base);
             m_buffer.putByteUnchecked(opcode);
@@ -4498,6 +4835,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void oneByteOp8(OneByteOpcodeID opcode, const void* address, RegisterID reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIf(byteRegRequiresRex(reg), reg, 0, 0);
             m_buffer.putByteUnchecked(opcode);
@@ -4506,6 +4846,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteOp8(TwoByteOpcodeID opcode, RegisterID rm, RegisterID reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIf(byteRegRequiresRex(reg)|byteRegRequiresRex(rm), reg, 0, rm);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4515,6 +4858,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteOp8(TwoByteOpcodeID opcode, int32_t offset, RegisterID base, RegisterID reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIf(byteRegRequiresRex(reg)|regRequiresRex(base), reg, 0, base);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4525,6 +4871,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
         void twoByteOp8(TwoByteOpcodeID opcode, int32_t offset, RegisterID base, RegisterID index,
                         int scale, RegisterID reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIf(byteRegRequiresRex(reg)|regRequiresRex(base)|regRequiresRex(index),
                       reg, index, base);
@@ -4539,6 +4888,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
         // prefix to disambiguate it from ah..bh.
         void twoByteOp8_movx(TwoByteOpcodeID opcode, RegisterID rm, RegisterID reg)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIf(regRequiresRex(reg)|byteRegRequiresRex(rm), reg, 0, rm);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4548,6 +4900,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void twoByteOp8(TwoByteOpcodeID opcode, RegisterID rm, GroupOpcodeID groupOp)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
             emitRexIf(byteRegRequiresRex(rm), 0, 0, rm);
             m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
@@ -4884,6 +5239,9 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
         void threeOpVex(VexOperandType p, int r, int x, int b, int m, int w, int v, int l,
                         int opcode)
         {
+#ifdef RANDOM_NOP_FINEGRAIN
+            maybeNop();
+#endif
             m_buffer.ensureSpace(MaxInstructionSize);
 
             if (v == invalid_xmm)
@@ -4904,6 +5262,12 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
         }
 
         AssemblerBuffer m_buffer;
+#ifdef RANDOM_NOP_FINEGRAIN
+    private:
+        friend class BaseAssembler;
+        bool isRandomNopEnabled;
+        js::jit::X86Encoding::BaseAssembler *assembler;
+#endif
     } m_formatter;
 
     bool useVEX_;

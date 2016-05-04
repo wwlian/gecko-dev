@@ -196,6 +196,10 @@ Assembler::finish()
         *(uint32_t*)jumpRelocations_.buffer() = extendedJumpTable_;
 
     // Zero the extended jumps table.
+#ifdef RANDOM_NOP_FINEGRAIN
+    // Don't emit random NOPs during the extended jump table to preserve layout.
+    masm.disableRandomNop();
+#endif
     for (size_t i = 0; i < jumps_.length(); i++) {
 #ifdef DEBUG
         size_t oldSize = masm.size();
@@ -210,6 +214,9 @@ Assembler::finish()
         MOZ_ASSERT_IF(!masm.oom(), masm.size() - oldSize == SizeOfExtendedJump);
         MOZ_ASSERT_IF(!masm.oom(), masm.size() - oldSize == SizeOfJumpTableEntry);
     }
+#ifdef RANDOM_NOP_FINEGRAIN
+    masm.enableRandomNop();
+#endif
 }
 
 void

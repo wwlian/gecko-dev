@@ -724,8 +724,15 @@ class BaseAssemblerX64 : public BaseAssembler
                      XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteRipOp(opcode, 0, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            disableRandomNop();
+#endif
             JmpSrc label(m_formatter.size());
             if (IsXMMReversedOperands(opcode))
                 spew("%-11s%s, " MEM_o32r "", legacySSEOpName(name), XMMRegName(dst), ADDR_o32r(label.offset()));
@@ -751,12 +758,19 @@ class BaseAssemblerX64 : public BaseAssembler
                             RegisterID rm, XMMRegisterID src0, XMMRegisterID dst)
     {
         if (useLegacySSEEncoding(src0, dst)) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             if (IsXMMReversedOperands(opcode))
                 spew("%-11s%s, %s", legacySSEOpName(name), XMMRegName(dst), GPRegName(rm));
             else
                 spew("%-11s%s, %s", legacySSEOpName(name), GPRegName(rm), XMMRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp64(opcode, rm, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            disableRandomNop();
+#endif
             return;
         }
 
@@ -775,6 +789,10 @@ class BaseAssemblerX64 : public BaseAssembler
                             XMMRegisterID rm, RegisterID dst)
     {
         if (useLegacySSEEncodingForOtherOutput()) {
+#ifdef RANDOM_NOP_FINEGRAIN
+            m_formatter.maybeNop();
+            disableRandomNop();
+#endif
             if (IsXMMReversedOperands(opcode))
                 spew("%-11s%s, %s", legacySSEOpName(name), GPRegName(dst), XMMRegName(rm));
             else if (opcode == OP2_MOVD_EdVd)
@@ -783,6 +801,9 @@ class BaseAssemblerX64 : public BaseAssembler
                 spew("%-11s%s, %s", legacySSEOpName(name), XMMRegName(rm), GPRegName(dst));
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp64(opcode, (RegisterID)rm, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+            disableRandomNop();
+#endif
             return;
         }
 
