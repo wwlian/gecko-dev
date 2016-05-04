@@ -17,6 +17,10 @@
 #include "mozilla/PodOperations.h"
 
 #include <string.h>
+#ifdef CALL_FRAME_RANDOMIZATION
+#include <vector>
+#include "jit/RNG.h"
+#endif
 
 #include "jsapi.h"
 #include "jsatom.h"
@@ -757,6 +761,9 @@ BytecodeEmitter::computeAliasedSlots(Handle<StaticBlockScope*> blockScope)
 {
     uint32_t numAliased = script->bindings.numAliasedBodyLevelLocals();
 
+#ifdef CALL_FRAME_RANDOMIZATION
+    std::vector<uint32_t> unaliasedSlots;
+#endif
     for (unsigned i = 0; i < blockScope->numVariables(); i++) {
         Definition* dn = blockScope->definitionParseNode(i);
 
@@ -767,13 +774,19 @@ BytecodeEmitter::computeAliasedSlots(Handle<StaticBlockScope*> blockScope)
 
         if (isAliasedName(this, dn)) {
             slot = blockScope->blockIndexToSlot(index);
+#ifndef CALL_FRAME_RANDOMIZATION
             blockScope->setAliased(i, true);
+#endif
         } else {
             // blockIndexToLocalIndex returns the frame slot following the
             // unaliased locals. We add numAliased so that the slot value
             // comes after all (aliased and unaliased) body level locals.
             slot = numAliased + blockScope->blockIndexToLocalIndex(index);
+#ifndef CALL_FRAME_RANDOMIZATION
             blockScope->setAliased(i, false);
+#else
+            unaliasedSlots.push_back(slot);
+#endif
         }
 
         if (!dn->pn_scopecoord.setSlot(parser->tokenStream, slot))
@@ -786,8 +799,29 @@ BytecodeEmitter::computeAliasedSlots(Handle<StaticBlockScope*> blockScope)
             MOZ_ASSERT(pnu->pn_scopecoord.isFree());
         }
 #endif
-
     }
+#ifdef CALL_FRAME_RANDOMIZATION
+    if (unaliasedSlots.size() > 1) {
+        for (uint32_t i = 0; i < unaliasedSlots.size() - 1; i++) {
+            size_t swap = ::js::jit::RNG::nextUint32(i, unaliasedSlots.size() - 1);
+            uint32_t tmp = unaliasedSlots[i];
+            unaliasedSlots[i] = unaliasedSlots[swap];
+            unaliasedSlots[swap] = tmp;
+        }
+    }
+    size_t unaliasedSlotIndex = 0;
+    for (unsigned i = 0; i < blockScope->numVariables(); i++) {
+        Definition* dn = blockScope->definitionParseNode(i);
+        MOZ_ASSERT(dn->isDefn());
+        if (isAliasedName(this, dn)) {
+            blockScope->setAliased(i, true);
+        } else {
+            blockScope->setAliased(i, false);
+            if (!dn->pn_scopecoord.setSlot(parser->tokenStream, unaliasedSlots[unaliasedSlotIndex++]))
+                return false;
+        }
+    }
+#endif
 
     MOZ_ASSERT_IF(sc->allLocalsAliased(), AllLocalsAliased(*blockScope));
 
@@ -3040,7 +3074,18 @@ BytecodeEmitter::pushInitialConstants(JSOp op, unsigned n)
 bool
 BytecodeEmitter::initializeBlockScopedLocalsFromStack(Handle<StaticBlockScope*> blockScope)
 {
-    for (unsigned i = blockScope->numVariables(); i > 0; --i) {
+    size_t numBlockVars = blockScope->numVariables();
+#ifdef CALL_FRAME_RANDOMIZATION
+    unsigned *perm = ::js::jit::RNG::createIndexPermutation(numBlockVars);
+#endif
+#ifdef CALL_FRAME_RANDOMIZATION
+    for (unsigned j = numBlockVars; j > 0; --j) {
+        // (j-1) because j is 1-indexed; (perm[...] + 1) because perm elements 
+        // are 0-indexed and need to be converted to 1-indexing.
+        unsigned i = perm[j - 1] + 1;
+#else
+    for (unsigned i = numBlockVars; i > 0; --i) {
+#endif
         if (blockScope->isAliased(i - 1)) {
             ScopeCoordinate sc;
             sc.setHops(0);
@@ -3060,6 +3105,9 @@ BytecodeEmitter::initializeBlockScopedLocalsFromStack(Handle<StaticBlockScope*> 
         if (!emit1(JSOP_POP))
             return false;
     }
+#ifdef CALL_FRAME_RANDOMIZATION
+    delete[] perm;
+#endif
     return true;
 }
 
