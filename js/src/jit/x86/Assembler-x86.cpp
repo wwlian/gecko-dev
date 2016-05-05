@@ -102,3 +102,21 @@ Assembler::TraceJumpRelocations(JSTracer* trc, JitCode* code, CompactBufferReade
         MOZ_ASSERT(child == CodeFromJump(code->raw() + iter.offset()));
     }
 }
+
+// Emit a CALL or CMP (nop) instruction. ToggleCall can be used to patch
+// this instruction.
+CodeOffset
+Assembler::toggledCall(JitCode* target, bool enabled) {
+#ifdef RANDOM_NOP_FINEGRAIN
+    masm.disableRandomNop();
+#endif
+    CodeOffset offset(size());
+    JmpSrc src = enabled ? masm.call() : masm.cmp_eax();
+    addPendingJump(src, ImmPtr(target->raw()), Relocation::JITCODE);
+#ifdef RANDOM_NOP_FINEGRAIN
+    // masm is actually a BaseAssemblerSpecific field in parent.
+    masm.enableRandomNop();
+#endif
+    MOZ_ASSERT_IF(!oom(), size() - offset.offset() == ToggledCallSize(nullptr));
+    return offset;
+}

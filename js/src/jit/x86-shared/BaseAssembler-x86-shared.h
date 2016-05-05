@@ -66,9 +66,23 @@ public:
 #ifdef RANDOM_NOP_FINEGRAIN
     void enableRandomNop() {
       m_formatter.isRandomNopEnabled = true;
+      m_formatter.isRandomNopTmpDisabled = false;
     }
     void disableRandomNop() {
       m_formatter.isRandomNopEnabled = false;
+      m_formatter.isRandomNopTmpDisabled = false;
+    }
+    // Guarantee that random NOP insertion will not occur during the next 
+    // attempt. Useful when it's not possible to wrap a sequence of statements 
+    // with a disable/enable pair. Note that if random NOPs were already
+    // disabled, they will remain disabled after the next attempt.
+    // We need this so that a temporary disabling between a disable/enable
+    // pair doesn't prematurely re-enable NOPs.
+    void tmpDisableRandomNop() {
+      // It's hard to make sure this function is correctly used when it
+      // gets called multiple times before the first attempt.
+      //MOZ_ASSERT(!m_formatter.isRandomNopTmpDisabled, "tmpDisableRandomNop re-entered");
+      m_formatter.isRandomNopTmpDisabled = true;
     }
 #endif
 
@@ -88,7 +102,7 @@ public:
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_NOP);
 #ifdef RANDOM_NOP_FINEGRAIN
-        disableRandomNop();
+        enableRandomNop();
 #endif
     }
 
@@ -289,9 +303,16 @@ public:
 
     void addw_rr(RegisterID src, RegisterID dst)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("addw       %s, %s", GPReg16Name(src), GPReg16Name(dst));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_ADD_GvEv, src, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void addl_mr(int32_t offset, RegisterID base, RegisterID dst)
@@ -329,10 +350,17 @@ public:
 
     void addw_ir(int32_t imm, RegisterID dst)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("addw       $%d, %s", int16_t(imm), GPReg16Name(dst));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_GROUP1_EvIz, dst, GROUP1_OP_ADD);
         m_formatter.immediate16(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void addl_i32r(int32_t imm, RegisterID dst)
@@ -383,6 +411,10 @@ public:
     }
     void addw_im(int32_t imm, const void* addr)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("addw       $%d, %p", int16_t(imm), addr);
         m_formatter.prefix(PRE_OPERAND_SIZE);
         if (CAN_SIGN_EXTEND_8_32(imm)) {
@@ -392,34 +424,65 @@ public:
             m_formatter.oneByteOp(OP_GROUP1_EvIz, addr, GROUP1_OP_ADD);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void addw_im(int32_t imm, int32_t offset, RegisterID base) {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("addw       $%d, " MEM_ob, int16_t(imm), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_GROUP1_EvIz, offset, base, GROUP1_OP_ADD);
         m_formatter.immediate16(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void addw_im(int32_t imm, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("addw       $%d, " MEM_obs, int16_t(imm), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_GROUP1_EvIz, offset, base, index, scale, GROUP1_OP_ADD);
         m_formatter.immediate16(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void addw_rm(RegisterID src, int32_t offset, RegisterID base) {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("addw       %s, " MEM_ob, GPReg16Name(src), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_ADD_EvGv, offset, base, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void addw_rm(RegisterID src, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("addw       %s, " MEM_obs, GPReg16Name(src), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_ADD_EvGv, offset, base, index, scale, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void addb_im(int32_t imm, int32_t offset, RegisterID base) {
@@ -704,9 +767,16 @@ public:
 
     void andw_rr(RegisterID src, RegisterID dst)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("andw       %s, %s", GPReg16Name(src), GPReg16Name(dst));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_AND_GvEv, src, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void andl_mr(int32_t offset, RegisterID base, RegisterID dst)
@@ -723,9 +793,16 @@ public:
 
     void andw_rm(RegisterID src, int32_t offset, RegisterID base)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("andw       %s, " MEM_ob, GPReg16Name(src), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_AND_EvGv, offset, base, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void andl_rm(RegisterID src, int32_t offset, RegisterID base, RegisterID index, int scale)
@@ -736,9 +813,16 @@ public:
 
     void andw_rm(RegisterID src, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("andw       %s, " MEM_obs, GPReg16Name(src), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_AND_EvGv, offset, base, index, scale, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void andl_ir(int32_t imm, RegisterID dst)
@@ -758,6 +842,10 @@ public:
 
     void andw_ir(int32_t imm, RegisterID dst)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("andw       $0x%x, %s", int16_t(imm), GPReg16Name(dst));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         if (CAN_SIGN_EXTEND_8_32(imm)) {
@@ -770,6 +858,9 @@ public:
                 m_formatter.oneByteOp(OP_GROUP1_EvIz, dst, GROUP1_OP_AND);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void andl_im(int32_t imm, int32_t offset, RegisterID base)
@@ -786,6 +877,10 @@ public:
 
     void andw_im(int32_t imm, int32_t offset, RegisterID base)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("andw       $0x%x, " MEM_ob, int16_t(imm), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         if (CAN_SIGN_EXTEND_8_32(imm)) {
@@ -795,6 +890,9 @@ public:
             m_formatter.oneByteOp(OP_GROUP1_EvIz, offset, base, GROUP1_OP_AND);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void andl_im(int32_t imm, int32_t offset, RegisterID base, RegisterID index, int scale)
@@ -811,6 +909,10 @@ public:
 
     void andw_im(int32_t imm, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("andw       $%d, " MEM_obs, int16_t(imm), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         if (CAN_SIGN_EXTEND_8_32(imm)) {
@@ -820,6 +922,9 @@ public:
             m_formatter.oneByteOp(OP_GROUP1_EvIz, offset, base, index, scale, GROUP1_OP_AND);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void fld_m(int32_t offset, RegisterID base)
@@ -880,9 +985,16 @@ public:
 
     void orw_rr(RegisterID src, RegisterID dst)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("orw        %s, %s", GPReg16Name(src), GPReg16Name(dst));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_OR_GvEv, src, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void orl_mr(int32_t offset, RegisterID base, RegisterID dst)
@@ -899,9 +1011,16 @@ public:
 
     void orw_rm(RegisterID src, int32_t offset, RegisterID base)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("orw        %s, " MEM_ob, GPReg16Name(src), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_OR_EvGv, offset, base, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void orl_rm(RegisterID src, int32_t offset, RegisterID base, RegisterID index, int scale)
@@ -912,9 +1031,16 @@ public:
 
     void orw_rm(RegisterID src, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("orw        %s, " MEM_obs, GPReg16Name(src), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_OR_EvGv, offset, base, index, scale, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void orl_ir(int32_t imm, RegisterID dst)
@@ -934,6 +1060,10 @@ public:
 
     void orw_ir(int32_t imm, RegisterID dst)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("orw        $0x%x, %s", int16_t(imm), GPReg16Name(dst));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         if (CAN_SIGN_EXTEND_8_32(imm)) {
@@ -946,6 +1076,9 @@ public:
                 m_formatter.oneByteOp(OP_GROUP1_EvIz, dst, GROUP1_OP_OR);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void orl_im(int32_t imm, int32_t offset, RegisterID base)
@@ -962,6 +1095,10 @@ public:
 
     void orw_im(int32_t imm, int32_t offset, RegisterID base)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("orw        $0x%x, " MEM_ob, int16_t(imm), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         if (CAN_SIGN_EXTEND_8_32(imm)) {
@@ -971,6 +1108,9 @@ public:
             m_formatter.oneByteOp(OP_GROUP1_EvIz, offset, base, GROUP1_OP_OR);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void orl_im(int32_t imm, int32_t offset, RegisterID base, RegisterID index, int scale)
@@ -987,6 +1127,10 @@ public:
 
     void orw_im(int32_t imm, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("orw        $%d, " MEM_obs, int16_t(imm), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         if (CAN_SIGN_EXTEND_8_32(imm)) {
@@ -996,6 +1140,9 @@ public:
             m_formatter.oneByteOp(OP_GROUP1_EvIz, offset, base, index, scale, GROUP1_OP_OR);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void subl_rr(RegisterID src, RegisterID dst)
@@ -1006,9 +1153,16 @@ public:
 
     void subw_rr(RegisterID src, RegisterID dst)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("subw       %s, %s", GPReg16Name(src), GPReg16Name(dst));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_SUB_GvEv, src, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void subl_mr(int32_t offset, RegisterID base, RegisterID dst)
@@ -1025,9 +1179,16 @@ public:
 
     void subw_rm(RegisterID src, int32_t offset, RegisterID base)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("subw       %s, " MEM_ob, GPReg16Name(src), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_SUB_EvGv, offset, base, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void subl_rm(RegisterID src, int32_t offset, RegisterID base, RegisterID index, int scale)
@@ -1038,9 +1199,16 @@ public:
 
     void subw_rm(RegisterID src, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("subw       %s, " MEM_obs, GPReg16Name(src), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_SUB_EvGv, offset, base, index, scale, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void subl_ir(int32_t imm, RegisterID dst)
@@ -1060,6 +1228,10 @@ public:
 
     void subw_ir(int32_t imm, RegisterID dst)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("subw       $%d, %s", int16_t(imm), GPReg16Name(dst));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         if (CAN_SIGN_EXTEND_8_32(imm)) {
@@ -1072,6 +1244,9 @@ public:
                 m_formatter.oneByteOp(OP_GROUP1_EvIz, dst, GROUP1_OP_SUB);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void subl_im(int32_t imm, int32_t offset, RegisterID base)
@@ -1088,6 +1263,10 @@ public:
 
     void subw_im(int32_t imm, int32_t offset, RegisterID base)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("subw       $%d, " MEM_ob, int16_t(imm), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         if (CAN_SIGN_EXTEND_8_32(imm)) {
@@ -1097,6 +1276,9 @@ public:
             m_formatter.oneByteOp(OP_GROUP1_EvIz, offset, base, GROUP1_OP_SUB);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void subl_im(int32_t imm, int32_t offset, RegisterID base, RegisterID index, int scale)
@@ -1113,6 +1295,10 @@ public:
 
     void subw_im(int32_t imm, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("subw       $%d, " MEM_obs, int16_t(imm), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         if (CAN_SIGN_EXTEND_8_32(imm)) {
@@ -1122,6 +1308,9 @@ public:
             m_formatter.oneByteOp(OP_GROUP1_EvIz, offset, base, index, scale, GROUP1_OP_SUB);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void xorl_rr(RegisterID src, RegisterID dst)
@@ -1132,9 +1321,16 @@ public:
 
     void xorw_rr(RegisterID src, RegisterID dst)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("xorw       %s, %s", GPReg16Name(src), GPReg16Name(dst));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_XOR_GvEv, src, dst);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void xorl_mr(int32_t offset, RegisterID base, RegisterID dst)
@@ -1151,9 +1347,16 @@ public:
 
     void xorw_rm(RegisterID src, int32_t offset, RegisterID base)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("xorw       %s, " MEM_ob, GPReg16Name(src), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_XOR_EvGv, offset, base, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void xorl_rm(RegisterID src, int32_t offset, RegisterID base, RegisterID index, int scale)
@@ -1164,9 +1367,16 @@ public:
 
     void xorw_rm(RegisterID src, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("xorw       %s, " MEM_obs, GPReg16Name(src), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_XOR_EvGv, offset, base, index, scale, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void xorl_im(int32_t imm, int32_t offset, RegisterID base)
@@ -1183,6 +1393,10 @@ public:
 
     void xorw_im(int32_t imm, int32_t offset, RegisterID base)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("xorw       $0x%x, " MEM_ob, int16_t(imm), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         if (CAN_SIGN_EXTEND_8_32(imm)) {
@@ -1192,6 +1406,9 @@ public:
             m_formatter.oneByteOp(OP_GROUP1_EvIz, offset, base, GROUP1_OP_XOR);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void xorl_im(int32_t imm, int32_t offset, RegisterID base, RegisterID index, int scale)
@@ -1208,6 +1425,10 @@ public:
 
     void xorw_im(int32_t imm, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("xorw       $%d, " MEM_obs, int16_t(imm), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         if (CAN_SIGN_EXTEND_8_32(imm)) {
@@ -1217,6 +1438,9 @@ public:
             m_formatter.oneByteOp(OP_GROUP1_EvIz, offset, base, index, scale, GROUP1_OP_XOR);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void xorl_ir(int32_t imm, RegisterID dst)
@@ -1236,6 +1460,10 @@ public:
 
     void xorw_ir(int32_t imm, RegisterID dst)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("xorw       $%d, %s", int16_t(imm), GPReg16Name(dst));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         if (CAN_SIGN_EXTEND_8_32(imm)) {
@@ -1248,6 +1476,9 @@ public:
                 m_formatter.oneByteOp(OP_GROUP1_EvIz, dst, GROUP1_OP_XOR);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void sarl_ir(int32_t imm, RegisterID dst)
@@ -1398,15 +1629,29 @@ public:
     }
     void cmpxchgw(RegisterID src, int32_t offset, RegisterID base)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("cmpxchgw   %s, " MEM_ob, GPReg16Name(src), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.twoByteOp(OP2_CMPXCHG_GvEw, offset, base, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
     void cmpxchgw(RegisterID src, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("cmpxchgw   %s, " MEM_obs, GPReg16Name(src), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.twoByteOp(OP2_CMPXCHG_GvEw, offset, base, index, scale, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
     void cmpxchgl(RegisterID src, int32_t offset, RegisterID base)
     {
@@ -1588,20 +1833,38 @@ public:
 
     void cmpw_rr(RegisterID rhs, RegisterID lhs)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("cmpw       %s, %s", GPReg16Name(rhs), GPReg16Name(lhs));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_CMP_GvEv, rhs, lhs);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void cmpw_rm(RegisterID rhs, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("cmpw       %s, " MEM_obs, GPReg16Name(rhs), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_CMP_EvGv, offset, base, index, scale, rhs);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void cmpw_im(int32_t imm, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("cmpw       $%d, " MEM_obs, imm, ADDR_obs(offset, base, index, scale));
         if (CAN_SIGN_EXTEND_8_32(imm)) {
             m_formatter.prefix(PRE_OPERAND_SIZE);
@@ -1612,6 +1875,9 @@ public:
             m_formatter.oneByteOp(OP_GROUP1_EvIz, offset, base, index, scale, GROUP1_OP_CMP);
             m_formatter.immediate16(imm);
         }
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void testl_rr(RegisterID rhs, RegisterID lhs)
@@ -1685,9 +1951,16 @@ public:
 
     void testw_rr(RegisterID rhs, RegisterID lhs)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("testw      %s, %s", GPReg16Name(rhs), GPReg16Name(lhs));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_TEST_EvGv, lhs, rhs);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void testb_ir(int32_t rhs, RegisterID lhs)
@@ -1756,15 +2029,29 @@ public:
 
     void xchgw_rm(RegisterID src, int32_t offset, RegisterID base)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("xchgw      %s, " MEM_ob, GPReg16Name(src), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_XCHG_GvEv, offset, base, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
     void xchgw_rm(RegisterID src, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("xchgw      %s, " MEM_obs, GPReg16Name(src), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_XCHG_GvEv, offset, base, index, scale, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void xchgl_rr(RegisterID src, RegisterID dst)
@@ -1791,30 +2078,58 @@ public:
 
     void movw_rm(RegisterID src, int32_t offset, RegisterID base)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("movw       %s, " MEM_ob, GPReg16Name(src), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_MOV_EvGv, offset, base, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void movw_rm_disp32(RegisterID src, int32_t offset, RegisterID base)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("movw       %s, " MEM_o32b, GPReg16Name(src), ADDR_o32b(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp_disp32(OP_MOV_EvGv, offset, base, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void movw_rm(RegisterID src, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("movw       %s, " MEM_obs, GPReg16Name(src), ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_MOV_EvGv, offset, base, index, scale, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void movw_rm(RegisterID src, const void* addr)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("movw       %s, %p", GPReg16Name(src), addr);
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp_disp32(OP_MOV_EvGv, addr, src);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void movl_rm(RegisterID src, int32_t offset, RegisterID base)
@@ -1936,18 +2251,32 @@ public:
 
     void movw_im(int32_t imm, int32_t offset, RegisterID base)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("movw       $0x%x, " MEM_ob, imm, ADDR_ob(offset, base));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_GROUP11_EvIz, offset, base, GROUP11_MOV);
         m_formatter.immediate16(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void movw_im(int32_t imm, const void* addr)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("movw       $%d, %p", imm, addr);
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp_disp32(OP_GROUP11_EvIz, addr, GROUP11_MOV);
         m_formatter.immediate16(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void movl_i32m(int32_t imm, int32_t offset, RegisterID base)
@@ -1959,10 +2288,17 @@ public:
 
     void movw_im(int32_t imm, int32_t offset, RegisterID base, RegisterID index, int scale)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("movw       $0x%x, " MEM_obs, imm, ADDR_obs(offset, base, index, scale));
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_GROUP11_EvIz, offset, base, index, scale, GROUP11_MOV);
         m_formatter.immediate16(imm);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void movl_i32m(int32_t imm, int32_t offset, RegisterID base, RegisterID index, int scale)
@@ -2265,6 +2601,12 @@ public:
 
     void jmp_i(JmpDst dst)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        // Take care of NOP insertion here rather than during opcode emission
+        // so the destination offset doesn't get clobbered by the NOP.
+        m_formatter.maybeNop();
+        tmpDisableRandomNop();
+#endif
         int32_t diff = dst.offset() - m_formatter.size();
         spew("jmp        .Llabel%d", dst.offset());
 
@@ -2307,6 +2649,12 @@ public:
 
     void jCC_i(Condition cond, JmpDst dst)
     {
+#ifdef RANDOM_NOP_FINEGRAIN
+        // Take care of NOP insertion here rather than during opcode emission
+        // so the destination offset doesn't get clobbered by the NOP.
+        m_formatter.maybeNop();
+        tmpDisableRandomNop();
+#endif
         int32_t diff = dst.offset() - m_formatter.size();
         spew("j%s        .Llabel%d", CCName(cond), dst.offset());
 
@@ -3195,10 +3543,17 @@ public:
     void vpextrd_irm(unsigned lane, XMMRegisterID src, int32_t offset, RegisterID base)
     {
         MOZ_ASSERT(lane < 4);
+#ifdef RANDOM_NOP_FINEGRAIN
+        m_formatter.maybeNop();
+        disableRandomNop();
+#endif
         spew("pextrd     $0x%x, %s, " MEM_ob, lane, XMMRegName(src), ADDR_ob(offset, base));
         m_formatter.prefix(PRE_SSE_66);
         m_formatter.threeByteOp(OP3_PEXTRD_EdVdqIb, ESCAPE_3A, offset, base, (RegisterID)src);
         m_formatter.immediate8u(lane);
+#ifdef RANDOM_NOP_FINEGRAIN
+        enableRandomNop();
+#endif
     }
 
     void vblendps_irr(unsigned imm, XMMRegisterID src1, XMMRegisterID src0, XMMRegisterID dst)
@@ -4181,6 +4536,12 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
     public:
 #ifdef RANDOM_NOP_FINEGRAIN
         void maybeNop() {
+            if (isRandomNopTmpDisabled) {
+              // Don't use assembler->enableRandomNop() because we don't want
+              // to turn NOPs back on unless a client explicitly calls it.
+              isRandomNopTmpDisabled = false;
+              return;
+            }
             if (!isRandomNopEnabled) return;// || (RNG::nextUint32() & 0x7)) return;
             assembler->spew("nop");
             m_buffer.ensureSpace(MaxInstructionSize);
@@ -4221,7 +4582,7 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
         //
         // The twoByteOp methods plant two-byte Intel instructions sequences
         // (first opcode byte 0x0F).
-
+            
         void oneByteOp(OneByteOpcodeID opcode)
         {
 #ifdef RANDOM_NOP_FINEGRAIN
@@ -5266,6 +5627,7 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
     private:
         friend class BaseAssembler;
         bool isRandomNopEnabled;
+        bool isRandomNopTmpDisabled;
         js::jit::X86Encoding::BaseAssembler *assembler;
 #endif
     } m_formatter;

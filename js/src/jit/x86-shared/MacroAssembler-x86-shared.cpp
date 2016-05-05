@@ -315,6 +315,22 @@ MacroAssemblerX86Shared::asmMergeWith(const MacroAssemblerX86Shared& other)
     return true;
 }
 
+// Emit a JMP that can be toggled to a CMP. See ToggleToJmp(), ToggleToCmp().
+CodeOffset
+MacroAssemblerX86Shared::toggledJump(Label* label) {
+#ifdef RANDOM_NOP_FINEGRAIN
+    // masm is actually a BaseAssemblerSpecific field in AssemblerX86Shared,
+    // which MacroAssembler is.
+    asMasm().masm.disableRandomNop();
+#endif
+    CodeOffset offset(size());
+    jump(label);
+#ifdef RANDOM_NOP_FINEGRAIN
+    asMasm().masm.enableRandomNop();
+#endif
+    return offset;
+}
+
 //{{{ check_macroassembler_style
 // ===============================================================
 // Stack manipulation functions.

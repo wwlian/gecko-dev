@@ -479,13 +479,7 @@ class Assembler : public AssemblerX86Shared
 
     // Emit a CALL or CMP (nop) instruction. ToggleCall can be used to patch
     // this instruction.
-    CodeOffset toggledCall(JitCode* target, bool enabled) {
-        CodeOffset offset(size());
-        JmpSrc src = enabled ? masm.call() : masm.cmp_eax();
-        addPendingJump(src, ImmPtr(target->raw()), Relocation::JITCODE);
-        MOZ_ASSERT_IF(!oom(), size() - offset.offset() == ToggledCallSize(nullptr));
-        return offset;
-    }
+    CodeOffset toggledCall(JitCode* target, bool enabled);
 
     static size_t ToggledCallSize(uint8_t* code) {
         // Size of a call instruction.

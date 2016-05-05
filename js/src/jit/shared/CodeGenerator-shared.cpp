@@ -328,6 +328,9 @@ CodeGeneratorShared::addTrackedOptimizationsEntry(const TrackedOptimizations* op
 
     MOZ_ASSERT(optimizations);
 
+#ifdef RANDOM_NOP_FINEGRAIN
+    //masm.tmpDisableRandomNop();
+#endif
     uint32_t nativeOffset = masm.currentOffset();
 
     if (!trackedOptimizations_.empty()) {
@@ -355,6 +358,9 @@ CodeGeneratorShared::extendTrackedOptimizationsEntry(const TrackedOptimizations*
     if (!isOptimizationTrackingEnabled())
         return;
 
+#ifdef RANDOM_NOP_FINEGRAIN
+    //masm.tmpDisableRandomNop();
+#endif
     uint32_t nativeOffset = masm.currentOffset();
     NativeToTrackedOptimizations& entry = trackedOptimizations_.back();
     MOZ_ASSERT(entry.optimizations == optimizations);
@@ -1091,6 +1097,9 @@ CodeGeneratorShared::ensureOsiSpace()
     }
     MOZ_ASSERT_IF(!masm.oom(),
                   masm.currentOffset() - lastOsiPointOffset_ >= Assembler::PatchWrite_NearCallSize());
+#ifdef RANDOM_NOP_FINEGRAIN
+    //masm.tmpDisableRandomNop();
+#endif
     lastOsiPointOffset_ = masm.currentOffset();
 }
 
@@ -1100,6 +1109,9 @@ CodeGeneratorShared::markOsiPoint(LOsiPoint* ins)
     encode(ins->snapshot());
     ensureOsiSpace();
 
+#ifdef RANDOM_NOP_FINEGRAIN
+    //masm.tmpDisableRandomNop();
+#endif
     uint32_t offset = masm.currentOffset();
     SnapshotOffset so = ins->snapshot()->snapshotOffset();
     masm.propagateOOM(osiIndices_.append(OsiIndex(offset, so)));

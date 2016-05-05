@@ -731,7 +731,7 @@ class BaseAssemblerX64 : public BaseAssembler
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteRipOp(opcode, 0, dst);
 #ifdef RANDOM_NOP_FINEGRAIN
-            disableRandomNop();
+            enableRandomNop();
 #endif
             JmpSrc label(m_formatter.size());
             if (IsXMMReversedOperands(opcode))
@@ -769,7 +769,7 @@ class BaseAssemblerX64 : public BaseAssembler
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp64(opcode, rm, dst);
 #ifdef RANDOM_NOP_FINEGRAIN
-            disableRandomNop();
+            enableRandomNop();
 #endif
             return;
         }
@@ -802,7 +802,7 @@ class BaseAssemblerX64 : public BaseAssembler
             m_formatter.legacySSEPrefix(ty);
             m_formatter.twoByteOp64(opcode, (RegisterID)rm, dst);
 #ifdef RANDOM_NOP_FINEGRAIN
-            disableRandomNop();
+            enableRandomNop();
 #endif
             return;
         }

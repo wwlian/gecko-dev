@@ -161,6 +161,10 @@ DecodeScale(uint8_t modrm, uint8_t sib, uint8_t rex)
 uint8_t*
 js::jit::Disassembler::DisassembleHeapAccess(uint8_t* ptr, HeapAccess* access)
 {
+#ifdef RANDOM_NOP_FINEGRAIN
+    // Skip any leading NOPs that may have been inserted.
+    while (*ptr == OP_NOP) ptr++;
+#endif
     VexOperandType type = VEX_PS;
     uint32_t opcode = OP_HLT;
     uint8_t modrm = 0;

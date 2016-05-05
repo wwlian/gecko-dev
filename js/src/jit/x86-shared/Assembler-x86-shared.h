@@ -273,6 +273,17 @@ class AssemblerX86Shared : public AssemblerShared
     typedef X86Encoding::JmpDst JmpDst;
 
   public:
+#ifdef RANDOM_NOP_FINEGRAIN
+    void tmpDisableRandomNop() {
+      masm.tmpDisableRandomNop();
+    }
+    void enableRandomNop() {
+      masm.enableRandomNop();
+    }
+    void disableRandomNop() {
+      masm.disableRandomNop();
+    }
+#endif
     AssemblerX86Shared()
     {
         if (!HasAVX())
@@ -947,6 +958,9 @@ class AssemblerX86Shared : public AssemblerShared
         label->bind(currentOffset());
     }
     uint32_t currentOffset() {
+#ifdef RANDOM_NOP_FINEGRAIN
+        //tmpDisableRandomNop();
+#endif
         return masm.label().offset();
     }
 
@@ -3164,6 +3178,10 @@ class AssemblerX86Shared : public AssemblerShared
     // Note that this DOES NOT patch data that comes before |label|.
     static void PatchWrite_NearCall(CodeLocationLabel startLabel, CodeLocationLabel target) {
         uint8_t* start = startLabel.raw();
+#ifdef RANDOM_NOP_FINEGRAIN
+        // The patch point might be a randomly inserted NOP; if so, we want to patch the instruction after it.
+        //if (*start == 0x90) start++;
+#endif
         *start = 0xE8;
         ptrdiff_t offset = target - startLabel - PatchWrite_NearCallSize();
         MOZ_ASSERT(int32_t(offset) == offset);

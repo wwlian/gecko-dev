@@ -213,6 +213,10 @@ GenerateProfilingPrologue(MacroAssembler& masm, unsigned framePushed, ExitReason
     {
 #if defined(JS_CODEGEN_ARM)
         AutoForbidPools afp(&masm, /* number of instructions in scope = */ 5);
+#elif defined(JS_CODEGEN_X64) && defined(RANDOM_NOP_FINEGRAIN)
+        // On ARM, forbid pools implies disabled random NOPs; we have to do it
+        // explicitly on x64.
+        masm.disableRandomNop();
 #endif
 
         offsets->begin = masm.currentOffset();
@@ -226,6 +230,9 @@ GenerateProfilingPrologue(MacroAssembler& masm, unsigned framePushed, ExitReason
 
         masm.storePtr(masm.getStackPointer(), Address(scratch, WasmActivation::offsetOfFP()));
         MOZ_ASSERT_IF(!masm.oom(), StoredFP == masm.currentOffset() - offsets->begin);
+#if defined(JS_CODEGEN_X64) && defined(RANDOM_NOP_FINEGRAIN)
+        masm.enableRandomNop();
+#endif
     }
 
     if (reason != ExitReason::None) {
@@ -268,6 +275,10 @@ GenerateProfilingEpilogue(MacroAssembler& masm, unsigned framePushed, ExitReason
     {
 #if defined(JS_CODEGEN_ARM)
         AutoForbidPools afp(&masm, /* number of instructions in scope = */ 4);
+#elif defined(JS_CODEGEN_X64) && defined(RANDOM_NOP_FINEGRAIN)
+        // On ARM, forbid pools implies disabled random NOPs; we have to do it
+        // explicitly on x64.
+        masm.disableRandomNop();
 #endif
 
         // sp protects the stack from clobber via asynchronous signal handlers
@@ -287,6 +298,9 @@ GenerateProfilingEpilogue(MacroAssembler& masm, unsigned framePushed, ExitReason
 #endif
 
         offsets->profilingReturn = masm.currentOffset();
+#if defined(JS_CODEGEN_X64) && defined(RANDOM_NOP_FINEGRAIN)
+        masm.enableRandomNop();
+#endif
         masm.ret();
     }
 }
@@ -348,6 +362,10 @@ wasm::GenerateFunctionEpilogue(MacroAssembler& masm, unsigned framePushed, FuncO
         // Forbid pools from being inserted between the profilingJump label and
         // the nop since we need the location of the actual nop to patch it.
         AutoForbidPools afp(&masm, 1);
+#elif defined(JS_CODEGEN_X64) && defined(RANDOM_NOP_FINEGRAIN)
+        // On ARM, forbid pools implies disabled random NOPs; we have to do it
+        // explicitly on x64.
+        masm.disableRandomNop();
 #endif
 
         // The exact form of this instruction must be kept consistent with the
@@ -360,6 +378,9 @@ wasm::GenerateFunctionEpilogue(MacroAssembler& masm, unsigned framePushed, FuncO
 #elif defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
         masm.nop();
         masm.nop();
+#endif
+#if defined(JS_CODEGEN_X64) && defined(RANDOM_NOP_FINEGRAIN)
+        masm.enableRandomNop();
 #endif
     }
 
