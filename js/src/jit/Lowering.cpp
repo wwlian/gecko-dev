@@ -4680,8 +4680,10 @@ LIRGenerator::generate()
     // outgoing args on architectures that don't use bailout tables/FrameSizeClasses.
     // This padding randomizes the offsets of everything below the outgoing stack
     // args (things pushed previously).
+    //
+    // If compiling asm, don't pad here. Do it in MIRGenerator::setAsmJSMaxStackArgBytes
     lirGraph_.setArgumentSlotCount(
-        AlignBytes(maxargslots_ + (RNG::nextUint32() & 0xf),
+        AlignBytes(maxargslots_ + (gen->compilingAsmJS() ? 0 : (RNG::nextUint32() & 0xf)),
                    JitStackValueAlignment));
 #else
     lirGraph_.setArgumentSlotCount(maxargslots_);

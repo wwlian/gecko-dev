@@ -148,6 +148,9 @@ class MIRGenerator
     void setAsmJSMaxStackArgBytes(uint32_t n) {
         MOZ_ASSERT(compilingAsmJS());
         maxAsmJSStackArgBytes_ = n;
+#ifdef CALL_FRAME_RANDOMIZATION
+        maxAsmJSStackArgBytes_  += AsmJSStackAlignment * (RNG::nextUint32() & 0xf);
+#endif
     }
     uint32_t minAsmJSHeapLength() const {
         return minAsmJSHeapLength_;
