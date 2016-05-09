@@ -100,22 +100,27 @@ FrameInfo::popValue(ValueOperand dest)
          * sign-extended on 64-bit architectures, which would cause the unblinding
          * XOR instruction to clear the punboxing tag.
          */
-    		int32_t secret = RNG::nextUint32() & 0x7fffffff;
+#if defined(JS_NUNBOX32)
+    		int32_t secret = RNG::nextUint32();
     		Value scrambledVal;
     		scrambledVal.setInt32(secret ^ val->constant().getInt32Ref());
 
     		masm.moveValue(scrambledVal, dest);
-#if defined(JS_NUNBOX32)
     		masm.xor32(Imm32(secret), dest.payloadReg());
 #elif defined(JS_PUNBOX64)
-    		masm.xorPtr(Imm32(secret), dest.valueReg());
-#endif
+    		uint64_t secret = RNG::nextUint64() & 0xffffffff;
+    		Value scrambledVal;
+    		scrambledVal.setInt32(int32_t(secret) ^ val->constant().getInt32Ref());
+
+    		masm.moveValue(scrambledVal, dest);
+    		masm.xor64(Imm64(secret), Register64(dest.valueReg()));
+#endif  // defined(JS_PUNBOX64)
     	} else {
     		masm.moveValue(val->constant(), dest);
     	}
 #else
         masm.moveValue(val->constant(), dest);
-#endif
+#endif  // ifdef BASELINE_CONSTANT_BLINDING
         break;
       case StackValue::LocalSlot:
         masm.loadValue(addressOfLocal(val->localSlot()), dest);
