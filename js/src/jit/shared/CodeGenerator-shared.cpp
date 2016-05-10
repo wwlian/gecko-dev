@@ -108,6 +108,25 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph, Mac
         frameClass_ = FrameSizeClass::None();
     } else {
         frameClass_ = FrameSizeClass::FromDepth(frameDepth_);
+#ifdef CALL_FRAME_RANDOMIZATION
+        // If there's no frame size class, add extra arg slots, in increments
+        // of JitStackValueAlignment. This randomizes the stack pointer offset
+        // used to access incoming args, spills, and outgoing args.
+        //
+        // It's better to do this here than earler in LIRGenerator because
+        // super large frames on architectures that use frame size classes
+        // will fall back to not using them so we want to make sure we pad them.
+        // This also makes sure we only apply exactly one of arg slot padding
+        // and frame size class padding.
+        //
+        // Don't worry about asm frame padding in this constructor; asm frames
+        // get padded in MIRGenerator::setAsmJSMaxStackArgBytes
+        if (frameClass_ == FrameSizeClass::None()) {
+            graph->setArgumentSlotCount(graph->argumentSlotCount()
+                                        + JitStackValueAlignment * (RNG::nextUint32() & 0xf));
+            frameDepth_ = graph->paddedLocalSlotsSize() + graph->argumentsSize();
+        }
+#endif
     }
 }
 
