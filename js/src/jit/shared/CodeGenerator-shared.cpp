@@ -107,25 +107,26 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph, Mac
         // asm.js code.
         frameClass_ = FrameSizeClass::None();
     } else {
-        frameClass_ = FrameSizeClass::FromDepth(frameDepth_);
 #ifdef CALL_FRAME_RANDOMIZATION
-        // If there's no frame size class, add extra arg slots, in increments
+        // Eliminate frame size classes (which will incur an overhead) and
+        // add extra arg slots, in increments
         // of JitStackValueAlignment. This randomizes the stack pointer offset
         // used to access incoming args, spills, and outgoing args.
         //
-        // It's better to do this here than earler in LIRGenerator because
-        // super large frames on architectures that use frame size classes
-        // will fall back to not using them so we want to make sure we pad them.
-        // This also makes sure we only apply exactly one of arg slot padding
-        // and frame size class padding.
+        // Doing this here is fine as long it's the only place that depends on
+        // the graph's argument count.  If we go back to letting frame size classes
+        // exist for 32-bit systems, we'll want everything here anyway (aside
+        // from the frame size class randomization to make sure exactly one
+        // of arg slot and frame size padding happens.
         //
         // Don't worry about asm frame padding in this constructor; asm frames
         // get padded in MIRGenerator::setAsmJSMaxStackArgBytes
-        if (frameClass_ == FrameSizeClass::None()) {
-            graph->setArgumentSlotCount(graph->argumentSlotCount()
-                                        + JitStackValueAlignment * (RNG::nextUint32() & 0xf));
-            frameDepth_ = graph->paddedLocalSlotsSize() + graph->argumentsSize();
-        }
+        frameClass_ = FrameSizeClass::None();
+        graph->setArgumentSlotCount(graph->argumentSlotCount()
+                                    + JitStackValueAlignment * (RNG::nextUint32() & 0xf));
+        frameDepth_ = graph->paddedLocalSlotsSize() + graph->argumentsSize();
+#else
+        frameClass_ = FrameSizeClass::FromDepth(frameDepth_);
 #endif
     }
 }
