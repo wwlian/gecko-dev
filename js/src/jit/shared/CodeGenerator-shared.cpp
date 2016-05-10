@@ -108,23 +108,9 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph, Mac
         frameClass_ = FrameSizeClass::None();
     } else {
 #ifdef CALL_FRAME_RANDOMIZATION
-        // Eliminate frame size classes (which will incur an overhead) and
-        // add extra arg slots, in increments
-        // of JitStackValueAlignment. This randomizes the stack pointer offset
-        // used to access incoming args, spills, and outgoing args.
-        //
-        // Doing this here is fine as long it's the only place that depends on
-        // the graph's argument count.  If we go back to letting frame size classes
-        // exist for 32-bit systems, we'll want everything here anyway (aside
-        // from the frame size class randomization to make sure exactly one
-        // of arg slot and frame size padding happens.
-        //
-        // Don't worry about asm frame padding in this constructor; asm frames
-        // get padded in MIRGenerator::setAsmJSMaxStackArgBytes
+        // Eliminate frame size classes (though this will incur an overhead)
+        // so 32-bit systems can have the same call frame rando as 64-bitters.
         frameClass_ = FrameSizeClass::None();
-        graph->setArgumentSlotCount(graph->argumentSlotCount()
-                                    + JitStackValueAlignment * (RNG::nextUint32() & 0xf));
-        frameDepth_ = graph->paddedLocalSlotsSize() + graph->argumentsSize();
 #else
         frameClass_ = FrameSizeClass::FromDepth(frameDepth_);
 #endif

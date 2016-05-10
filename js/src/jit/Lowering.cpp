@@ -4674,7 +4674,22 @@ LIRGenerator::generate()
             return false;
     }
 
+#ifdef CALL_FRAME_RANDOMIZATION
+    // Randomly padding out the number of outgoing arg slots serves to randomize
+    // the stack pointer offset used to access incoming args, locals, and
+    // outgoing args on architectures that don't use bailout tables/FrameSizeClasses.
+    // This padding randomizes the offsets of everything below the outgoing stack
+    // args (things pushed previously).
+    //
+    // If compiling asm, don't pad here. Do it in MIRGenerator::setAsmJSMaxStackArgBytes
+    lirGraph_.setArgumentSlotCount(
+        AlignBytes(maxargslots_
+                   + (JitStackValueAlignment
+                      * (gen->compilingAsmJS() ? 0 : (RNG::nextUint32() & 0xf))),
+                   JitStackValueAlignment));
+#else
     lirGraph_.setArgumentSlotCount(maxargslots_);
+#endif
     return true;
 }
 
