@@ -863,7 +863,7 @@ class MacroAssembler : public MacroAssemblerSpecific
     inline void branchTest32(Condition cond, Register lhs, Register rhs, L label) PER_SHARED_ARCH;
     template <class L>
     inline void branchTest32(Condition cond, Register lhs, Imm32 rhs, L label) PER_SHARED_ARCH;
-#ifdef CALL_FRAME_RANDOMIZATION
+#if defined(CALL_FRAME_RANDOMIZATION) && defined(JS_CODEGEN_ARM)
     inline void branchTest32(Condition cond, const BlindedAddress& lhs, Imm32 rhh, Label* label) PER_SHARED_ARCH;
 #endif
     inline void branchTest32(Condition cond, const Address& lhs, Imm32 rhh, Label* label) PER_SHARED_ARCH;

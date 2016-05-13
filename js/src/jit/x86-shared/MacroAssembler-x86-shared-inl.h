@@ -421,6 +421,18 @@ MacroAssembler::branchTestPtr(Condition cond, Register lhs, Imm32 rhs, Label* la
     j(cond, label);
 }
 
+#ifdef CALL_FRAME_RANDOMIZATION
+void
+MacroAssembler::branchTestPtr(Condition cond, const BlindedAddress& lhs, Imm32 rhs, Label* label)
+{
+    ScratchRegisterScope scratch(*this);
+    movePtr(lhs.base, scratch);
+    subq(Imm32(lhs.secret), scratch);
+    testPtr(Operand(scratch, lhs.offset + lhs.secret), rhs);
+    j(cond, label);
+}
+#endif
+
 void
 MacroAssembler::branchTestPtr(Condition cond, const Address& lhs, Imm32 rhs, Label* label)
 {
