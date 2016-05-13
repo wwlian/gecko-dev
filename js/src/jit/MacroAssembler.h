@@ -602,6 +602,9 @@ class MacroAssembler : public MacroAssemblerSpecific
 
     // Unpack a callee token located at the |token| address, and return the
     // JSFunction pointer in the |dest| register.
+#ifdef CALL_FRAME_RANDOMIZATION
+    inline void loadFunctionFromCalleeToken(BlindedAddress token, Register dest);
+#endif
     inline void loadFunctionFromCalleeToken(Address token, Register dest);
 
     // This function emulates a call by pushing an exit frame on the stack,
@@ -860,12 +863,18 @@ class MacroAssembler : public MacroAssemblerSpecific
     inline void branchTest32(Condition cond, Register lhs, Register rhs, L label) PER_SHARED_ARCH;
     template <class L>
     inline void branchTest32(Condition cond, Register lhs, Imm32 rhs, L label) PER_SHARED_ARCH;
+#ifdef CALL_FRAME_RANDOMIZATION
+    inline void branchTest32(Condition cond, const BlindedAddress& lhs, Imm32 rhh, Label* label) PER_SHARED_ARCH;
+#endif
     inline void branchTest32(Condition cond, const Address& lhs, Imm32 rhh, Label* label) PER_SHARED_ARCH;
     inline void branchTest32(Condition cond, const AbsoluteAddress& lhs, Imm32 rhs, Label* label)
         DEFINED_ON(arm, arm64, mips_shared, x86, x64);
 
     inline void branchTestPtr(Condition cond, Register lhs, Register rhs, Label* label) PER_SHARED_ARCH;
     inline void branchTestPtr(Condition cond, Register lhs, Imm32 rhs, Label* label) PER_SHARED_ARCH;
+#ifdef CALL_FRAME_RANDOMIZATION
+    inline void branchTestPtr(Condition cond, const BlindedAddress& lhs, Imm32 rhs, Label* label) PER_SHARED_ARCH;
+#endif
     inline void branchTestPtr(Condition cond, const Address& lhs, Imm32 rhs, Label* label) PER_SHARED_ARCH;
 
     inline void branchTest64(Condition cond, Register64 lhs, Register64 rhs, Register temp,

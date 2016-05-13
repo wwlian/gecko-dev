@@ -620,6 +620,14 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
             loadPtr(Address(scratch, 0x0), dest);
         }
     }
+#ifdef CALL_FRAME_RANDOMIZATION
+    void loadPtr(const BlindedAddress& address, Register dest) {
+        ScratchRegisterScope scratch(asMasm());
+        movePtr(address.base, scratch);
+        subq(Imm32(address.secret), scratch);
+        movq(Operand(scratch, address.offset + address.secret), dest);
+    }
+#endif
     void loadPtr(const Address& address, Register dest) {
         movq(Operand(address), dest);
     }

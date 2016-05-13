@@ -232,6 +232,24 @@ MacroAssembler::PushCalleeToken(Register callee, bool constructing)
     }
 }
 
+#ifdef CALL_FRAME_RANDOMIZATION
+void
+MacroAssembler::loadFunctionFromCalleeToken(BlindedAddress token, Register dest)
+{
+#ifdef DEBUG
+    Label ok;
+    loadPtr(token, dest);
+    andPtr(Imm32(uint32_t(~CalleeTokenMask)), dest);
+    branchPtr(Assembler::Equal, dest, Imm32(CalleeToken_Function), &ok);
+    branchPtr(Assembler::Equal, dest, Imm32(CalleeToken_FunctionConstructing), &ok);
+    assumeUnreachable("Unexpected CalleeToken tag");
+    bind(&ok);
+#endif
+    loadPtr(token, dest);
+    andPtr(Imm32(uint32_t(CalleeTokenMask)), dest);
+}
+#endif
+
 void
 MacroAssembler::loadFunctionFromCalleeToken(Address token, Register dest)
 {

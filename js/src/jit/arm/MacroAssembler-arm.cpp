@@ -2014,6 +2014,14 @@ MacroAssemblerARMCompat::load16SignExtend(const BaseIndex& src, Register dest)
     ma_ldrsh(EDtrAddr(src.base, EDtrOffReg(index)), dest);
 }
 
+#ifdef CALL_FRAME_RANDOMIZATION
+void
+MacroAssemblerARMCompat::load32(const BlindedAddress& address, Register dest)
+{
+    loadPtr(address, dest);
+}
+#endif
+
 void
 MacroAssemblerARMCompat::load32(const Address& address, Register dest)
 {
@@ -2031,6 +2039,17 @@ MacroAssemblerARMCompat::load32(AbsoluteAddress address, Register dest)
 {
     loadPtr(address, dest);
 }
+
+#ifdef CALL_FRAME_RANDOMIZATION
+void
+MacroAssemblerARMCompat::loadPtr(const BlindedAddress& address, Register dest)
+{
+  ScratchRegisterScope scratch(asMasm());
+  ma_sub(address.base, Imm32(address.secret), scratch);
+  int blindedOffset = address.offset + address.secret;
+  ma_ldr(Address(scratch, blindedOffset), dest);
+}
+#endif
 
 void
 MacroAssemblerARMCompat::loadPtr(const Address& address, Register dest)

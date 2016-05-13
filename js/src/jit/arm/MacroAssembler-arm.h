@@ -1019,6 +1019,9 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void load16ZeroExtend(const Address& address, Register dest);
     void load16ZeroExtend(const BaseIndex& src, Register dest);
 
+#ifdef CALL_FRAME_RANDOMIZATION
+    void load32(const BlindedAddress& address, Register dest);
+#endif
     void load32(const Address& address, Register dest);
     void load32(const BaseIndex& address, Register dest);
     void load32(AbsoluteAddress address, Register dest);
@@ -1027,6 +1030,9 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
         load32(Address(address.base, address.offset + 4), dest.high);
     }
 
+#ifdef CALL_FRAME_RANDOMIZATION
+    void loadPtr(const BlindedAddress& address, Register dest);
+#endif
     void loadPtr(const Address& address, Register dest);
     void loadPtr(const BaseIndex& src, Register dest);
     void loadPtr(AbsoluteAddress address, Register dest);
