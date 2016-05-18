@@ -266,12 +266,20 @@ class FrameInfo
         MOZ_ASSERT(arg < nargs());
         return BlindedAddress(BaselineFrameReg, BaselineFrame::offsetOfArg(arg));
     }
+    BlindedAddress addressOfThis() const {
+        return BlindedAddress(BaselineFrameReg, BaselineFrame::offsetOfThis());
+    }
+    BlindedAddress addressOfEvalNewTarget() const {
+        return BlindedAddress(BaselineFrameReg, BaselineFrame::offsetOfEvalNewTarget());
+    }
+    BlindedAddress addressOfCalleeToken() const {
+        return BlindedAddress(BaselineFrameReg, BaselineFrame::offsetOfCalleeToken());
+    }
 #else
     Address addressOfArg(size_t arg) const {
         MOZ_ASSERT(arg < nargs());
         return Address(BaselineFrameReg, BaselineFrame::offsetOfArg(arg));
     }
-#endif
     Address addressOfThis() const {
         return Address(BaselineFrameReg, BaselineFrame::offsetOfThis());
     }
@@ -281,6 +289,7 @@ class FrameInfo
     Address addressOfCalleeToken() const {
         return Address(BaselineFrameReg, BaselineFrame::offsetOfCalleeToken());
     }
+#endif
     Address addressOfScopeChain() const {
         return Address(BaselineFrameReg, BaselineFrame::reverseOffsetOfScopeChain());
     }

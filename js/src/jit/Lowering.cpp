@@ -4683,7 +4683,9 @@ LIRGenerator::generate()
     //
     // If compiling asm, don't pad here. Do it in MIRGenerator::setAsmJSMaxStackArgBytes
     lirGraph_.setArgumentSlotCount(
-        AlignBytes(maxargslots_ + (gen->compilingAsmJS() ? 0 : (RNG::nextUint32() & 0xf)),
+        AlignBytes(maxargslots_
+                   + (JitStackValueAlignment
+                      * (gen->compilingAsmJS() ? 0 : (RNG::nextUint32() & 0xf))),
                    JitStackValueAlignment));
 #else
     lirGraph_.setArgumentSlotCount(maxargslots_);

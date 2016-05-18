@@ -8746,6 +8746,17 @@ CodeGenerator::link(JSContext* cx, CompilerConstraintList* constraints)
     if (cacheList_.length())
         ionScript->copyCacheEntries(&cacheList_[0], masm);
 
+#if DEBUG
+    // Compute the size of any base offset randomization padding.
+    // We could skip computing it for non-base offset rando builds,
+    // but we might as well sanity check that they return 0.
+    uint8_t *allocStart = code->raw() - code->headerSize();
+    uint8_t *unrandomizedCodeStart = (uint8_t*)AlignBytes((uintptr_t)(allocStart + sizeof(JitCode*)), CodeAlignment);
+    int32_t baseOffsetShift = code->raw() - unrandomizedCodeStart;
+#ifndef BASE_OFFSET_RANDOMIZATION
+    MOZ_ASSERT(baseOffsetShift == 0);
+#endif
+
     JitSpew(JitSpew_Codegen, "Created IonScript %p (raw %p)",
             (void *) ionScript, (void *) code->raw());
     // wwl: Log code here rather than at end of function.
@@ -8756,8 +8767,9 @@ CodeGenerator::link(JSContext* cx, CompilerConstraintList* constraints)
     	JS_snprintf(buf + 4 * i, 5, "\\x%02x", *(code->raw() + i));
     }
     buf[code->instructionsSize() * 4] = '\0';
-    JitSpew(JitSpew_CodeBytes, "Raw Ion bytes (%d) for %s:%d:@%p:%s", code->instructionsSize(), script->filename(), script->lineno(), code->raw(), buf);
+    JitSpew(JitSpew_CodeBytes, "Raw Ion bytes (%d+%d) for %s:%d:@%p:%s", baseOffsetShift, code->instructionsSize(), script->filename(), script->lineno(), code->raw(), buf);
     js_free(buf);
+#endif
 
     ionScript->setInvalidationEpilogueDataOffset(invalidateEpilogueData_.offset());
     ionScript->setOsrPc(gen->info().osrPc());

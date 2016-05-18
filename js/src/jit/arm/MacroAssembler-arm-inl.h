@@ -755,6 +755,17 @@ MacroAssembler::branchTest32(Condition cond, Register lhs, Imm32 rhs, L label)
     ma_b(label, cond);
 }
 
+#ifdef CALL_FRAME_RANDOMIZATION
+void
+MacroAssembler::branchTest32(Condition cond, const BlindedAddress& lhs, Imm32 rhs, Label* label)
+{
+    // branchTest32 will use ScratchRegister.
+    AutoRegisterScope scratch2(*this, secondScratchReg_);
+    load32(lhs, scratch2);
+    branchTest32(cond, scratch2, rhs, label);
+}
+#endif
+
 void
 MacroAssembler::branchTest32(Condition cond, const Address& lhs, Imm32 rhs, Label* label)
 {
@@ -784,6 +795,14 @@ MacroAssembler::branchTestPtr(Condition cond, Register lhs, Imm32 rhs, Label* la
 {
     branchTest32(cond, lhs, rhs, label);
 }
+
+#ifdef CALL_FRAME_RANDOMIZATION
+void
+MacroAssembler::branchTestPtr(Condition cond, const BlindedAddress& lhs, Imm32 rhs, Label* label)
+{
+    branchTest32(cond, lhs, rhs, label);
+}
+#endif
 
 void
 MacroAssembler::branchTestPtr(Condition cond, const Address& lhs, Imm32 rhs, Label* label)

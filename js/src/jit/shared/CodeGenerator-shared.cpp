@@ -107,7 +107,13 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph, Mac
         // asm.js code.
         frameClass_ = FrameSizeClass::None();
     } else {
+#ifdef CALL_FRAME_RANDOMIZATION
+        // Eliminate frame size classes (though this will incur an overhead)
+        // so 32-bit systems can have the same call frame rando as 64-bitters.
+        frameClass_ = FrameSizeClass::None();
+#else
         frameClass_ = FrameSizeClass::FromDepth(frameDepth_);
+#endif
     }
 }
 

@@ -228,6 +228,17 @@ BaselineCompiler::compile()
     baselineScript->setMethod(code);
     baselineScript->setTemplateScope(templateScope);
 
+#if DEBUG
+    // Compute the size of any base offset randomization padding.
+    // We could skip computing it for non-base offset rando builds,
+    // but we might as well sanity check that they return 0.
+    uint8_t *allocStart = code->raw() - code->headerSize();
+    uint8_t *unrandomizedCodeStart = (uint8_t*)AlignBytes((uintptr_t)(allocStart + sizeof(JitCode*)), CodeAlignment);
+    int32_t baseOffsetShift = code->raw() - unrandomizedCodeStart;
+#ifndef BASE_OFFSET_RANDOMIZATION
+    MOZ_ASSERT(baseOffsetShift == 0);
+#endif
+
     JitSpew(JitSpew_BaselineScripts, "Created BaselineScript %p (raw %p) for %s:%d",
             (void*) baselineScript.get(), (void*) code->raw(),
             script->filename(), script->lineno());
@@ -240,8 +251,9 @@ BaselineCompiler::compile()
     	JS_snprintf(buf + 4 * i, 5, "\\x%02x", *(code->raw() + i));
     }
     buf[code->instructionsSize() * 4] = '\0';
-    JitSpew(JitSpew_CodeBytes, "Raw Baseline bytes (%d) for %s:%d:@%p:%s", code->instructionsSize(), script->filename(), script->lineno(), code->raw(), buf);
+    JitSpew(JitSpew_CodeBytes, "Raw Baseline bytes (%d+%d) for %s:%d:@%p:%s", baseOffsetShift, code->instructionsSize(), script->filename(), script->lineno(), code->raw(), buf);
     js_free(buf);
+#endif
 
 #ifdef JS_ION_PERF
     writePerfSpewerBaselineProfile(script, code);
