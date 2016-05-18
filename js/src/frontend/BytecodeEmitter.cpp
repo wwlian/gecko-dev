@@ -762,6 +762,9 @@ BytecodeEmitter::computeAliasedSlots(Handle<StaticBlockScope*> blockScope)
     uint32_t numAliased = script->bindings.numAliasedBodyLevelLocals();
 
 #ifdef CALL_FRAME_RANDOMIZATION
+    // This function assigns slots to both aliased and unaliased block-scoped
+    // locals. We let it assign slots then shuffle and re-assign the unaliased
+    // slots.
     std::vector<uint32_t> unaliasedSlots;
 #endif
     for (unsigned i = 0; i < blockScope->numVariables(); i++) {
@@ -3076,6 +3079,9 @@ BytecodeEmitter::initializeBlockScopedLocalsFromStack(Handle<StaticBlockScope*> 
 {
     size_t numBlockVars = blockScope->numVariables();
 #ifdef CALL_FRAME_RANDOMIZATION
+    // At the beginning of each in-function block, the block-scoped locals are
+    // by default initialized to undefined in descending order;
+    // this reorders that.
     unsigned *perm = ::js::jit::RNG::createIndexPermutation(numBlockVars);
 #endif
 #ifdef CALL_FRAME_RANDOMIZATION

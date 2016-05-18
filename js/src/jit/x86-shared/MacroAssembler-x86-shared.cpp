@@ -321,6 +321,7 @@ MacroAssemblerX86Shared::toggledJump(Label* label) {
 #ifdef RANDOM_NOP_FINEGRAIN
     // masm is actually a BaseAssemblerSpecific field in AssemblerX86Shared,
     // which MacroAssembler is.
+    // TODO(wwl): let NOP happen here and skip it in ToggleToJmp/ToggleToCmp
     asMasm().masm.disableRandomNop();
 #endif
     CodeOffset offset(size());

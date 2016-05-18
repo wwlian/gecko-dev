@@ -108,6 +108,7 @@ Assembler::TraceJumpRelocations(JSTracer* trc, JitCode* code, CompactBufferReade
 CodeOffset
 Assembler::toggledCall(JitCode* target, bool enabled) {
 #ifdef RANDOM_NOP_FINEGRAIN
+    // TODO(wwl): insert the nop here, but skip over it in ToggleCall()
     masm.disableRandomNop();
 #endif
     CodeOffset offset(size());

@@ -95,6 +95,7 @@ PrepareOsrTempData(JSContext* cx, ICWarmUpCounter_Fallback* stub, BaselineFrame*
     //          sizeof(IonOsrTempData)
 
 #ifdef CALL_FRAME_RANDOMIZATION
+    // Use BaselineFrame::Size() rather than sizeof since ::Size might include random padding.
     size_t frameSpace = BaselineFrame::Size() + sizeof(Value) * numLocalsAndStackVals;
 #else
     size_t frameSpace = sizeof(BaselineFrame) + sizeof(Value) * numLocalsAndStackVals;

@@ -4554,6 +4554,7 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
 
         void prefix(OneByteOpcodeID pre)
         {
+            // TODO(wwl): I wonder if we can just tmpDisable here and get rid of all disable/enable wrapping?
             m_buffer.putByte(pre);
         }
 
