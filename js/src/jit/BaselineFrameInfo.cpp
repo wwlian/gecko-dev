@@ -115,6 +115,20 @@ FrameInfo::popValue(ValueOperand dest)
     		masm.moveValue(scrambledVal, dest);
     		masm.xor64(Imm64(secret), Register64(dest.valueReg()));
 #endif  // defined(JS_PUNBOX64)
+      } else if (val->constant().isDouble()) {
+        MOZ_ASSERT(sizeof(double) == 8);
+#ifdef JS_NUNBOX32
+        uint64_t secret = RNG::nextUint64();
+        uint64_t valAsInt = *((uint64_t *) &val->constant().getDoubleRef());
+        uint64_t scrambledInt = valAsInt ^ secret;
+        Value scrambledVal;
+        scrambledVal.setDouble(*((double *) &scrambledInt));
+        masm.moveValue(scrambledVal, dest);
+        masm.xor32(Imm32((uint32_t)(secret >> 32)), dest.typeReg());
+        masm.xor32(Imm32((uint32_t)(secret & 0xffffffff)), dest.payloadReg());
+#elif defined(JS_PUNBOX64)
+
+#endif  // defined(JS_PUNBOX64)
     	} else {
     		masm.moveValue(val->constant(), dest);
     	}
