@@ -1232,7 +1232,7 @@ LIRGenerator::visitBitXorDouble(MBitXorDouble* ins)
     LBitXorDouble* lir = new(alloc()) LBitXorDouble();
     lir->setOperand(0, useRegisterAtStart(lhs));
     lir->setOperand(1, useRegisterAtStart(rhs));
-    define(lir, ins, LDefinition(LDefinition::TypeFrom(ins->type()), LDefinition::REGISTER));
+    defineReuseInput(lir, ins, 1);
     return;
 }
 #endif

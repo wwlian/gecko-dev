@@ -44,6 +44,9 @@ class CodeGeneratorX64 : public CodeGeneratorX86Shared
     void visitCompareBitwiseAndBranch(LCompareBitwiseAndBranch* lir);
     void visitCompare64(LCompare64* lir);
     void visitCompare64AndBranch(LCompare64AndBranch* lir);
+#ifdef ION_CONSTANT_BLINDING
+    void visitBitXorDouble(LBitXorDouble* lir);
+#endif
     void visitBitOpI64(LBitOpI64* lir);
     void visitShiftI64(LShiftI64* lir);
     void visitTruncateDToInt32(LTruncateDToInt32* ins);

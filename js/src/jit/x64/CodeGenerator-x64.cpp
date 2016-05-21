@@ -249,6 +249,17 @@ CodeGeneratorX64::visitCompare64AndBranch(LCompare64AndBranch* lir)
     emitBranch(JSOpToCondition(lir->jsop(), isSigned), lir->ifTrue(), lir->ifFalse());
 }
 
+#ifdef ION_CONSTANT_BLINDING
+void
+CodeGeneratorX64::visitBitXorDouble(LBitXorDouble* lir)
+{
+    const FloatRegister src1 = ToFloatRegister(lir->getOperand(0));
+    const FloatRegister src2 = ToFloatRegister(lir->getOperand(1));
+    const FloatRegister output = ToFloatRegister(lir->getDef(0));
+    masm.vxorpd(src1, src2, output);
+}
+#endif
+
 void
 CodeGeneratorX64::visitBitOpI64(LBitOpI64* lir)
 {
