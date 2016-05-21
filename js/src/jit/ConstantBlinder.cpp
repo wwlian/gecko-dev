@@ -11,9 +11,13 @@ void
 ConstantBlinder::blindConstants() {
     for (ReversePostorderIterator block(graph_->rpoBegin()); block != graph_->rpoEnd(); block++) {
         for (MInstructionIterator ins = block->begin(); *ins != block->lastIns(); ins++) {
-            if (ins->isConstant() && ins->toConstant()->type() == MIRType_Int32 && ins->toConstant()->isUntrusted()) {
-                preComputationBlindAll(ins->toConstant());
-                //blindConstant(ins->toConstant());
+            if (ins->isConstant() && ins->toConstant()->isUntrusted()) {
+                if (ins->toConstant()->type() == MIRType_Int32)  {
+                    preComputationBlindAll(ins->toConstant());
+                    //blindConstant(ins->toConstant());
+                } else if (ins->toConstant()->type() == MIRType_Double) {
+                    preComputationBlindAllDouble(ins->toConstant());
+                }
             }
         }
     }
@@ -48,6 +52,28 @@ ConstantBlinder::preComputationBlindAll(MConstant *c) {
     MConstant *unblindOperand = MConstant::New(graph_->alloc(), Int32Value(unblindOpInt));
     MBitXor* unblindOp = MBitXor::New(graph_->alloc(), c, unblindOperand);
     c->blindBitXor(graph_->alloc(), secret, secret);
+
+    // Uses of the now-blinded MConstant should be transferred to the unblinding op.
+    c->justReplaceAllUsesWithExcept(unblindOp);
+
+    // Add new instructions after the constant.
+    c->block()->insertAfter(c, unblindOperand);
+    c->block()->insertAfter(unblindOperand, unblindOp);
+}
+
+void
+ConstantBlinder::preComputationBlindAllDouble(MConstant *c) {
+    MOZ_ASSERT(sizeof(double) == sizeof(uint64_t));
+    JitSpew(JitSpew_IonMIR, "Precomputation blinding all uses of double %f", c->unblindedDouble());
+    uint64_t secret = RNG::nextUint64();
+    double unblindedVal = c->unblindedDouble();
+    uint64_t unblindOpInt = secret ^ (reinterpret_cast<uint64_t &>(unblindedVal));
+    MConstant *unblindOperand = MConstant::NewAsmJS(
+        graph_->alloc(),
+        DoubleValue(reinterpret_cast<double &>(unblindOpInt)),
+        MIRType_Double);
+    MBitXorDouble* unblindOp = MBitXorDouble::New(graph_->alloc(), c, unblindOperand);
+    c->blindBitXorDouble(graph_->alloc(), secret, reinterpret_cast<double &>(secret));
 
     // Uses of the now-blinded MConstant should be transferred to the unblinding op.
     c->justReplaceAllUsesWithExcept(unblindOp);

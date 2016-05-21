@@ -775,6 +775,9 @@ MConstant::MConstant(const js::Value& vp, CompilerConstraintList* constraints)
         break;
       case MIRType_Double:
         payload_.d = vp.toDouble();
+#ifdef ION_CONSTANT_BLINDING
+        unblindedDouble_ = payload_.d;
+#endif
         break;
       case MIRType_String:
         MOZ_ASSERT(vp.toString()->isAtom());
@@ -1112,6 +1115,7 @@ MConstant::blindBitOr(TempAllocator& alloc, int32_t secret, int32_t blindedValue
 
 void
 MConstant::blindBitXor(TempAllocator& alloc, int32_t secret, int32_t blindedValue) {
+    MOZ_ASSERT(type() == MIRType_Int32);
     MOZ_ASSERT(!isBitXorBlinded());
     if (isThisInstanceBlinded()) {
         MDefinitionVector inputs(alloc);
@@ -1120,6 +1124,21 @@ MConstant::blindBitXor(TempAllocator& alloc, int32_t secret, int32_t blindedValu
     } else {
         secret_ = secret;
         payload_.i32 = blindedValue;
+        bitXorBlindedVariant_ = this;
+    }
+}
+
+void
+MConstant::blindBitXorDouble(TempAllocator& alloc, uint64_t secret, double blindedValue) {
+    MOZ_ASSERT(type() == MIRType_Double);
+    MOZ_ASSERT(!isBitXorBlinded());
+    if (isThisInstanceBlinded()) {
+        MDefinitionVector inputs(alloc);
+        bitXorBlindedVariant_ = MConstant::New(alloc, toJSValue());
+        bitXorBlindedVariant_->blindBitXorDouble(alloc, secret, blindedValue);
+    } else {
+        secret64_ = secret;
+        payload_.d = blindedValue;
         bitXorBlindedVariant_ = this;
     }
 }
@@ -1147,6 +1166,11 @@ MConstant::isBitXorBlinded() {
 int32_t
 MConstant::secret() {
     return secret_;
+}
+
+uint64_t
+MConstant::secret64() {
+    return secret64_;
 }
 
 MConstant*
@@ -3575,6 +3599,14 @@ MBitXor::NewAsmJS(TempAllocator& alloc, MDefinition* left, MDefinition* right, M
     ins->specializeAs(type);
     return ins;
 }
+
+#ifdef ION_CONSTANT_BLINDING
+MBitXorDouble*
+MBitXorDouble::New(TempAllocator& alloc, MDefinition* left, MDefinition* right)
+{
+    return new(alloc) MBitXorDouble(left, right);
+}
+#endif
 
 MLsh*
 MLsh::New(TempAllocator& alloc, MDefinition* left, MDefinition* right)

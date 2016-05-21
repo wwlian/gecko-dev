@@ -1451,6 +1451,14 @@ MacroAssemblerARM::ma_blx(Register reg, Assembler::Condition c)
 }
 
 // VFP/ALU
+#ifdef ION_CONSTANT_BLINDING
+void
+MacroAssemblerARM::ma_veor(FloatRegister src1, FloatRegister src2, FloatRegister dst)
+{
+    as_veor(VFPRegister(dst), VFPRegister(src1), VFPRegister(src2));
+}
+#endif
+
 void
 MacroAssemblerARM::ma_vadd(FloatRegister src1, FloatRegister src2, FloatRegister dst)
 {

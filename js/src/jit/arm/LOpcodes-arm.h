@@ -9,6 +9,20 @@
 
 #include "jit/shared/LOpcodes-shared.h"
 
+#ifdef ION_CONSTANT_BLINDING
+#define LIR_CPU_OPCODE_LIST(_)  \
+    _(BitXorDouble)             \
+    _(BoxFloatingPoint)         \
+    _(SoftDivI)                 \
+    _(SoftModI)                 \
+    _(ModMaskI)                 \
+    _(UDiv)                     \
+    _(UMod)                     \
+    _(SoftUDivOrMod)            \
+    _(AsmJSCompareExchangeCallout) \
+    _(AsmJSAtomicExchangeCallout) \
+    _(AsmJSAtomicBinopCallout)
+#else
 #define LIR_CPU_OPCODE_LIST(_)  \
     _(BoxFloatingPoint)         \
     _(SoftDivI)                 \
@@ -20,5 +34,6 @@
     _(AsmJSCompareExchangeCallout) \
     _(AsmJSAtomicExchangeCallout) \
     _(AsmJSAtomicBinopCallout)
+#endif
 
 #endif /* jit_arm_LOpcodes_arm_h */

@@ -1714,7 +1714,11 @@ IonBuilder::inspectOpcode(JSOp op)
         return jsop_compare(op);
 
       case JSOP_DOUBLE:
+#ifdef ION_CONSTANT_BLINDING
+        return pushConstant(info().getConst(pc), true);
+#else
         return pushConstant(info().getConst(pc));
+#endif
 
       case JSOP_STRING:
         return pushConstant(StringValue(info().getAtom(pc)));

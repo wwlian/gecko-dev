@@ -1378,7 +1378,9 @@ class MConstant : public MNullaryInstruction
 #ifdef ION_CONSTANT_BLINDING
     bool isUntrusted_;
     int32_t unblindedInt32_;
+    double unblindedDouble_;
     int32_t secret_;
+    uint64_t secret64_;
     MConstant* addSubBlindedVariant_;
     MConstant* bitAndBlindedVariant_;
     MConstant* bitOrBlindedVariant_;
@@ -1420,6 +1422,10 @@ class MConstant : public MNullaryInstruction
     	return unblindedInt32_;
     }
 
+    double unblindedDouble() const {
+    	return unblindedDouble_;
+    }
+
     void markUntrusted() {
     	isUntrusted_ = true;
     }
@@ -1440,11 +1446,13 @@ class MConstant : public MNullaryInstruction
     void blindBitAnd(TempAllocator& alloc, int32_t secret, int32_t blindedValue);
     void blindBitOr(TempAllocator& alloc, int32_t secret, int32_t blindedValue);
     void blindBitXor(TempAllocator& alloc, int32_t secret, int32_t blindedValue);
+    void blindBitXorDouble(TempAllocator& alloc, uint64_t secret, double blindedValue);
     bool isAddSubBlinded();
     bool isBitAndBlinded();
     bool isBitOrBlinded();
     bool isBitXorBlinded();
     int32_t secret();
+    uint64_t secret64();
     MConstant* addSubBlindedVariant();
     MConstant* bitAndBlindedVariant();
     MConstant* bitOrBlindedVariant();
@@ -5747,6 +5755,26 @@ class MBitXor : public MBinaryBitwiseInstruction
 
     ALLOW_CLONE(MBitXor)
 };
+
+#ifdef ION_CONSTANT_BLINDING
+class MBitXorDouble
+  : public MBinaryInstruction,
+    public SimdAllPolicy::Data
+{
+    MBitXorDouble(MDefinition* left, MDefinition* right)
+      : MBinaryInstruction(left, right)
+    {
+        setResultType(MIRType_Double);
+        specialization_ = MIRType_Double;
+    }
+
+  public:
+    INSTRUCTION_HEADER(BitXorDouble)
+    static MBitXorDouble* New(TempAllocator& alloc, MDefinition* left, MDefinition* right);
+
+    ALLOW_CLONE(MBitXorDouble)
+};
+#endif
 
 class MShiftInstruction
   : public MBinaryBitwiseInstruction

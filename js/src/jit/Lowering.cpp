@@ -1216,6 +1216,27 @@ LIRGenerator::visitBitOr(MBitOr* ins)
     lowerBitOp(JSOP_BITOR, ins);
 }
 
+#ifdef ION_CONSTANT_BLINDING
+void
+LIRGenerator::visitBitXorDouble(MBitXorDouble* ins)
+{
+    MDefinition* lhs = ins->getOperand(0);
+    MDefinition* rhs = ins->getOperand(1);
+    MOZ_ASSERT(lhs->type() == MIRType_Double 
+               && rhs->type() == MIRType_Double 
+               && ins->type() == MIRType_Double
+               && lhs->isConstant()
+               && rhs->isConstant()
+               && (lhs->toConstant()->isUntrusted() || rhs->toConstant()->isUntrusted()));
+
+    LBitXorDouble* lir = new(alloc()) LBitXorDouble();
+    lir->setOperand(0, useRegisterAtStart(lhs));
+    lir->setOperand(1, useRegisterAtStart(rhs));
+    define(lir, ins, LDefinition(LDefinition::TypeFrom(ins->type()), LDefinition::REGISTER));
+    return;
+}
+#endif
+
 void
 LIRGenerator::visitBitXor(MBitXor* ins)
 {

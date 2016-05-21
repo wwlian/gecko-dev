@@ -1589,6 +1589,9 @@ class Assembler : public AssemblerShared
                               VFPOp op, Condition c = Always);
 
   public:
+#ifdef ION_CONSTANT_BLINDING
+    BufferOffset as_veor(VFPRegister vd, VFPRegister vn, VFPRegister vm);
+#endif
     BufferOffset as_vadd(VFPRegister vd, VFPRegister vn, VFPRegister vm, Condition c = Always);
     BufferOffset as_vdiv(VFPRegister vd, VFPRegister vn, VFPRegister vm, Condition c = Always);
     BufferOffset as_vmul(VFPRegister vd, VFPRegister vn, VFPRegister vm, Condition c = Always);

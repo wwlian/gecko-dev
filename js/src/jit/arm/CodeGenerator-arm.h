@@ -107,6 +107,9 @@ class CodeGeneratorARM : public CodeGeneratorShared
     virtual void visitAddI(LAddI* ins);
     virtual void visitSubI(LSubI* ins);
     virtual void visitBitNotI(LBitNotI* ins);
+#ifdef ION_CONSTANT_BLINDING
+    virtual void visitBitXorDouble(LBitXorDouble* ins);
+#endif
     virtual void visitBitOpI(LBitOpI* ins);
 
     virtual void visitMulI(LMulI* ins);

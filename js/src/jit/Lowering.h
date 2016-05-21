@@ -119,6 +119,9 @@ class LIRGenerator : public LIRGeneratorSpecific
     void visitBitNot(MBitNot* ins);
     void visitBitAnd(MBitAnd* ins);
     void visitBitOr(MBitOr* ins);
+#ifdef ION_CONSTANT_BLINDING
+    void visitBitXorDouble(MBitXorDouble* ins);
+#endif
     void visitBitXor(MBitXor* ins);
     void visitLsh(MLsh* ins);
     void visitRsh(MRsh* ins);

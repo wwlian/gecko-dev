@@ -332,6 +332,9 @@ class MacroAssemblerARM : public Assembler
     void ma_blx(Register dest, Condition c = Always);
 
     // VFP/ALU:
+#ifdef ION_CONSTANT_BLINDING
+    void ma_veor(FloatRegister src1, FloatRegister src2, FloatRegister dst);
+#endif
     void ma_vadd(FloatRegister src1, FloatRegister src2, FloatRegister dst);
     void ma_vsub(FloatRegister src1, FloatRegister src2, FloatRegister dst);
 

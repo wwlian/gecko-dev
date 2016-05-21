@@ -2556,6 +2556,14 @@ Assembler::as_vfp_float(VFPRegister vd, VFPRegister vn, VFPRegister vm,
     return writeVFPInst(sz, VD(vd) | VN(vn) | VM(vm) | op | VfpArith | c);
 }
 
+#ifdef ION_CONSTANT_BLINDING
+BufferOffset
+Assembler::as_veor(VFPRegister vd, VFPRegister vn, VFPRegister vm)
+{
+  return writeInst(0xf3000110 | VD(vd) | VM(vm) | VN(vn));
+}
+#endif
+
 BufferOffset
 Assembler::as_vadd(VFPRegister vd, VFPRegister vn, VFPRegister vm, Condition c)
 {

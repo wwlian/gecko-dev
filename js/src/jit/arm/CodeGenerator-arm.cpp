@@ -827,6 +827,16 @@ CodeGeneratorARM::visitBitNotI(LBitNotI* ins)
     masm.ma_mvn(ToRegister(input), ToRegister(dest));
 }
 
+#ifdef ION_CONSTANT_BLINDING
+void
+CodeGeneratorARM::visitBitXorDouble(LBitXorDouble* ins) {
+    const FloatRegister src1 = ToFloatRegister(ins->getOperand(0));
+    const FloatRegister src2 = ToFloatRegister(ins->getOperand(1));
+    const FloatRegister output = ToFloatRegister(ins->getDef(0));
+    masm.ma_veor(src1, src2, output);
+}
+#endif
+
 void
 CodeGeneratorARM::visitBitOpI(LBitOpI* ins)
 {

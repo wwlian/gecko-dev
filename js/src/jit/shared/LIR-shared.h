@@ -2924,6 +2924,17 @@ class LBitNotV : public LCallInstructionHelper<1, BOX_PIECES, 0>
     }
 };
 
+#ifdef ION_CONSTANT_BLINDING
+class LBitXorDouble : public LInstructionHelper<1, 2, 0>
+{
+  public:
+    LIR_HEADER(BitXorDouble)
+
+    explicit LBitXorDouble()
+    { }
+};
+#endif
+
 // Binary bitwise operation, taking two 32-bit integers as inputs and returning
 // a 32-bit integer result as an output.
 class LBitOpI : public LInstructionHelper<1, 2, 0>
