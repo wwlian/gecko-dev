@@ -65,9 +65,18 @@ void
 ConstantBlinder::preComputationBlindAllDouble(MConstant *c) {
     MOZ_ASSERT(sizeof(double) == sizeof(uint64_t));
     JitSpew(JitSpew_IonMIR, "Precomputation blinding all uses of double %f", c->unblindedDouble());
-    uint64_t secret = RNG::nextUint64();
-    double unblindedVal = c->unblindedDouble();
-    uint64_t unblindOpInt = secret ^ (reinterpret_cast<uint64_t &>(unblindedVal));
+    uint64_t secret, unblindOpInt;
+    while (true) {
+        secret = RNG::nextUint64();
+        double unblindedVal = c->unblindedDouble();
+        unblindOpInt = secret ^ (reinterpret_cast<uint64_t &>(unblindedVal));
+#ifdef JS_PUNBOX64
+        if (secret <= JSVAL_SHIFTED_TAG_MAX_DOUBLE && unblindOpInt <= JSVAL_SHIFTED_TAG_MAX_DOUBLE)
+#endif
+        {
+            break;
+        }
+    }
     MConstant *unblindOperand = MConstant::NewAsmJS(
         graph_->alloc(),
         DoubleValue(reinterpret_cast<double &>(unblindOpInt)),
