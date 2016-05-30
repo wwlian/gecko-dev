@@ -20,6 +20,10 @@
 
 #include "jit/MacroAssembler-inl.h"
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+#include "jit/arm/RegisterAliases-arm.h"
+#endif
+
 using namespace js;
 using namespace jit;
 

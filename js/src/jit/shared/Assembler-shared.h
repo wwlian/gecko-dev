@@ -15,6 +15,9 @@
 #include "jit/JitAllocPolicy.h"
 #include "jit/Label.h"
 #include "jit/Registers.h"
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+#include "jit/RegisterAliases-shared.h"
+#endif
 #include "jit/RegisterSets.h"
 #include "vm/HelperThreads.h"
 

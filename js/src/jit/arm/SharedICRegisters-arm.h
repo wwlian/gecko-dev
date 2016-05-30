@@ -9,6 +9,10 @@
 
 #include "jit/MacroAssembler.h"
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+#include "jit/RegisterAliases-shared.h"
+#endif
+
 namespace js {
 namespace jit {
 
