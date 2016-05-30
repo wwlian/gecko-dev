@@ -68,13 +68,13 @@ class ABIArgGenerator
     static const Register NonReturn_VolatileReg1;
 };
 
-static MOZ_CONSTEXPR_VAR Register PreBarrierReg = r1;
+static const Register PreBarrierReg = r1;
 
 static MOZ_CONSTEXPR_VAR FloatRegister InvalidFloatReg;
 
-static MOZ_CONSTEXPR_VAR Register JSReturnReg_Type = r3;
-static MOZ_CONSTEXPR_VAR Register JSReturnReg_Data = r2;
-static MOZ_CONSTEXPR_VAR Register StackPointer = sp;
+static const Register JSReturnReg_Type = r3;
+static const Register JSReturnReg_Data = r2;
+static const Register StackPointer = sp;
 static MOZ_CONSTEXPR_VAR Register FramePointer = InvalidReg;
 static MOZ_CONSTEXPR_VAR FloatRegister ReturnFloat32Reg = { FloatRegisters::d0, VFPRegister::Single };
 static MOZ_CONSTEXPR_VAR FloatRegister ReturnDoubleReg = { FloatRegisters::d0, VFPRegister::Double};
@@ -104,31 +104,31 @@ struct ScratchDoubleScope : public AutoFloatRegisterScope
 static const int32_t AsmJSGlobalRegBias = 1024;
 
 // Registers used in the GenerateFFIIonExit Enable Activation block.
-static MOZ_CONSTEXPR_VAR Register AsmJSIonExitRegCallee = r4;
-static MOZ_CONSTEXPR_VAR Register AsmJSIonExitRegE0 = r0;
-static MOZ_CONSTEXPR_VAR Register AsmJSIonExitRegE1 = r1;
-static MOZ_CONSTEXPR_VAR Register AsmJSIonExitRegE2 = r2;
-static MOZ_CONSTEXPR_VAR Register AsmJSIonExitRegE3 = r3;
+static const Register AsmJSIonExitRegCallee = r4;
+static const Register AsmJSIonExitRegE0 = r0;
+static const Register AsmJSIonExitRegE1 = r1;
+static const Register AsmJSIonExitRegE2 = r2;
+static const Register AsmJSIonExitRegE3 = r3;
 
 // Registers used in the GenerateFFIIonExit Disable Activation block.
 // None of these may be the second scratch register (lr).
-static MOZ_CONSTEXPR_VAR Register AsmJSIonExitRegReturnData = r2;
-static MOZ_CONSTEXPR_VAR Register AsmJSIonExitRegReturnType = r3;
-static MOZ_CONSTEXPR_VAR Register AsmJSIonExitRegD0 = r0;
-static MOZ_CONSTEXPR_VAR Register AsmJSIonExitRegD1 = r1;
-static MOZ_CONSTEXPR_VAR Register AsmJSIonExitRegD2 = r4;
+static const Register AsmJSIonExitRegReturnData = r2;
+static const Register AsmJSIonExitRegReturnType = r3;
+static const Register AsmJSIonExitRegD0 = r0;
+static const Register AsmJSIonExitRegD1 = r1;
+static const Register AsmJSIonExitRegD2 = r4;
 
 // Registerd used in RegExpMatcher instruction (do not use JSReturnOperand).
-static MOZ_CONSTEXPR_VAR Register RegExpMatcherRegExpReg = CallTempReg0;
-static MOZ_CONSTEXPR_VAR Register RegExpMatcherStringReg = CallTempReg1;
-static MOZ_CONSTEXPR_VAR Register RegExpMatcherLastIndexReg = CallTempReg2;
-static MOZ_CONSTEXPR_VAR Register RegExpMatcherStickyReg = CallTempReg3;
+static Register RegExpMatcherRegExpReg = CallTempReg0;
+static const Register RegExpMatcherStringReg = CallTempReg1;
+static const Register RegExpMatcherLastIndexReg = CallTempReg2;
+static const Register RegExpMatcherStickyReg = CallTempReg3;
 
 // Registerd used in RegExpTester instruction (do not use ReturnReg).
-static MOZ_CONSTEXPR_VAR Register RegExpTesterRegExpReg = CallTempReg0;
-static MOZ_CONSTEXPR_VAR Register RegExpTesterStringReg = CallTempReg1;
-static MOZ_CONSTEXPR_VAR Register RegExpTesterLastIndexReg = CallTempReg2;
-static MOZ_CONSTEXPR_VAR Register RegExpTesterStickyReg = CallTempReg3;
+static const Register RegExpTesterRegExpReg = CallTempReg0;
+static const Register RegExpTesterStringReg = CallTempReg1;
+static const Register RegExpTesterLastIndexReg = CallTempReg2;
+static const Register RegExpTesterStickyReg = CallTempReg3;
 
 
 // For maximal awesomeness, 8 should be sufficent. ldrd/strd (dual-register
