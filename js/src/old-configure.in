@@ -3042,6 +3042,20 @@ if test -n "$MOZ_DEBUG"; then
 fi
 
 dnl ========================================================
+dnl Baseline JIT register randomization (new).
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(newregrando,
+[  --enable-newregrando    Enable register randomization in the Baseline JIT.],
+    BASELINE_REGISTER_RANDOMIZATION_NEW=1,
+    BASELINE_REGISTER_RANDOMIZATION_NEW= )
+
+  if test -n "$BASELINE_REGISTER_RANDOMIZATION_NEW"; then
+      AC_DEFINE(BASELINE_REGISTER_RANDOMIZATION_NEW)
+  fi
+
+AC_SUBST(BASELINE_REGISTER_RANDOMIZATION_NEW)
+
+dnl ========================================================
 dnl Profiling
 dnl ========================================================
 if test -n "$MOZ_PROFILING"; then
