@@ -47,13 +47,23 @@ class MoveOperand
   public:
     MoveOperand()
     { }
-    explicit MoveOperand(Register reg) : kind_(REG), code_(reg.code())
+    explicit MoveOperand(Register reg)
+      : kind_(REG),
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+      code_(RegisterRandomizer::getInstance().getUnrandomizedRegister(reg).code())
+#else
+      code_(reg.code())
+#endif
     { }
     explicit MoveOperand(FloatRegister reg) : kind_(FLOAT_REG), code_(reg.code())
     { }
     MoveOperand(Register reg, int32_t disp, Kind kind = MEMORY)
         : kind_(kind),
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+        code_(RegisterRandomizer::getInstance().getUnrandomizedRegister(reg).code()),
+#else
         code_(reg.code()),
+#endif
         disp_(disp)
     {
         MOZ_ASSERT(isMemoryOrEffectiveAddress());
