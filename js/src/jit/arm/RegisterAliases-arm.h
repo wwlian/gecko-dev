@@ -11,7 +11,7 @@ namespace jit {
 // refer to the link register as a link register (bl lr is much clearer than bl
 // r14). HOWEVER, this register can easily be a gpr when it is not busy holding
 // the return address.
-#ifdef BASELINE_REGISTER_RANDOMIZATION
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
 static RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
 static const Register r0  = randomizer.getRandomizedRegister(Registers::r0);
 static const Register r1  = randomizer.getRandomizedRegister(Registers::r1);

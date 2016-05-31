@@ -43,6 +43,37 @@ isValueDTRDCandidate(ValueOperand& val)
     return true;
 }
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+void
+MacroAssemblerARM::unrandomizeRegisters() {
+    RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+    startDataTransferM(IsLoad, sp, IA, WriteBack);
+    for (Register::Code i = randomizer.getMaxRandomRegister() + 1; i > 0; i--) {
+        if (!RegisterRandomizer::isRandomizedRegister(i - 1)
+            || (i - 1) == randomizer.getRandomizedRegister(Register::FromCode(i - 1)).code()) {
+            continue;
+        }
+        ma_push(randomizer.getRandomizedRegister(Register::FromCode(i - 1)));
+        transferReg(Register::FromCode(i - 1));
+    }
+    finishDataTransfer();
+}
+
+void MacroAssemblerARM::randomizeRegisters() {
+    RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+    startDataTransferM(IsLoad, sp, IA, WriteBack);
+    for (Register::Code i = randomizer.getMaxRandomRegister() + 1; i > 0; i--) {
+        if (!RegisterRandomizer::isRandomizedRegister(i - 1)
+            || (i - 1) == randomizer.getRandomizedRegister(Register::FromCode(i - 1)).code()) {
+            continue;
+        }
+        ma_push(randomizer.getUnrandomizedRegister(Register::FromCode(i - 1)));
+        transferReg(Register::FromCode(i - 1));
+    }
+    finishDataTransfer();
+}
+#endif
+
 void
 MacroAssemblerARM::convertBoolToInt32(Register source, Register dest)
 {
