@@ -356,6 +356,10 @@ MacroAssembler::divDouble(FloatRegister src, FloatRegister dest)
 void
 MacroAssembler::inc64(AbsoluteAddress dest)
 {
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEV
+    Register r0 = Register::fromCode(RNG::nextUint32(0, 11) & (~0x1));
+    Register r1 = Register::fromCode(r0.code() + 1);
+#endif
     ScratchRegisterScope scratch(*this);
 
     ma_strd(r0, r1, EDtrAddr(sp, EDtrOffImm(-8)), PreIndex);
