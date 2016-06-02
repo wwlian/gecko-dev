@@ -21,6 +21,7 @@ RegisterRandomizer::RegisterRandomizer() {
       substitutions_[i] = Registers::Encoding(i);
       reverseSubstitutions_[i] = Registers::Encoding(i);
   }
+  return;
 
   for (size_t i = 0; i < maxRandomRegister_; i++) {
       if (!isRandomizedRegister(i)
