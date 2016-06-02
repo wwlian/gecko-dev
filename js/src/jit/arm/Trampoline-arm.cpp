@@ -138,6 +138,10 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
     // Push the float registers.
     masm.transferMultipleByRuns(NonVolatileFloatRegs, IsStore, sp, DB);
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    masm.randomizeRegisters();
+#endif
+
     // Save stack pointer into r8
     masm.movePtr(sp, r8);
 
@@ -197,9 +201,20 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         // We could be more awesome, and unroll this, using a loadm
         // (particularly since the offset is effectively 0) but that seems more
         // error prone, and complex.
-        // BIG FAT WARNING: this loads both r6 and r7.
-        aasm->as_extdtr(IsLoad,  64, true, PostIndex, r6, EDtrAddr(r2, EDtrOffImm(8)));
-        aasm->as_extdtr(IsStore, 64, true, PostIndex, r6, EDtrAddr(r4, EDtrOffImm(8)));
+        ValueOperand tmpValue(r7, r6);
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+        if (!isValueDTRDCandidate(tmpValue)) {
+            masm.ma_dtr(IsLoad, r2, Imm32(4), tmpValue.payloadReg(), PostIndex);
+            masm.ma_dtr(IsLoad, r2, Imm32(4), tmpValue.typeReg(), PostIndex);
+            masm.ma_dtr(IsStore, r4, Imm32(4), tmpValue.payloadReg(), PostIndex);
+            masm.ma_dtr(IsStore, r4, Imm32(4), tmpValue.typeReg(), PostIndex);
+        } else
+#endif
+        {
+            // BIG FAT WARNING: this loads both r6 and r7.
+            aasm->as_extdtr(IsLoad,  64, true, PostIndex, tmpValue.payloadReg(), EDtrAddr(r2, EDtrOffImm(8)));
+            aasm->as_extdtr(IsStore, 64, true, PostIndex, tmpValue.payloadReg(), EDtrAddr(r4, EDtrOffImm(8)));
+        }
         aasm->as_b(&header, Assembler::NonZero);
         masm.bind(&footer);
     }
@@ -207,12 +222,18 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
     masm.ma_sub(r8, sp, r8);
     masm.makeFrameDescriptor(r8, JitFrame_Entry, JitFrameLayout::Size());
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    masm.ma_str(r8, Address(sp, 4));
+    masm.ma_str(r9, Address(sp, 8));
+    masm.ma_str(r10, Address(sp, 12));
+#else
     masm.startDataTransferM(IsStore, sp, IB, NoWriteBack);
                            // [sp]    = return address (written later)
     masm.transferReg(r8);  // [sp',4] = descriptor, argc*8+20
     masm.transferReg(r9);  // [sp',8]  = callee token
     masm.transferReg(r10); // [sp',12]  = actual arguments
     masm.finishDataTransfer();
+#endif
 
     Label returnLabel;
     if (type == EnterJitBaseline) {
@@ -375,6 +396,9 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
     //   aasm->as_extdtr(IsStore, 64, true, Offset,
     //                   JSReturnReg_Data, EDtrAddr(r5, EDtrOffImm(0)));
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    masm.unrandomizeRegisters();
+#endif
     // Restore non-volatile registers and return.
     GenerateReturn(masm, true, &cx->runtime()->spsProfiler);
 
@@ -491,8 +515,18 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
                           &notConstructing);
 
         // Add sizeof(Value) to overcome |this|
-        masm.ma_dataTransferN(IsLoad, 64, true, r3, Imm32(8), r4, Offset);
-        masm.ma_dataTransferN(IsStore, 64, true, sp, Imm32(-8), r4, PreIndex);
+        ValueOperand thisValue(r5, r4);
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+        if (!isValueDTRDCandidate(thisValue)) {
+            masm.ma_dtr(IsLoad, r3, Imm32(8), thisValue.payloadReg(), Offset);
+            masm.ma_dtr(IsLoad, r3, Imm32(12), thisValue.typeReg(), Offset);
+            masm.pushValue(thisValue);
+        } else
+#endif
+        {
+            masm.ma_dataTransferN(IsLoad, 64, true, r3, Imm32(8), thisValue.payloadReg(), Offset);
+            masm.ma_dataTransferN(IsStore, 64, true, sp, Imm32(-8), thisValue.payloadReg(), PreIndex);
+        }
 
         // Include the newly pushed newTarget value in the frame size
         // calculated below.
@@ -502,11 +536,20 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
     }
 
     // Push undefined.
-    masm.moveValue(UndefinedValue(), r5, r4);
+    ValueOperand undefValue(r5, r4);
+    masm.moveValue(UndefinedValue(), undefValue);
     {
         Label undefLoopTop;
         masm.bind(&undefLoopTop);
-        masm.ma_dataTransferN(IsStore, 64, true, sp, Imm32(-8), r4, PreIndex);
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+        if (!isValueDTRDCandidate(undefValue)) {
+            masm.pushValue(undefValue);
+        } else
+#endif
+        {
+            masm.ma_dataTransferN(IsStore, 64, true, sp, Imm32(-8),
+                                  undefValue.payloadReg(), PreIndex);
+        }
         masm.ma_sub(r2, Imm32(1), r2, SetCC);
 
         masm.ma_b(&undefLoopTop, Assembler::NonZero);
@@ -516,8 +559,18 @@ JitRuntime::generateArgumentsRectifier(JSContext* cx, void** returnAddrOut)
     {
         Label copyLoopTop;
         masm.bind(&copyLoopTop);
-        masm.ma_dataTransferN(IsLoad, 64, true, r3, Imm32(-8), r4, PostIndex);
-        masm.ma_dataTransferN(IsStore, 64, true, sp, Imm32(-8), r4, PreIndex);
+        ValueOperand copyValue(r5, r4);
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+        if (!isValueDTRDCandidate(copyValue)) {
+            masm.ma_dtr(IsLoad, r3, Imm32(4), copyValue.typeReg(), Offset);
+            masm.ma_dtr(IsLoad, r3, Imm32(-8), copyValue.payloadReg(), PostIndex);
+            masm.pushValue(copyValue);
+        } else
+#endif
+        {
+            masm.ma_dataTransferN(IsLoad, 64, true, r3, Imm32(-8), r4, PostIndex);
+            masm.ma_dataTransferN(IsStore, 64, true, sp, Imm32(-8), r4, PreIndex);
+        }
 
         masm.ma_sub(r8, Imm32(1), r8, SetCC);
         masm.ma_b(&copyLoopTop, Assembler::NotSigned);
@@ -750,14 +803,27 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
 
     // Generate a separated code for the wrapper.
     MacroAssembler masm(cx);
-    AllocatableGeneralRegisterSet regs(Register::Codes::AllocatableMask);
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    AllocatableGeneralRegisterSet regs(Register::Codes::VolatileMask);
+    // Add the randomized physical register for r5 so once it is
+    // unrandomized in callWithABI, the MEMORY-type MoveOperands using r5
+    // as a base register will refer to physical register r5 and won't
+    // alias with the src/dst register of any other move operands.
+    regs.add(r5);
+#else
+    AllocatableGeneralRegisterSet regs(Register::Codes::WrapperMask);
+#endif
 
     // Wrapper register set is a superset of Volatile register set.
     JS_STATIC_ASSERT((Register::Codes::VolatileMask & ~Register::Codes::WrapperMask) == 0);
 
     // The context is the first argument; r0 is the first argument register.
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    Register cxreg = regs.takeAny();
+#else
     Register cxreg = r0;
     regs.take(cxreg);
+#endif
 
     // Stack is:
     //    ... frame ...
@@ -784,15 +850,23 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
     Register outReg = InvalidReg;
     switch (f.outParam) {
       case Type_Value:
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+        outReg = regs.takeAny();
+#else
         outReg = r4;
         regs.take(outReg);
+#endif
         masm.reserveStack(sizeof(Value));
         masm.ma_mov(sp, outReg);
         break;
 
       case Type_Handle:
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+        outReg = regs.takeAny();
+#else
         outReg = r4;
         regs.take(outReg);
+#endif
         masm.PushEmptyRooted(f.outParamRootType);
         masm.ma_mov(sp, outReg);
         break;
@@ -800,15 +874,23 @@ JitRuntime::generateVMWrapper(JSContext* cx, const VMFunction& f)
       case Type_Int32:
       case Type_Pointer:
       case Type_Bool:
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+        outReg = regs.takeAny();
+#else
         outReg = r4;
         regs.take(outReg);
+#endif
         masm.reserveStack(sizeof(int32_t));
         masm.ma_mov(sp, outReg);
         break;
 
       case Type_Double:
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+        outReg = regs.takeAny();
+#else
         outReg = r4;
         regs.take(outReg);
+#endif
         masm.reserveStack(sizeof(double));
         masm.ma_mov(sp, outReg);
         break;
