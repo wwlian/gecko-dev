@@ -32,6 +32,8 @@
 #include "vm/Interpreter-inl.h"
 #include "vm/NativeObject-inl.h"
 
+#include "jsprf.h"
+
 using namespace js;
 using namespace js::jit;
 
@@ -220,6 +222,16 @@ BaselineCompiler::compile()
     JitSpew(JitSpew_BaselineScripts, "Created BaselineScript %p (raw %p) for %s:%d",
             (void*) baselineScript.get(), (void*) code->raw(),
             script->filename(), script->lineno());
+    // wwl: Log code here rather than at end of function.
+    // This will reduce deviations due to the state of the machine at link-time, making it easier
+    // to isolate the impact of changes to the input source code.
+    char *buf = js_pod_malloc<char>(code->instructionsSize() * 4 + 1);
+    for (size_t i = 0; i < code->instructionsSize(); i++) {
+        JS_snprintf(buf + 4 * i, 5, "\\x%02x", *(code->raw() + i));
+    }
+    buf[code->instructionsSize() * 4] = '\0';
+    JitSpew(JitSpew_Codegen, "Raw Baseline bytes (%d) for %s:%d:@%p:%s", code->instructionsSize(), script->filename(), script->lineno(), code->raw(), buf);
+    js_free(buf);
 
 #ifdef JS_ION_PERF
     writePerfSpewerBaselineProfile(script, code);
