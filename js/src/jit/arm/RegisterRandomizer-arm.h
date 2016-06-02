@@ -12,8 +12,7 @@ namespace jit {
 
 class RegisterRandomizer {
   private:
-    static const Registers::SetType RANDOMIZATION_MASK = (Registers::AllocatableMask
-        & ~(1 << Registers::r0));
+    static const Registers::SetType RANDOMIZATION_MASK = Registers::AllocatableMask;
 
     // |substitutions_| maps a Registers::Encoding to the Registers::Encoding
     // that will actually be used in its stead in JIT code. Can be used to
