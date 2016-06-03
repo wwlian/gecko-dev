@@ -49,21 +49,13 @@ class MoveOperand
     { }
     explicit MoveOperand(Register reg)
       : kind_(REG),
-#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
-      code_(RegisterRandomizer::getInstance().getUnrandomizedRegister(reg).code())
-#else
       code_(reg.code())
-#endif
     { }
     explicit MoveOperand(FloatRegister reg) : kind_(FLOAT_REG), code_(reg.code())
     { }
     MoveOperand(Register reg, int32_t disp, Kind kind = MEMORY)
         : kind_(kind),
-#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
-        code_(RegisterRandomizer::getInstance().getUnrandomizedRegister(reg).code()),
-#else
         code_(reg.code()),
-#endif
         disp_(disp)
     {
         MOZ_ASSERT(isMemoryOrEffectiveAddress());
@@ -78,6 +70,11 @@ class MoveOperand
         code_(other.code_),
         disp_(other.disp_)
     { }
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    Kind kind() const {
+        return kind_;
+    }
+#endif
     bool isFloatReg() const {
         return kind_ == FLOAT_REG;
     }

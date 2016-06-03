@@ -2431,12 +2431,29 @@ MacroAssembler::passABIArg(const MoveOperand& from, MoveOp::Type type)
     }
 
     MoveOperand to(*this, arg);
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    MoveOperand unrandomized(from);
+    if (from.isMemoryOrEffectiveAddress()) {
+      Register r = RegisterRandomizer::getInstance().getUnrandomizedRegister(from.base());
+      unrandomized = MoveOperand(r, from.disp(), from.kind());
+    } else if (from.isGeneralReg()) {
+      Register r = RegisterRandomizer::getInstance().getUnrandomizedRegister(from.reg());
+      unrandomized = MoveOperand(r);
+    }
+    if (unrandomized == to)
+        return;
+#else
     if (from == to)
         return;
+#endif
 
     if (!enoughMemory_)
         return;
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    enoughMemory_ = moveResolver_.addMove(unrandomized, to, type);
+#else
     enoughMemory_ = moveResolver_.addMove(from, to, type);
+#endif
 }
 
 void

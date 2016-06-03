@@ -98,7 +98,12 @@ MacroAssembler::call(const wasm::CallSiteDesc& desc, AsmJSInternalCallee callee)
 void
 MacroAssembler::passABIArg(Register reg)
 {
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    Register r = RegisterRandomizer::getInstance().getUnrandomizedRegister(reg);
+    passABIArg(MoveOperand(r), MoveOp::GENERAL);
+#else
     passABIArg(MoveOperand(reg), MoveOp::GENERAL);
+#endif
 }
 
 void
