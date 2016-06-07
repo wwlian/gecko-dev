@@ -144,10 +144,17 @@ ABIArgGenerator::next(MIRType type)
     return softNext(type);
 }
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+const Register ABIArgGenerator::NonArgReturnReg0 = { Registers::r4 };
+const Register ABIArgGenerator::NonArgReturnReg1 = { Registers::r5 };
+const Register ABIArgGenerator::NonReturn_VolatileReg0 = { Registers::r2 };
+const Register ABIArgGenerator::NonReturn_VolatileReg1 = { Registers::r3 };
+#else
 const Register ABIArgGenerator::NonArgReturnReg0 = r4;
 const Register ABIArgGenerator::NonArgReturnReg1 = r5;
 const Register ABIArgGenerator::NonReturn_VolatileReg0 = r2;
 const Register ABIArgGenerator::NonReturn_VolatileReg1 = r3;
+#endif
 
 // Encode a standard register when it is being used as src1, the dest, and an
 // extra register. These should never be called with an InvalidReg.
@@ -546,7 +553,11 @@ InstCMP::AsTHIS(const Instruction& i)
 bool
 InstCMP::IsTHIS(const Instruction& i)
 {
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    return InstALU::IsTHIS(i) && InstALU::AsTHIS(i)->checkDest(Register::FromCode(Registers::r0)) && InstALU::AsTHIS(i)->checkOp(OpCmp);
+#else
     return InstALU::IsTHIS(i) && InstALU::AsTHIS(i)->checkDest(r0) && InstALU::AsTHIS(i)->checkOp(OpCmp);
+#endif
 }
 
 InstMOV*
@@ -560,7 +571,11 @@ InstMOV::AsTHIS(const Instruction& i)
 bool
 InstMOV::IsTHIS(const Instruction& i)
 {
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    return InstALU::IsTHIS(i) && InstALU::AsTHIS(i)->checkOp1(Register::FromCode(Registers::r0)) && InstALU::AsTHIS(i)->checkOp(OpMov);
+#else
     return InstALU::IsTHIS(i) && InstALU::AsTHIS(i)->checkOp1(r0) && InstALU::AsTHIS(i)->checkOp(OpMov);
+#endif
 }
 
 Op2Reg
@@ -3240,7 +3255,11 @@ Assembler::ToggleToCmp(CodeLocationLabel inst_)
     // Also make sure that the CMP is valid. Part of having a valid CMP is that
     // all of the bits describing the destination in most ALU instructions are
     // all unset (looks like it is encoding r0).
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    MOZ_ASSERT(toRD(*inst) == Register::FromCode(Registers::r0));
+#else
     MOZ_ASSERT(toRD(*inst) == r0);
+#endif
 
     // Zero out bits 20-27, then set them to be correct for a compare.
     *ptr = (*ptr & ~(0xff << 20)) | (0x35 << 20);
