@@ -144,17 +144,10 @@ ABIArgGenerator::next(MIRType type)
     return softNext(type);
 }
 
-#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
-const Register ABIArgGenerator::NonArgReturnReg0 = { Registers::r4 };
-const Register ABIArgGenerator::NonArgReturnReg1 = { Registers::r5 };
-const Register ABIArgGenerator::NonReturn_VolatileReg0 = { Registers::r2 };
-const Register ABIArgGenerator::NonReturn_VolatileReg1 = { Registers::r3 };
-#else
 const Register ABIArgGenerator::NonArgReturnReg0 = r4;
 const Register ABIArgGenerator::NonArgReturnReg1 = r5;
 const Register ABIArgGenerator::NonReturn_VolatileReg0 = r2;
 const Register ABIArgGenerator::NonReturn_VolatileReg1 = r3;
-#endif
 
 // Encode a standard register when it is being used as src1, the dest, and an
 // extra register. These should never be called with an InvalidReg.
