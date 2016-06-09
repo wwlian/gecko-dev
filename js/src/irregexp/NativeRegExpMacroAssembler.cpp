@@ -120,6 +120,10 @@ NativeRegExpMacroAssembler::GenerateCode(JSContext* cx, bool match_only)
     // registers we need.
     masm.bind(&entry_label_);
 
+#if defined(BASELINE_REGISTER_RANDOMIZATION_NEW)
+    masm.randomizeRegisters();
+#endif
+
 #ifdef JS_CODEGEN_ARM64
     // ARM64 communicates stack address via sp, but uses a pseudo-sp for addressing.
     masm.initStackPtr();
@@ -414,6 +418,10 @@ NativeRegExpMacroAssembler::GenerateCode(JSContext* cx, bool match_only)
     // Restore non-volatile registers which were saved on entry.
     for (GeneralRegisterBackwardIterator iter(savedNonVolatileRegisters); iter.more(); ++iter)
         masm.Pop(*iter);
+
+#if defined(BASELINE_REGISTER_RANDOMIZATION_NEW)
+    masm.unrandomizeRegisters();
+#endif
 
     masm.abiret();
 

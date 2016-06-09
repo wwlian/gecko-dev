@@ -115,6 +115,10 @@ wasm::GenerateEntry(MacroAssembler& masm, unsigned target, const Sig& sig, bool 
     masm.PushRegsInMask(NonVolatileRegs);
     MOZ_ASSERT(masm.framePushed() == FramePushedAfterSave);
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    masm.randomizeRegisters();
+#endif
+
     // ARM and MIPS/MIPS64 have a globally-pinned GlobalReg (x64 uses RIP-relative
     // addressing, x86 uses immediates in effective addresses). For the
     // AsmJSGlobalRegBias addition, see Assembler-(mips,arm).h.
@@ -268,6 +272,10 @@ wasm::GenerateEntry(MacroAssembler& masm, unsigned target, const Sig& sig, bool 
       case ExprType::Limit:
         MOZ_CRASH("Limit");
     }
+
+#ifdef BASELINE_REGISTER_RANDOMIZATION_NEW
+    masm.unrandomizeRegisters();
+#endif
 
     // Restore clobbered non-volatile registers of the caller.
     masm.PopRegsInMask(NonVolatileRegs);
