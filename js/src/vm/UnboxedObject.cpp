@@ -92,6 +92,9 @@ UnboxedLayout::makeConstructorCode(JSContext* cx, HandleObjectGroup group)
     JitContext jitContext(cx, nullptr);
 
     MacroAssembler masm;
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.randomizeRegisters();
+#endif
 
     Register propertiesReg, newKindReg;
 #ifdef JS_CODEGEN_X86
@@ -233,6 +236,9 @@ UnboxedLayout::makeConstructorCode(JSContext* cx, HandleObjectGroup group)
         masm.pop(ScratchDoubleReg);
     masm.PopRegsInMask(savedNonVolatileRegisters);
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    masm.unrandomizeRegisters();
+#endif
     masm.abiret();
 
     masm.bind(&failureStoreOther);

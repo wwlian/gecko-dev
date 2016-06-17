@@ -72,21 +72,19 @@ static const Register CallTempReg3 = r8;
 static const Register CallTempReg4 = r0;
 static const Register CallTempReg5 = r1;
 
-// IntArgReg[0-9] refer to the physical registers into which the architecture
-// ABI requires integer arguments be placed, in order. To avoid having to use
-// RegisterRandomizer::getUnrandomizedRegister everywhere we reference 
-// IntArgReg[0-9], we do not randomize these values.
-static MOZ_CONSTEXPR_VAR Register IntArgReg0 = { Registers::r0 };
-static MOZ_CONSTEXPR_VAR Register IntArgReg1 = { Registers::r1 };
-static MOZ_CONSTEXPR_VAR Register IntArgReg2 = { Registers::r2 };
-static MOZ_CONSTEXPR_VAR Register IntArgReg3 = { Registers::r3 };
+// These registers are expected to only be used while dynamically generating 
+// code, which should have registers randomized while it executes.
+static const Register IntArgReg0 = r0;
+static const Register IntArgReg1 = r1;
+static const Register IntArgReg2 = r2;
+static const Register IntArgReg3 = r3;
 static const Register GlobalReg = r10;
 static const Register HeapReg = r11;
 static const Register CallTempNonArgRegs[] = { r5, r6, r7, r8 };
 static const uint32_t NumCallTempNonArgRegs =
     mozilla::ArrayLength(CallTempNonArgRegs);
 
-static MOZ_CONSTEXPR_VAR Register ReturnReg = { Registers::r0 };
+static const Register ReturnReg = r0;
 static MOZ_CONSTEXPR_VAR Register InvalidReg = { Registers::invalid_reg };
 
 static MOZ_CONSTEXPR_VAR FloatRegister d0  = {FloatRegisters::d0, VFPRegister::Double};

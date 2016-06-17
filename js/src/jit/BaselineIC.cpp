@@ -8234,11 +8234,7 @@ ICRetSub_Fallback::Compiler::generateStubCode(MacroAssembler& masm)
 
         leaveStubFrame(masm);
 
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-        EmitChangeICReturnAddress(masm, RegisterRandomizer::randomize(ReturnReg));
-#else
         EmitChangeICReturnAddress(masm, ReturnReg);
-#endif
         EmitReturnFromIC(masm);
     }
 
