@@ -19,7 +19,7 @@
 #include "jit/shared/IonAssemblerBufferWithConstantPools.h"
 
 #ifdef BASELINE_REGISTER_RANDOMIZATION
-#include "jit/RegisterRandomizer-shared.h"
+#include "jit/RegisterRandomizer.h"
 #endif
 
 namespace js {
