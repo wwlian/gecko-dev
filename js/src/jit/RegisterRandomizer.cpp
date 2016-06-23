@@ -59,14 +59,7 @@ RegisterRandomizer::RegisterRandomizer() {
 
 /* static */ RegisterRandomizer
 RegisterRandomizer::getInstance() {
-    static bool initialized = false;
     static RegisterRandomizer instance;
-
-    if (!initialized) {
-        instance = RegisterRandomizer();
-        initialized = true;
-    }
-    
     return instance;
 }
 
