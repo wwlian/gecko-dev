@@ -51,7 +51,7 @@ class Linker
             return fail(cx);
 
 #ifdef BASE_OFFSET_RANDOMIZATION
-        size_t randomHeaderSize = CodeAlignment * (RNG::nextUint32() & 0xf);  // Between 0 and 15 CodeAlignments extra.
+        size_t randomHeaderSize = CodeAlignment * (RNG::nextUint32() & 0x1f);  // Between 0 and 31 CodeAlignments extra.
         size_t bytesNeeded = masm.bytesNeeded() + sizeof(JitCode*) + CodeAlignment + randomHeaderSize;
 #else
         size_t bytesNeeded = masm.bytesNeeded() + sizeof(JitCode*) + CodeAlignment;
