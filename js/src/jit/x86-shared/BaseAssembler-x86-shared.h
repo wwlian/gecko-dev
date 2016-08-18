@@ -4542,7 +4542,7 @@ threeByteOpImmSimd("vblendps", VEX_PD, OP3_BLENDPS_VpsWpsIb, ESCAPE_3A, imm, off
               isRandomNopTmpDisabled = false;
               return;
             }
-            if (!isRandomNopEnabled || (RNG::nextUint32() & 0x7)) return;
+            if (!isRandomNopEnabled || (RNG::nextUint32() & 0xf)) return;
             assembler->spew("nop");
             m_buffer.ensureSpace(MaxInstructionSize);
             m_buffer.putByteUnchecked(OP_NOP);
