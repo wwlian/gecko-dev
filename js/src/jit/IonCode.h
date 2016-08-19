@@ -45,7 +45,7 @@ class JitCode : public gc::TenuredCell
     uint32_t preBarrierTableBytes_;   // Size of the prebarrier table.
 #ifdef BASE_OFFSET_RANDOMIZATION
     // The header can be larger with base offset randomization.
-    uint16_t headerSize_ : 11;          // Number of bytes allocated before codeStart.
+    uint16_t headerSize_ : 12;          // Number of bytes allocated before codeStart.
 #else
     uint8_t headerSize_ : 5;          // Number of bytes allocated before codeStart.
 #endif
