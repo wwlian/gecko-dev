@@ -79,7 +79,10 @@ struct DefaultJitOptions
     uint32_t randomNopProb;  // Insert random NOP before each instruction with probability 1/p
 #endif
 #ifdef RANDOM_NOP_FINEGRAIN
-    uint32_t maxCallFramePaddingUnits;  // Insert up to this many units of stack alignment into call frame.
+    uint32_t maxCallFramePaddingUnits;  // Insert up to this many units minus 1 of stack alignment into call frame.
+#endif
+#if BASE_OFFSET_RANDOMIZATION
+    uint32_t maxBaseOffsetPaddingUnits;  // Insert up to this many units minus 1 of code alignment into the header of each compilation unit.
 #endif
 
     // The options below affect the rest of the VM, and not just the JIT.
