@@ -78,7 +78,7 @@ struct DefaultJitOptions
 #ifdef RANDOM_NOP_FINEGRAIN
     uint32_t randomNopProb;  // Insert random NOP before each instruction with probability 1/p
 #endif
-#ifdef RANDOM_NOP_FINEGRAIN
+#ifdef CALL_FRAME_RANDOMIZATION
     uint32_t maxCallFramePaddingUnits;  // Insert up to this many units minus 1 of stack alignment into call frame.
 #endif
 #if BASE_OFFSET_RANDOMIZATION
