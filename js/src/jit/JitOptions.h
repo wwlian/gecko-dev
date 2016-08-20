@@ -75,6 +75,9 @@ struct DefaultJitOptions
     uint32_t jumpThreshold;
     mozilla::Maybe<uint32_t> forcedDefaultIonWarmUpThreshold;
     mozilla::Maybe<IonRegisterAllocator> forcedRegisterAllocator;
+#ifdef RANDOM_NOP_FINEGRAIN
+    uint32_t randomNopProb;  // Insert random NOP before each instruction with probability 1/p
+#endif
 
     // The options below affect the rest of the VM, and not just the JIT.
     bool disableUnboxedObjects;

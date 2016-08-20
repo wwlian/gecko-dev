@@ -1641,7 +1641,7 @@ Assembler::writeInst(uint32_t x)
     // Don't insert NOPs in pool-free regions because code in those regions are
     // used in conjunction with static assumptions about the locations of 
     // specific instructions in the region.
-    if (!m_buffer.canNotPlacePool() && !(RNG::nextUint32() & 0x1f)) {
+    if (!m_buffer.canNotPlacePool() && !(RNG::nextUint32() & JitOptions.randomNopProb)) {
         BufferOffset o = m_buffer.putInt(0xe320f000);
 #ifdef JS_DISASM_ARM
         spew(m_buffer.getInstOrNull(o));
@@ -1659,7 +1659,7 @@ BufferOffset
 Assembler::writeBranchInst(uint32_t x, Label* documentation)
 {
 #ifdef RANDOM_NOP_FINEGRAIN
-    if (!m_buffer.canNotPlacePool() && !(RNG::nextUint32() & 0x1f)) {
+    if (!m_buffer.canNotPlacePool() && !(RNG::nextUint32() & JitOptions.randomNopProb)) {
         BufferOffset o = m_buffer.putInt(0xe320f000);
 #ifdef JS_DISASM_ARM
         spew(m_buffer.getInstOrNull(o));

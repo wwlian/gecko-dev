@@ -6825,6 +6825,10 @@ SetRuntimeOptions(JSRuntime* rt, const OptionParser& op)
     }
 #endif
 
+#ifdef RANDOM_NOP_FINEGRAIN
+    jit::JitOptions.randomNopProb = op.getIntOption("nop-p") - 1;
+#endif
+
     return true;
 }
 
@@ -7108,6 +7112,9 @@ main(int argc, char** argv, char** envp)
         || !op.addIntOption('\0', "nursery-size", "SIZE-MB", "Set the maximum nursery size in MB", 16)
 #ifdef JS_GC_ZEAL
         || !op.addStringOption('z', "gc-zeal", "LEVEL[,N]", gc::ZealModeHelpText)
+#endif
+#ifdef RANDOM_NOP_FINEGRAIN
+        || !op.addIntOption('\0', "nop-p", "P", "Before each instruction, insert a random NOP with probability 1/P, where P is a power of 2.", 8);
 #endif
         || !op.addStringOption('\0', "module-load-path", "DIR", "Set directory to load modules from")
     )
