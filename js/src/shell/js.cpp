@@ -6828,6 +6828,9 @@ SetRuntimeOptions(JSRuntime* rt, const OptionParser& op)
 #ifdef RANDOM_NOP_FINEGRAIN
     jit::JitOptions.randomNopProb = op.getIntOption("nop-p") - 1;
 #endif
+#ifdef CALL_FRAME_RANDOMIZATION
+    jit::JitOptions.maxCallFramePaddingUnits = op.getIntOption("max-call-frame-pad") - 1;
+#endif
 
     return true;
 }
@@ -7116,6 +7119,10 @@ main(int argc, char** argv, char** envp)
 #ifdef RANDOM_NOP_FINEGRAIN
         || !op.addIntOption('\0', "nop-p", "P", "Before each instruction, insert a random NOP with probability 1/P, where P is a power of 2.", 8);
 #endif
+#ifdef CALL_FRAME_RANDOMIZATION
+        || !op.addIntOption('\0', "max-call-frame-pad", "N", "Insert up to N units of stack alignment into each call frame.", 16);
+#endif
+
         || !op.addStringOption('\0', "module-load-path", "DIR", "Set directory to load modules from")
     )
     {

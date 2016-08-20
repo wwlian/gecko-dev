@@ -434,7 +434,7 @@ class BaselineFrame
         // BaselineFrame, this padding randomizes the distance between the
         // frame pointer and the locals.
         // Make sure all code uses this method instead of sizeof(BaselineFrame).
-        static size_t padding = JitStackAlignment * (RNG::nextUint32() & 0xff);
+        static size_t padding = JitStackAlignment * (RNG::nextUint32() & JitOptions.maxCallFramePaddingUnits);
         return sizeof(BaselineFrame) + padding;
 #else
         return sizeof(BaselineFrame);

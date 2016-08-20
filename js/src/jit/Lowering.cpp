@@ -4706,7 +4706,7 @@ LIRGenerator::generate()
     lirGraph_.setArgumentSlotCount(
         AlignBytes(maxargslots_
                    + (JitStackValueAlignment
-                      * (gen->compilingAsmJS() ? 0 : (RNG::nextUint32() & 0xff))),
+                      * (gen->compilingAsmJS() ? 0 : (RNG::nextUint32() & JitOptions.maxCallFramePaddingUnits))),
                    JitStackValueAlignment));
 #else
     lirGraph_.setArgumentSlotCount(maxargslots_);
