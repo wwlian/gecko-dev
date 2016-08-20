@@ -7121,16 +7121,16 @@ main(int argc, char** argv, char** envp)
 #endif
 #ifdef RANDOM_NOP_FINEGRAIN
         || !op.addIntOption('\0', "nop-p", "P", "Before each instruction, insert a random NOP with "
-                            "probability 1/P. Must be a power of 2.", 8);
+                            "probability 1/P. Must be a power of 2.", 8)
 #endif
 #ifdef CALL_FRAME_RANDOMIZATION
         || !op.addIntOption('\0', "max-call-frame-pad", "N", "Insert up to N-1 units of stack alignment "
-                            "into each call frame. Must be a power of 2.", 16);
+                            "into each call frame. Must be a power of 2.", 16)
 #endif
 #ifdef BASE_OFFSET_RANDOMIZATION
         || !op.addIntOption('\0', "max-base-offset-pad", "N", "Insert up to N-1 units of code alignment "
                             "into the header of each compilation unit. Must be a power of 2. "
-                            "Maximum value is currently 256.", 16);
+                            "Maximum value is currently 256.", 16)
 #endif
 
         || !op.addStringOption('\0', "module-load-path", "DIR", "Set directory to load modules from")
