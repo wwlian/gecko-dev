@@ -4803,9 +4803,16 @@ CodeGenerator::visitNewArrayCallVM(LNewArray* lir)
         callVM(NewArrayOperationInfo, lir);
     }
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+    if (randomizer.getRandomizedRegister(ReturnReg) != objReg) {
+        masm.movePtr(randomizer.getRandomizedRegister(ReturnReg), objReg);
+    }
+#else
     if (ReturnReg != objReg) {
         masm.movePtr(ReturnReg, objReg);
     }
+#endif
 
     restoreLive(lir);
 }
@@ -5033,9 +5040,16 @@ CodeGenerator::visitNewObjectVMCall(LNewObject* lir)
         callVM(ObjectCreateWithTemplateInfo, lir);
     }
 
+#ifdef BASELINE_REGISTER_RANDOMIZATION
+    RegisterRandomizer randomizer = RegisterRandomizer::getInstance();
+    if (randomizer.getRandomizedRegister(ReturnReg) != objReg) {
+        masm.movePtr(randomizer.getRandomizedRegister(ReturnReg), objReg);
+    }
+#else
     if (ReturnReg != objReg) {
         masm.movePtr(ReturnReg, objReg);
     }
+#endif
 
     restoreLive(lir);
 }

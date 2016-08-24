@@ -549,11 +549,7 @@ InstCMP::AsTHIS(const Instruction& i)
 bool
 InstCMP::IsTHIS(const Instruction& i)
 {
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    return InstALU::IsTHIS(i) && InstALU::AsTHIS(i)->checkDest(Register::FromCode(Registers::r0)) && InstALU::AsTHIS(i)->checkOp(OpCmp);
-#else
     return InstALU::IsTHIS(i) && InstALU::AsTHIS(i)->checkDest(r0) && InstALU::AsTHIS(i)->checkOp(OpCmp);
-#endif
 }
 
 InstMOV*
@@ -567,11 +563,7 @@ InstMOV::AsTHIS(const Instruction& i)
 bool
 InstMOV::IsTHIS(const Instruction& i)
 {
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    return InstALU::IsTHIS(i) && InstALU::AsTHIS(i)->checkOp1(Register::FromCode(Registers::r0)) && InstALU::AsTHIS(i)->checkOp(OpMov);
-#else
     return InstALU::IsTHIS(i) && InstALU::AsTHIS(i)->checkOp1(r0) && InstALU::AsTHIS(i)->checkOp(OpMov);
-#endif
 }
 
 Op2Reg
@@ -3305,11 +3297,7 @@ Assembler::ToggleToCmp(CodeLocationLabel inst_)
     // Also make sure that the CMP is valid. Part of having a valid CMP is that
     // all of the bits describing the destination in most ALU instructions are
     // all unset (looks like it is encoding r0).
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    MOZ_ASSERT(toRD(*inst) == Register::FromCode(Registers::r0));
-#else
     MOZ_ASSERT(toRD(*inst) == r0);
-#endif
 
     // Zero out bits 20-27, then set them to be correct for a compare.
     *ptr = (*ptr & ~(0xff << 20)) | (0x35 << 20);

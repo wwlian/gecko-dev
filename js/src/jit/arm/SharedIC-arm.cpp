@@ -95,15 +95,15 @@ ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler& masm)
         // idivmod returns the quotient in r0, and the remainder in r1.
         if (op_ == JSOP_DIV) {
             // Result is a double if the remainder != 0.
-            masm.branch32(Assembler::NotEqual, r1, Imm32(0), &revertRegister);
-            masm.tagValue(JSVAL_TYPE_INT32, r0, R0);
+            masm.branch32(Assembler::NotEqual, Register::FromCode(Registers::r1), Imm32(0), &revertRegister);
+            masm.tagValue(JSVAL_TYPE_INT32, Register::FromCode(Registers::r0), R0);
         } else {
             // If X % Y == 0 and X < 0, the result is -0.
             Label done;
-            masm.branch32(Assembler::NotEqual, r1, Imm32(0), &done);
+            masm.branch32(Assembler::NotEqual, Register::FromCode(Registers::r1), Imm32(0), &done);
             masm.branch32(Assembler::LessThan, savedValue.payloadReg(), Imm32(0), &revertRegister);
             masm.bind(&done);
-            masm.tagValue(JSVAL_TYPE_INT32, r1, R0);
+            masm.tagValue(JSVAL_TYPE_INT32, Register::FromCode(Registers::r1), R0);
         }
         break;
       }

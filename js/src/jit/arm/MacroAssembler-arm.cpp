@@ -5103,32 +5103,14 @@ MacroAssembler::callWithABIPre(uint32_t* stackAdjust, bool callFromAsmJS)
 
     // Save the lr register if we need to preserve it.
     if (secondScratchReg_ != lr)
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-        // This move and its counterpart in callWithABIPost will be
-        // predictable. This is the most elegant solution to the problem where 
-        // abstract register r6 (which is currently secondScratchReg_) can be 
-        // randomized to physical register R11/FP, meaning that this code (which
-        // runs in an unrandomized context) would clobber the frame pointer.
-        // Another way to do this is to prevent abstract register r6 from
-        // being randomized to R11; this would allow this code sequence to be
-        // randomized.
-        // The bigger problem is that of randomizing the scratch registers.
-        ma_mov(lr, RegisterRandomizer::getInstance().getUnrandomizedRegister(secondScratchReg_));
-#else
         ma_mov(lr, secondScratchReg_);
-#endif
 }
 
 void
 MacroAssembler::callWithABIPost(uint32_t stackAdjust, MoveOp::Type result)
 {
     if (secondScratchReg_ != lr)
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-        // See comment in callWithABIPre.
-        ma_mov(RegisterRandomizer::getInstance().getUnrandomizedRegister(secondScratchReg_), lr);
-#else
         ma_mov(secondScratchReg_, lr);
-#endif
 
     switch (result) {
       case MoveOp::DOUBLE:
@@ -5168,12 +5150,7 @@ void
 MacroAssembler::callWithABINoProfiler(Register fun, MoveOp::Type result)
 {
     // Load the callee in r12, as above.
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    // See comment in callWithABINoProfiler(const Address&, MoveOp::Type)
-    ma_mov(RegisterRandomizer::getInstance().getUnrandomizedRegister(fun), r12);
-#else
     ma_mov(fun, r12);
-#endif
     uint32_t stackAdjust;
     callWithABIPre(&stackAdjust);
     call(r12);
@@ -5186,17 +5163,7 @@ MacroAssembler::callWithABINoProfiler(const Address& fun, MoveOp::Type result)
     // Load the callee in r12, no instruction between the ldr and call should
     // clobber it. Note that we can't use fun.base because it may be one of the
     // IntArg registers clobbered before the call.
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    // The Address provided should be using an abstract register as its base,
-    // but callWithABI already emitted an unrandomizing sequence, so make
-    // sure the call goes through the unrandomized register.
-    Address unrandomizedAddr(
-        RegisterRandomizer::getInstance().getUnrandomizedRegister(fun.base),
-        fun.offset);
-    ma_ldr(unrandomizedAddr, r12);
-#else
     ma_ldr(fun, r12);
-#endif
     uint32_t stackAdjust;
     callWithABIPre(&stackAdjust);
     call(r12);

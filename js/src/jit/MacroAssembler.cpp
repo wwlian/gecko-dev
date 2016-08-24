@@ -1278,9 +1278,12 @@ MacroAssembler::generateBailoutTail(Register scratch, Register bailoutInfo)
 
     // Fall-through: overrecursed.
     {
-        loadJSContext(ReturnReg);
+        AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
+        regs.take(scratch);
+        Register cxreg = regs.takeAny();
+        loadJSContext(cxreg);
         setupUnalignedABICall(scratch);
-        passABIArg(ReturnReg);
+        passABIArg(cxreg);
         callWithABI(JS_FUNC_TO_DATA_PTR(void*, BailoutReportOverRecursed));
         jump(exceptionLabel());
     }
@@ -2431,33 +2434,12 @@ MacroAssembler::passABIArg(const MoveOperand& from, MoveOp::Type type)
     }
 
     MoveOperand to(*this, arg);
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    // By the time the MoveOperands are finally used (during move resolution),
-    // registers will have been unrandomized, so go ahead and unrandomize the register
-    // operands here. Can't do this in the MoveResolver because it is occasionally used
-    // outside of an ABI call.
-    MoveOperand unrandomized(from);
-    if (from.isMemoryOrEffectiveAddress()) {
-        Register r = RegisterRandomizer::getInstance().getUnrandomizedRegister(from.base());
-        unrandomized = MoveOperand(r, from.disp(), from.kind());
-    } else if (from.isGeneralReg()) {
-        Register r = RegisterRandomizer::getInstance().getUnrandomizedRegister(from.reg());
-        unrandomized = MoveOperand(r);
-    }
-    if (unrandomized == to)
-        return;
-#else
     if (from == to)
         return;
-#endif
 
     if (!enoughMemory_)
         return;
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    enoughMemory_ = moveResolver_.addMove(unrandomized, to, type);
-#else
     enoughMemory_ = moveResolver_.addMove(from, to, type);
-#endif
 }
 
 void

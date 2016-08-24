@@ -68,11 +68,6 @@ class MoveOperand
         code_(other.code_),
         disp_(other.disp_)
     { }
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    Kind kind() const {
-        return kind_;
-    }
-#endif
     bool isFloatReg() const {
         return kind_ == FLOAT_REG;
     }

@@ -109,10 +109,6 @@ wasm::GenerateEntry(MacroAssembler& masm, unsigned target, const Sig& sig, bool 
     static const unsigned EntryFrameSize = sizeof(void*);
 #endif
 
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    masm.randomizeRegisters();
-#endif
-
     // Save all caller non-volatile registers before we clobber them here and in
     // the asm.js callee (which does not preserve non-volatile registers).
     masm.setFramePushed(0);
@@ -278,9 +274,6 @@ wasm::GenerateEntry(MacroAssembler& masm, unsigned target, const Sig& sig, bool 
     MOZ_ASSERT(masm.framePushed() == 0);
 
     masm.move32(Imm32(true), ReturnReg);
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    masm.unrandomizeRegisters();
-#endif
     masm.ret();
 
     offsets.end = masm.currentOffset();

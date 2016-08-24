@@ -110,14 +110,8 @@ MacroAssembler::passABIArg(FloatRegister reg, MoveOp::Type type)
 template <typename T> void
 MacroAssembler::callWithABI(const T& fun, MoveOp::Type result)
 {
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    unrandomizeRegisters();
-#endif
     AutoProfilerCallInstrumentation profiler(*this);
     callWithABINoProfiler(fun, result);
-#ifdef BASELINE_REGISTER_RANDOMIZATION
-    randomizeRegisters();
-#endif
 }
 
 void
