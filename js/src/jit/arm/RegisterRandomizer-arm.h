@@ -3,9 +3,7 @@
 
 #include <array>
 
-#ifdef JS_CODEGEN_ARM
 #include "jit/arm/Architecture-arm.h"
-#endif
 #include "jit/RegisterSets.h"
 #include "jit/RNG.h"
 
