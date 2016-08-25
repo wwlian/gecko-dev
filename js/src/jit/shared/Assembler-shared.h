@@ -14,6 +14,7 @@
 #include "asmjs/WasmTypes.h"
 #include "jit/JitAllocPolicy.h"
 #include "jit/Label.h"
+#include "jit/RegisterAliases-shared.h"
 #include "jit/Registers.h"
 #include "jit/RegisterSets.h"
 #ifdef CALL_FRAME_RANDOMIZATION
