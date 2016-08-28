@@ -12,7 +12,7 @@
 
 #include "asmjs/WasmBinary.h"
 #ifdef BASELINE_REGISTER_RANDOMIZATION
-#include "jit/arm/RegisterRandomizer-arm.h"
+#include "jit/RegisterRandomizer.h"
 #endif
 #include "jit/arm/Simulator-arm.h"
 #include "jit/Bailouts.h"

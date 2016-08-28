@@ -1,4 +1,4 @@
-#include "jit/arm/RegisterRandomizer-arm.h"
+#include "jit/RegisterRandomizer.h"
 
 namespace js {
 namespace jit {
