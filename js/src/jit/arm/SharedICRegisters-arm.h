@@ -7,8 +7,7 @@
 #ifndef jit_arm_SharedICRegisters_arm_h
 #define jit_arm_SharedICRegisters_arm_h
 
-#include "jit/RegisterAliases-shared.h"
-#include "jit/RegisterSets.h"
+#include "jit/MacroAssembler.h"
 
 namespace js {
 namespace jit {
@@ -19,16 +18,16 @@ namespace jit {
 // r13 = stack-pointer
 // r11 = frame-pointer
 #ifdef BASELINE_REGISTER_RANDOMIZATION
-static Register BaselineFrameReg = r11;
-static Register BaselineStackReg = sp;
+static const Register BaselineFrameReg = r11;
+static const Register BaselineStackReg = sp;
 
 // ICTailCallReg and ICStubReg
 // These use registers that are not preserved across calls.
-static Register ICTailCallReg = r14;
-static Register ICStubReg     = r9;
+static const Register ICTailCallReg = r14;
+static const Register ICStubReg     = r9;
 
 // Register used internally by MacroAssemblerARM.
-static Register BaselineSecondScratchReg = r6;
+static const Register BaselineSecondScratchReg = r6;
 #else
 static MOZ_CONSTEXPR_VAR Register BaselineFrameReg = r11;
 static MOZ_CONSTEXPR_VAR Register BaselineStackReg = sp;
@@ -59,39 +58,6 @@ static MOZ_CONSTEXPR_VAR FloatRegister FloatReg1      = d1;
 // R0 == JSReturnReg, and R2 uses registers not preserved across calls. R1 value
 // should be preserved across calls.
 #ifdef BASELINE_REGISTER_RANDOMIZATION
-/*
-static Registers::SetType R0Mask =
-    (Registers::VolatileMask
-    // For some reason, the Octane benchmark crashes when r1 is one R1's backing registers.
-    & ~(1 << r1.encoding())  
-    & ~(1 << r11.encoding())
-    & ~(1 << BaselineStackReg.encoding())
-    & ~(1 << BaselineFrameReg.encoding())
-    & ~(1 << BaselineSecondScratchReg.encoding())
-    & ~(1 << ArgumentsRectifierReg.encoding())
-    & ~(1 << ICTailCallReg.encoding())
-    & ~(1 << ICStubReg.encoding())
-    & ~(1 << ReturnReg.encoding()));
-
-static Registers::SetType R1Mask =
-    (Registers::NonVolatileMask 
-    & ~Registers::NonAllocatableMask 
-    & ~(1 << BaselineFrameReg.encoding())
-    & ~(1 << ScratchRegister.encoding())
-    & ~(1 << BaselineSecondScratchReg.encoding())
-    & ~(1 << ArgumentsRectifierReg.encoding())
-    & ~(1 << GlobalReg.encoding())
-    & ~(1 << HeapReg.encoding())
-    & ~(1 << ICTailCallReg.encoding())
-    & ~(1 << ICStubReg.encoding()));
-
-static Registers::SetType R2Mask =
-  Registers::VolatileMask & ~(1 << BaselineFrameReg.encoding());
-
-static ValueOperand R0(0, R0Mask, 0);
-static ValueOperand R1(1, R1Mask, 1, 0);
-static ValueOperand R2(2, R2Mask, 2, 0, 1);
-*/
 static const ValueOperand R0(r3, r2);
 static const ValueOperand R1(r5, r4);
 static const ValueOperand R2(r1, r0);
