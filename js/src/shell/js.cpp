@@ -6830,6 +6830,7 @@ SetRuntimeOptions(JSRuntime* rt, const OptionParser& op)
 #endif
 #ifdef CALL_FRAME_RANDOMIZATION
     jit::JitOptions.maxCallFramePaddingUnits = op.getIntOption("max-call-frame-pad") - 1;
+    jit::JitOptions.callFrameBlindingMask = (op.getIntOption("max-call-frame-blinding-options") - 1) << 2;
 #endif
 #ifdef BASE_OFFSET_RANDOMIZATION
     jit::JitOptions.maxBaseOffsetPaddingUnits = op.getIntOption("max-base-offset-pad") - 1;
@@ -7126,6 +7127,9 @@ main(int argc, char** argv, char** envp)
 #ifdef CALL_FRAME_RANDOMIZATION
         || !op.addIntOption('\0', "max-call-frame-pad", "N", "Insert up to N-1 units of stack alignment "
                             "into each call frame. Must be a power of 2.", 16)
+        || !op.addIntOption('\0', "max-call-frame-blinding-options", "N", "Give call frame element accesses up "
+                                    "to N blinding options. Must be a power of 2.", 16)
+
 #endif
 #ifdef BASE_OFFSET_RANDOMIZATION
         || !op.addIntOption('\0', "max-base-offset-pad", "N", "Insert up to N-1 units of code alignment "

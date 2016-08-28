@@ -80,6 +80,7 @@ struct DefaultJitOptions
 #endif
 #ifdef CALL_FRAME_RANDOMIZATION
     uint32_t maxCallFramePaddingUnits;  // Insert up to this many units minus 1 of stack alignment into call frame.
+    uint32_t callFrameBlindingMask;  // Blind call frame elements with this value bitwise ANDed with a random number.
 #endif
 #if BASE_OFFSET_RANDOMIZATION
     uint32_t maxBaseOffsetPaddingUnits;  // Insert up to this many units minus 1 of code alignment into the header of each compilation unit.

@@ -293,8 +293,9 @@ struct BlindedAddress
     BlindedAddress(Register base, int32_t offset)
       : base(base)
       , offset(offset)
-      , secret(RNG::nextUint32() & 0x3c)  // 4 bits, multiples of 4
-    { }
+    {
+        secret = RNG::nextUint32() & JitOptions.callFrameBlindingMask;
+    }
 
     BlindedAddress() { mozilla::PodZero(this); }
 };
